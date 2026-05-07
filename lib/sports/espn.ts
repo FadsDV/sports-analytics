@@ -92,7 +92,7 @@ function gameResult(
 ): "W" | "L" | "D" {
   if (myScore > oppScore) return "W";
   if (myScore < oppScore) return "L";
-  if (sport === "soccer") return "D";
+  if (sport === "soccer" || sport === "afl") return "D";
   return "L";
 }
 
@@ -592,7 +592,10 @@ export function deriveFormFromSchedule(
   sport: ESPNSport = "soccer"
 ): { form: FormResult[]; homeRec: { wins: number; losses: number; draws: number }; awayRec: { wins: number; losses: number; draws: number } } {
   const finished = events.filter(
-    (e) => e.competitions?.[0]?.status?.type?.state === "post"
+    (e) =>
+      e.competitions?.[0]?.status?.type?.state === "post" &&
+      e.season?.type !== 1 && e.season?.type !== "1" &&
+      e.seasonType !== 1 && e.seasonType !== "1"
   );
 
   const form: FormResult[] = [];
@@ -684,8 +687,13 @@ export function deriveTeamHistoryFromSchedule(
 ): TeamHistoryGame[] {
   const out: TeamHistoryGame[] = [];
   for (const ev of events) {
+    // Skip pre-season games (seasonType 1 = preseason)
+    const seasonType = ev.season?.type ?? ev.seasonType;
+    if (seasonType === 1 || seasonType === "1") continue;
     const comp = ev.competitions?.[0];
     if (!comp) continue;
+    // Only include finished games
+    if (comp.status?.type?.state !== "post") continue;
     const me = comp.competitors?.find((c: any) => c.team?.id === teamId);
     const opp = comp.competitors?.find((c: any) => c.team?.id !== teamId);
     if (!me || !opp) continue;

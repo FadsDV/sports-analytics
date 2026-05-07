@@ -52,9 +52,10 @@ export default async function GameDetailPage({
   let homeHistory: Awaited<ReturnType<typeof fetchTeamMatchHistory>> = [];
   let awayHistory: Awaited<ReturnType<typeof fetchTeamMatchHistory>> = [];
 
+  const isAFL = sport === "afl";
+
   if (game.homeTeam.espnId && game.awayTeam.espnId) {
     const sp = ESPN_PATHS[espnSport];
-    const isAFL = sport === "afl";
     [homeSquad, awaySquad, homeInjuries, awayInjuries, homeHistory, awayHistory] = await Promise.all([
       fetchTeamRoster(sp, game.homeTeam.espnId),
       fetchTeamRoster(sp, game.awayTeam.espnId),
@@ -92,7 +93,6 @@ export default async function GameDetailPage({
 
   const isSoccer     = ["soccer","ucl","uel","laliga","bundesliga","aleague"].includes(sport);
   const isBasketball = sport === "basketball";
-  const isAFL        = sport === "afl";
 
   // Derived analytics
   const probs    = isSoccer ? computeProbs(displayH2H, homeTeam.name) : [];
