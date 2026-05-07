@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SportsPulse
+Comment=Personal Sports Analytics Dashboard
+Exec=/home/fads/Downloads/App\ Ideas/Sports/sports-analytics/run.sh
+Terminal=false
+Categories=Network;

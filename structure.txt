@@ -1,0 +1,58 @@
+.
+├── app
+│   ├── api
+│   │   ├── debug
+│   │   └── {games
+│   ├── debug
+│   │   └── page.tsx
+│   ├── game
+│   │   └── [id]
+│   ├── globals.css
+│   ├── layout.tsx
+│   ├── page.tsx
+│   └── player
+│       ├── [id]
+│       └── [sport]
+├── components
+│   ├── BetRiskPanel.tsx
+│   ├── BoxScoreTable.tsx
+│   ├── FormPills.tsx
+│   ├── GameBrowser.tsx
+│   ├── GameCard.tsx
+│   ├── HeadToHeadTable.tsx
+│   ├── PlayerStatsTable.tsx
+│   ├── QuickInsights.tsx
+│   ├── SportBadge.tsx
+│   ├── SquadList.tsx
+│   ├── StatusBadge.tsx
+│   └── WeatherWidget.tsx
+├── lib
+│   ├── mockData.ts
+│   ├── sports
+│   │   ├── aflPlayers.ts
+│   │   ├── aflTables.ts
+│   │   ├── betRisk.ts
+│   │   ├── espnPlayers.ts
+│   │   ├── espn.ts
+│   │   ├── history.ts
+│   │   ├── playerData.ts
+│   │   ├── sofascore.ts
+│   │   ├── squiggle.ts
+│   │   └── weather.ts
+│   ├── types.ts
+│   └── utils.ts
+├── next.config.mjs
+├── next-env.d.ts
+├── package.json
+├── postcss.config.js
+├── public
+├── run.sh
+├── scripts
+│   └── clean-next.js
+├── SportsPulse.desktop
+├── structure.txt
+├── tailwind.config.js
+├── tsconfig.json
+└── tsconfig.tsbuildinfo
+
+16 directories, 40 files
