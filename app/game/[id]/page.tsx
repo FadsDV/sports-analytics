@@ -19,6 +19,7 @@ import SquadList from "@/components/SquadList";
 import { fetchSofascoreMatchData, SofascoreMatchData, SofascoreIncident } from "@/lib/sports/sofascore";
 import { computeAFLMatchAnalytics, AFLMatchAnalytics } from "@/lib/sports/afl/analytics";
 import PlayerList from "@/components/afl/PlayerList";
+import LiveScorePanel from "@/components/LiveScorePanel";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -167,36 +168,24 @@ export default async function GameDetailPage({
           <TeamHero team={homeTeam} role="Home" />
 
           <div className="flex-1 text-center">
-            {status === "upcoming" ? (
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-[#4B5563] mb-2">Pre-Match</div>
-                <div className="text-3xl font-bold text-[#1e3a5f]">vs</div>
-                <div className="text-xs text-[#3B82F6] mt-2">
-                  {isAFL ? formatAFLKickoff(game!.kickoff, game.venue) : formatKickoffFull(game!.kickoff)}
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div className="text-5xl sm:text-6xl font-black text-white tabular-nums tracking-tight">
-                  {score!.home}<span className="text-[#1e293b] mx-2 font-light">–</span>{score!.away}
-                </div>
-
-                {/* Quarter grid (NBA / AFL) */}
-                {(isBasketball || isAFL) && lineScores && lineScores.home.length > 0 && (
-                  <div className="mt-3 inline-block">
-                    <div className="grid gap-x-3 text-[11px] tabular-nums"
-                      style={{ gridTemplateColumns: `auto repeat(${lineScores.home.length}, 1fr)` }}>
-                      <span />
-                      {lineScores.home.map((_, i) => <span key={i} className="text-center text-[#374151]">Q{i+1}</span>)}
-                      <span className="text-right text-[#9CA3AF] pr-1">{homeTeam.shortName}</span>
-                      {lineScores.home.map((q,i) => <span key={i} className="text-center text-[#E5E7EB]">{q}</span>)}
-                      <span className="text-right text-[#9CA3AF] pr-1">{awayTeam.shortName}</span>
-                      {lineScores.away.map((q,i) => <span key={i} className="text-center text-[#E5E7EB]">{q}</span>)}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            <LiveScorePanel
+              gameId={id}
+              initial={{
+                homeScore:    score?.home ?? null,
+                awayScore:    score?.away ?? null,
+                status,
+                period:       liveMinute ? Math.min(4, Math.ceil(liveMinute / 20)) : null,
+                displayClock: null,
+                shortDetail:  null,
+                lineScores:   lineScores ?? null,
+              }}
+              homeShortName={homeTeam.shortName}
+              awayShortName={awayTeam.shortName}
+              isAFL={isAFL}
+              isBasketball={isBasketball}
+              kickoff={game.kickoff}
+              venue={game.venue}
+            />
           </div>
 
           <TeamHero team={awayTeam} role="Away" />
