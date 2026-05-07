@@ -547,9 +547,9 @@ export async function fetchTeamSchedule(
   seasons?: number[]
 ): Promise<any[]> {
   const currentYear = new Date().getFullYear();
-  const isSoccerLeague = ["soccer", "ucl", "uel", "laliga", "bundesliga", "aleague"].includes(sport);
+  const isSoccerOrAFL = ["soccer", "ucl", "uel", "laliga", "bundesliga", "aleague", "afl"].includes(sport);
   const yearsToFetch = seasons ?? (
-    isSoccerLeague
+    isSoccerOrAFL
       ? [currentYear, currentYear - 1, currentYear - 2]
       : [currentYear]
   );
@@ -646,6 +646,10 @@ export function findH2HFromSchedule(
 
     const status = comp.status?.type?.state;
     if (status !== "post") continue; // only completed games
+
+    // Skip pre-season games
+    const seasonType = ev.season?.type ?? ev.seasonType;
+    if (seasonType === 1 || seasonType === "1") continue;
 
     const home = comp.competitors.find((c: any) => c.homeAway === "home");
     const away = comp.competitors.find((c: any) => c.homeAway === "away");

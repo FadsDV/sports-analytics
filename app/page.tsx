@@ -54,13 +54,15 @@ export default async function HomePage({
     return true;
   }) as any;
 
-  // ── Fetch weather per unique city (deduplicated) ────────────────────
-  const uniqueCities = Array.from(new Set(allRaw.map((g) => g.city)));
+  // ── Fetch weather per unique location (venue preferred over city) ──
+  const weatherKey = (g: Omit<Game, "weather" | "betRisk">) =>
+    g.venue && g.venue !== "TBA" ? g.venue : g.city;
+  const uniqueLocations = Array.from(new Set(allRaw.map(weatherKey)));
   const weatherMap = Object.fromEntries(
     await Promise.all(
-      uniqueCities.map(async (city) => [
-        city,
-        await fetchWeather(city, cityIsIndoor(city, "")),
+      uniqueLocations.map(async (loc) => [
+        loc,
+        await fetchWeather(loc, cityIsIndoor(loc, "")),
       ])
     )
   );
@@ -68,7 +70,8 @@ export default async function HomePage({
   // ── Enrich with weather + bet risk ─────────────────────────────────
   const games: Game[] = allRaw.map((g) => {
     const indoor  = cityIsIndoor(g.city, g.sport);
-    const weather = weatherMap[g.city] ?? { condition: "Clear", tempC: 20, windKph: 10, humidity: 60 };
+    const key     = weatherKey(g);
+    const weather = weatherMap[key] ?? { condition: "Clear", tempC: 20, windKph: 10, humidity: 60 };
     const actualWeather = indoor ? { condition: "Indoor", tempC: 21, windKph: 0, humidity: 45 } : weather;
     const betRisk = calcBetRisk(g.homeTeam, g.awayTeam, actualWeather, 0, 0, 0);
     return { ...g, weather: actualWeather, betRisk } as Game;

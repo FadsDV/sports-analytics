@@ -13,11 +13,12 @@ import {
 import { fetchHeadToHead, fetchTeamMatchHistory } from "@/lib/sports/history";
 import { fetchWeather } from "@/lib/sports/weather";
 import { calcBetRisk } from "@/lib/sports/betRisk";
-import { formatKickoffFull } from "@/lib/utils";
+import { formatKickoffFull, formatAFLKickoff } from "@/lib/utils";
 import FormPills from "@/components/FormPills";
 import SquadList from "@/components/SquadList";
 import { fetchSofascoreMatchData, SofascoreMatchData, SofascoreIncident } from "@/lib/sports/sofascore";
 import { computeAFLMatchAnalytics, AFLMatchAnalytics } from "@/lib/sports/afl/analytics";
+import PlayerList from "@/components/afl/PlayerList";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ export default async function GameDetailPage({
       if (isAFL)        { const q = Math.min(4, Math.ceil(m/20)||1); return `Q${q} ${m%20}'`; }
       return `${m}'`;
     }
-    return formatKickoffFull(game!.kickoff);
+    return isAFL ? formatAFLKickoff(game!.kickoff, game!.venue) : formatKickoffFull(game!.kickoff);
   }
 
   const TABS = [
@@ -170,7 +171,9 @@ export default async function GameDetailPage({
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-widest text-[#4B5563] mb-2">Pre-Match</div>
                 <div className="text-3xl font-bold text-[#1e3a5f]">vs</div>
-                <div className="text-xs text-[#3B82F6] mt-2">{formatKickoffFull(game!.kickoff)}</div>
+                <div className="text-xs text-[#3B82F6] mt-2">
+                  {isAFL ? formatAFLKickoff(game!.kickoff, game.venue) : formatKickoffFull(game!.kickoff)}
+                </div>
               </div>
             ) : (
               <div>
@@ -731,21 +734,25 @@ function AFLOverview({ game, insights, boxScore, homeSquad, awaySquad, h2h, anal
   h2h: H2HGame[];
   analytics: AFLMatchAnalytics | null;
 }) {
-  const { homeTeam, awayTeam } = game;
-  const isUpcoming = game.status === "upcoming";
+  const { homeTeam, awayTeam, weather, status } = game;
+  const isUpcoming = status === "upcoming";
   const ha = analytics?.home;
   const aa = analytics?.away;
-  const h2hS = analytics?.h2h;
 
   const KEY_STATS = ["D","G","T","M","HO"];
   const topHome = boxScore?.home.slice(0, 8) ?? [];
   const topAway = boxScore?.away.slice(0, 8) ?? [];
   const hasBoxScore = topHome.length > 0 || topAway.length > 0;
 
+  const WEATHER_ICON_AFL: Record<string,string> = {
+    Clear:"☀️","Partly Cloudy":"⛅",Cloudy:"☁️",Rain:"🌧️","Rain Showers":"🌧️",
+    Drizzle:"🌦️",Storm:"⛈️",Snow:"❄️","Snow Showers":"❄️",Foggy:"🌫️",
+  };
+
   return (
     <div className="space-y-4">
 
-      {/* ── 1. DISPOSAL LEADERS (finished/live) ─────────────────── */}
+      {/* Finished: disposal leaders */}
       {!isUpcoming && hasBoxScore && (
         <Section title="Disposal Leaders">
           <div className="grid grid-cols-2 gap-4">
@@ -762,7 +769,7 @@ function AFLOverview({ game, insights, boxScore, homeSquad, awaySquad, h2h, anal
                       {KEY_STATS.filter(k => row.stats[k] != null).map(k => (
                         <span key={k} className="tabular-nums">
                           <span className="text-[#374151] text-[9px]">{k} </span>
-                          <span className={k === "D" && Number(row.stats[k]) >= 25 ? "text-[#3B82F6] font-bold" : ""}>{row.stats[k]}</span>
+                          <span className={k==="D"&&Number(row.stats[k])>=25?"text-[#3B82F6] font-bold":""}>{row.stats[k]}</span>
                         </span>
                       ))}
                     </div>
@@ -774,319 +781,293 @@ function AFLOverview({ game, insights, boxScore, homeSquad, awaySquad, h2h, anal
         </Section>
       )}
 
-      {/* ── 2. QUICK MATCH INTELLIGENCE ─────────────────────────── */}
-      {(ha || aa) && (
-        <Section title="Quick Match Intelligence">
-          <div className="grid grid-cols-2 gap-4">
-            {([{ t: homeTeam, an: ha, role: "Home" }, { t: awayTeam, an: aa, role: "Away" }] as const).map(({ t, an, role }) => {
-              if (!an) return null;
-              return (
-                <div key={t.name}>
-                  <div className="flex items-center gap-1.5 mb-3">
-                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-5 h-5 object-contain" />}
-                    <span className="text-sm font-semibold text-white truncate">{t.shortName}</span>
-                    <span className="ml-auto text-[10px] text-[#6B7280]">{role}</span>
-                  </div>
+      {/* 2-column grid: left=intelligence+H2H, right=squad+injuries+weather */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
 
-                  {/* Form pills */}
-                  <div className="flex gap-1 mb-3">
-                    {an.form.map((r, i) => (
-                      <span key={i} className={`w-6 h-6 rounded text-[9px] font-bold flex items-center justify-center ${
-                        r === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" :
-                        r === "L" ? "bg-[#EF4444]/20 text-[#EF4444]" :
-                                    "bg-[#F59E0B]/20 text-[#F59E0B]"
-                      }`}>{r}</span>
-                    ))}
-                    {an.streak.type && an.streak.count >= 2 && (
-                      <span className={`ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                        an.streak.type === "W" ? "bg-[#22C55E]/10 text-[#22C55E]" : "bg-[#EF4444]/10 text-[#EF4444]"
-                      }`}>{an.streak.count}{an.streak.type} streak</span>
-                    )}
-                  </div>
+        {/* LEFT — 3 cols */}
+        <div className="lg:col-span-3 space-y-4">
 
-                  {/* Stat chips */}
-                  <div className="space-y-1.5">
-                    {[
-                      { label: "Season",       value: `${an.record.wins}W ${an.record.losses}L${an.record.draws > 0 ? ` ${an.record.draws}D` : ""}` },
-                      { label: "Avg Scored",   value: `${an.avgScored} pts` },
-                      { label: "Avg Conceded", value: `${an.avgConceded} pts` },
-                      ...(an.homeRecord && role === "Home" ? [{ label: "Home Record", value: `${an.homeRecord.wins}W ${an.homeRecord.losses}L` }] : []),
-                      ...(an.awayRecord && role === "Away" ? [{ label: "Away Record", value: `${an.awayRecord.wins}W ${an.awayRecord.losses}L` }] : []),
-                      ...(an.venueRecord ? [{ label: "At Venue", value: `${an.venueRecord.wins}W ${an.venueRecord.losses}L` }] : []),
-                      ...(an.daysRest != null ? [{ label: "Days Rest", value: `${an.daysRest}d` }] : []),
-                    ].map(({ label, value }) => (
-                      <div key={label} className="flex items-center justify-between text-xs">
-                        <span className="text-[#4B5563]">{label}</span>
-                        <span className="text-[#D1D5DB] font-medium tabular-nums">{value}</span>
+          {/* Match Intelligence */}
+          {(ha || aa) && (
+            <Section title="Match Intelligence">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-0">
+                {([{ t: homeTeam, an: ha, role:"Home" }, { t: awayTeam, an: aa, role:"Away" }] as const).map(({ t, an, role }) => {
+                  if (!an) return <div key={t.name} />;
+                  return (
+                    <div key={t.name}>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                        <span className="text-xs font-semibold text-white">{t.shortName}</span>
+                        <span className="text-[9px] text-[#6B7280] ml-1">{role}</span>
+                        {an.streak.type && an.streak.count >= 2 && (
+                          <span className={`ml-auto text-[9px] font-bold px-1 py-px rounded ${an.streak.type==="W"?"bg-[#22C55E]/10 text-[#22C55E]":"bg-[#EF4444]/10 text-[#EF4444]"}`}>
+                            {an.streak.count}{an.streak.type}
+                          </span>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Section>
-      )}
+                      <div className="flex gap-1 mb-3">
+                        {an.form.map((r,i) => (
+                          <span key={i} className={`w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center ${r==="W"?"bg-[#22C55E]/20 text-[#22C55E]":r==="L"?"bg-[#EF4444]/20 text-[#EF4444]":"bg-[#F59E0B]/20 text-[#F59E0B]"}`}>{r}</span>
+                        ))}
+                      </div>
+                      {[
+                        ["Season",    `${an.record.wins}W ${an.record.losses}L${an.record.draws>0?` ${an.record.draws}D`:""}`],
+                        ["Avg Scored",`${an.avgScored} pts`],
+                        ["Avg Conceded",`${an.avgConceded} pts`],
+                        ...(role==="Home"?[["Home Record",`${an.homeRecord.wins}W ${an.homeRecord.losses}L`]]:
+                                          [["Away Record",`${an.awayRecord.wins}W ${an.awayRecord.losses}L`]]),
+                        ...(an.venueRecord?[["At Venue",`${an.venueRecord.wins}W ${an.venueRecord.losses}L`]]:[]),
+                        ...(an.daysRest!=null?[["Days Rest",`${an.daysRest}d`]]:[]),
+                      ].map(([label,value]) => (
+                        <div key={label} className="flex items-center justify-between py-1 border-b border-white/[0.03] last:border-0 text-xs">
+                          <span className="text-[#4B5563]">{label}</span>
+                          <span className="text-[#D1D5DB] font-medium tabular-nums">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
 
-      {/* ── 3. PROJECTED SQUAD (upcoming) ───────────────────────── */}
-      {isUpcoming && (homeSquad.length > 0 || awaySquad.length > 0) && (
-        <Section title="Projected Squad">
-          <div className="grid grid-cols-2 gap-4">
-            {[{ t: homeTeam, squad: homeSquad.slice(0, 10) }, { t: awayTeam, squad: awaySquad.slice(0, 10) }].map(({ t, squad }) => (
-              <div key={t.name}>
-                <div className="flex items-center gap-1.5 mb-2">
-                  {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                  <span className="text-xs font-medium text-[#6B7280]">{t.shortName}</span>
-                </div>
-                {squad.map((p, i) => (
-                  <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/[0.04] last:border-0 text-xs">
-                    <span className="text-[#374151] w-4 text-center font-mono text-[10px]">{p.jersey || i+1}</span>
-                    <span className="text-[#E5E7EB] flex-1 truncate">{p.displayName}</span>
-                    <span className="text-[#4B5563] text-[10px]">{p.position}</span>
+          {/* H2H Meetings */}
+          {h2h.length > 0 && (
+            <Section title="Head-to-Head">
+              <div className="flex items-center gap-4 mb-3">
+                {(() => {
+                  const hw = h2h.filter(g=>g.winner===homeTeam.name).length;
+                  const dr = h2h.filter(g=>g.winner==="Draw").length;
+                  const aw = h2h.length - hw - dr;
+                  return (
+                    <>
+                      <div className="flex-1 text-center">
+                        <div className="text-xl font-black text-[#3B82F6]">{hw}</div>
+                        <div className="text-[9px] text-[#374151]">{homeTeam.shortName}</div>
+                      </div>
+                      <div className="flex-1 text-center">
+                        <div className="text-xl font-black text-[#F59E0B]">{dr}</div>
+                        <div className="text-[9px] text-[#374151]">Draws</div>
+                      </div>
+                      <div className="flex-1 text-center">
+                        <div className="text-xl font-black text-[#9CA3AF]">{aw}</div>
+                        <div className="text-[9px] text-[#374151]">{awayTeam.shortName}</div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+              {h2h.slice(0,6).map((g,i) => {
+                const isHW = g.winner===homeTeam.name;
+                const isAW = g.winner===awayTeam.name;
+                return (
+                  <Link key={g.gameId||i} href={g.gameId?`/game/${g.gameId}`:"#"}
+                    className="flex items-center gap-1.5 py-1.5 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.03] rounded px-0.5 text-xs">
+                    <span className="text-[#374151] w-16 shrink-0 text-[10px]">{g.date}</span>
+                    <span className={`flex-1 truncate text-right text-[10px] ${isHW?"text-white font-medium":"text-[#6B7280]"}`}>{g.homeTeam}</span>
+                    <span className="font-bold text-white tabular-nums w-12 text-center shrink-0">{g.score}</span>
+                    <span className={`flex-1 truncate text-[10px] ${isAW?"text-white font-medium":"text-[#6B7280]"}`}>{g.awayTeam}</span>
+                    <span className={`text-[9px] px-1 py-px rounded font-bold shrink-0 ${isHW?"bg-[#3B82F6]/20 text-[#3B82F6]":isAW?"bg-white/10 text-[#9CA3AF]":"bg-[#F59E0B]/20 text-[#F59E0B]"}`}>
+                      {isHW?"H":isAW?"A":"D"}
+                    </span>
+                  </Link>
+                );
+              })}
+            </Section>
+          )}
+
+          {/* Last 5 Games */}
+          {(ha?.last5.length || aa?.last5.length) ? (
+            <Section title="Last 5 Games">
+              <div className="grid grid-cols-2 gap-4">
+                {([{t:homeTeam,an:ha},{t:awayTeam,an:aa}] as const).map(({t,an})=>{
+                  if(!an) return null;
+                  return (
+                    <div key={t.name}>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        {t.logoUrl&&<img src={t.logoUrl} alt="" className="w-4 h-4 object-contain"/>}
+                        <span className="text-xs font-medium text-[#6B7280]">{t.shortName}</span>
+                      </div>
+                      {an.last5.map((g,i)=>(
+                        <Link key={g.gameId||i} href={g.gameId?`/game/${g.gameId}`:"#"}
+                          className="flex items-center gap-1.5 py-1.5 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.03] rounded px-0.5 text-xs">
+                          <span className={`w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center shrink-0 ${g.result==="W"?"bg-[#22C55E]/20 text-[#22C55E]":g.result==="L"?"bg-[#EF4444]/20 text-[#EF4444]":"bg-[#F59E0B]/20 text-[#F59E0B]"}`}>{g.result}</span>
+                          <span className="text-[#9CA3AF] w-7 text-[10px] text-center shrink-0">{g.oppAbbr}</span>
+                          <span className="text-[#D1D5DB] tabular-nums text-[10px] shrink-0">{g.teamScore}–{g.oppScore}</span>
+                          <span className={`tabular-nums text-[9px] shrink-0 ${g.margin>0?"text-[#22C55E]":"text-[#EF4444]"}`}>{g.margin>0?`+${g.margin}`:g.margin}</span>
+                          <span className="text-[#4B5563] text-[9px] shrink-0">{g.homeAway}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          ) : null}
+
+          {/* Home/Away splits */}
+          {(ha && aa) && (
+            <Section title="Home / Away Splits">
+              <div className="grid grid-cols-2 gap-3">
+                {([{t:homeTeam,an:ha,role:"Home"},{t:awayTeam,an:aa,role:"Away"}] as const).map(({t,an,role})=>(
+                  <div key={t.name} className="space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      {t.logoUrl&&<img src={t.logoUrl} alt="" className="w-4 h-4 object-contain"/>}
+                      <span className="text-[10px] text-[#9CA3AF]">{t.shortName}</span>
+                    </div>
+                    {[
+                      {label:"At Home",rec:an.homeRecord},
+                      {label:"Away",rec:an.awayRecord},
+                    ].map(({label,rec})=>{
+                      const total=rec.wins+rec.losses;
+                      const pct=total>0?Math.round((rec.wins/total)*100):0;
+                      return (
+                        <div key={label}>
+                          <div className="flex justify-between text-[10px] mb-0.5">
+                            <span className="text-[#4B5563]">{label}</span>
+                            <span className="text-[#D1D5DB] tabular-nums">{rec.wins}W {rec.losses}L</span>
+                          </div>
+                          <div className="h-[2px] bg-white/5 rounded-full">
+                            <div className={`h-full rounded-full ${pct>=50?"bg-[#22C55E]":"bg-[#EF4444]"}`} style={{width:`${pct}%`}}/>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 ))}
-                {squad.length === 0 && <p className="text-xs text-[#374151]">Not announced yet</p>}
               </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {/* ── 4. TEAM NEWS (INS / OUTS) ───────────────────────────── */}
-      {(ha?.injuryImpact || aa?.injuryImpact) && (
-        <Section title="Team News — Ins / Outs">
-          <div className="grid grid-cols-2 gap-4">
-            {([{ t: homeTeam, an: ha }, { t: awayTeam, an: aa }] as const).map(({ t, an }) => {
-              if (!an) return null;
-              const { out, doubtful, suspended } = an.injuryImpact;
-              const hasAny = out.length > 0 || doubtful.length > 0 || suspended.length > 0;
-              return (
-                <div key={t.name}>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                    <span className="text-xs font-medium text-[#9CA3AF]">{t.shortName}</span>
-                  </div>
-                  {!hasAny && <p className="text-xs text-[#22C55E]">✓ None reported</p>}
-                  {out.length > 0 && (
-                    <div className="mb-2">
-                      <div className="text-[9px] uppercase tracking-widest text-[#EF4444] mb-1">Out</div>
-                      {out.map((p, i) => (
-                        <div key={i} className="flex items-start justify-between py-1 border-b border-white/[0.04] last:border-0 text-xs gap-1">
-                          <span className="text-[#D1D5DB] truncate">{p.playerName}</span>
-                          <span className="text-[#6B7280] text-[10px] shrink-0 truncate max-w-[45%] text-right">{p.note}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {doubtful.length > 0 && (
-                    <div className="mb-2">
-                      <div className="text-[9px] uppercase tracking-widest text-[#F59E0B] mb-1">Doubtful</div>
-                      {doubtful.map((p, i) => (
-                        <div key={i} className="flex items-start justify-between py-1 border-b border-white/[0.04] last:border-0 text-xs gap-1">
-                          <span className="text-[#D1D5DB] truncate">{p.playerName}</span>
-                          <span className="text-[#6B7280] text-[10px] shrink-0 truncate max-w-[45%] text-right">{p.note}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {suspended.length > 0 && (
-                    <div>
-                      <div className="text-[9px] uppercase tracking-widest text-[#9CA3AF] mb-1">Suspended</div>
-                      {suspended.map((p, i) => (
-                        <div key={i} className="flex items-center justify-between py-1 border-b border-white/[0.04] last:border-0 text-xs">
-                          <span className="text-[#D1D5DB] truncate">{p.playerName}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Section>
-      )}
-
-      {/* ── 5. LAST 5 GAMES ─────────────────────────────────────── */}
-      {(ha?.last5.length || aa?.last5.length) ? (
-        <Section title="Last 5 Games">
-          <div className="grid grid-cols-2 gap-4">
-            {([{ t: homeTeam, an: ha }, { t: awayTeam, an: aa }] as const).map(({ t, an }) => {
-              if (!an) return null;
-              return (
-                <div key={t.name}>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                    <span className="text-xs font-medium text-[#6B7280]">{t.shortName}</span>
-                  </div>
-                  {an.last5.map((g, i) => (
-                    <Link key={g.gameId || i} href={g.gameId ? `/game/${g.gameId}` : "#"}
-                      className="flex items-center gap-1.5 py-1.5 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.03] rounded px-0.5 text-xs group">
-                      <span className={`w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center shrink-0 ${
-                        g.result === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" :
-                        g.result === "L" ? "bg-[#EF4444]/20 text-[#EF4444]" :
-                                           "bg-[#F59E0B]/20 text-[#F59E0B]"
-                      }`}>{g.result}</span>
-                      <span className="text-[#9CA3AF] w-6 text-[10px] text-center shrink-0">{g.oppAbbr}</span>
-                      <span className="text-[#D1D5DB] tabular-nums text-[10px] shrink-0">{g.teamScore}–{g.oppScore}</span>
-                      <span className={`tabular-nums text-[9px] shrink-0 ${g.margin > 0 ? "text-[#22C55E]" : "text-[#EF4444]"}`}>
-                        {g.margin > 0 ? `+${g.margin}` : g.margin}
-                      </span>
-                      <span className="text-[#4B5563] text-[9px] shrink-0">{g.homeAway}</span>
-                      <span className="text-[#2d3748] text-[9px] truncate hidden sm:block">{g.venue.split(/[^a-zA-Z]/)[0]}</span>
-                    </Link>
-                  ))}
-                  {an.last5.length === 0 && <p className="text-xs text-[#374151]">No data</p>}
-                </div>
-              );
-            })}
-          </div>
-        </Section>
-      ) : null}
-
-      {/* ── 6. HOME vs AWAY ANALYTICS ───────────────────────────── */}
-      {(ha || aa) && (
-        <Section title="Home / Away Analytics">
-          <div className="space-y-4">
-            {([{ t: homeTeam, an: ha, contextRole: "Home" as const }, { t: awayTeam, an: aa, contextRole: "Away" as const }] as const).map(({ t, an, contextRole }) => {
-              if (!an) return null;
-              return (
-                <div key={t.name} className="grid grid-cols-3 gap-3">
-                  <div className="flex flex-col justify-center">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                      <span className="text-xs text-[#9CA3AF]">{t.shortName}</span>
-                    </div>
-                    <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded inline-block w-fit ${
-                      contextRole === "Home" ? "bg-[#3B82F6]/10 text-[#3B82F6]" : "bg-[#6B7280]/10 text-[#6B7280]"
-                    }`}>{contextRole}</div>
-                  </div>
-                  <div className="bg-[#0d1827] rounded-lg px-3 py-2 text-center">
-                    <div className="text-[9px] text-[#374151] uppercase tracking-widest mb-1">At Home</div>
-                    <div className="text-lg font-black text-white tabular-nums">{an.homeRecord.wins}</div>
-                    <div className="text-[10px] text-[#6B7280]">{an.homeRecord.wins}W {an.homeRecord.losses}L</div>
-                    <div className={`text-[10px] mt-0.5 ${
-                      an.homeRecord.wins > an.homeRecord.losses ? "text-[#22C55E]" :
-                      an.homeRecord.wins < an.homeRecord.losses ? "text-[#EF4444]" : "text-[#F59E0B]"
-                    }`}>
-                      {an.homeRecord.wins + an.homeRecord.losses > 0
-                        ? `${Math.round((an.homeRecord.wins / (an.homeRecord.wins + an.homeRecord.losses)) * 100)}%`
-                        : "—"}
-                    </div>
-                  </div>
-                  <div className="bg-[#0d1827] rounded-lg px-3 py-2 text-center">
-                    <div className="text-[9px] text-[#374151] uppercase tracking-widest mb-1">Away</div>
-                    <div className="text-lg font-black text-white tabular-nums">{an.awayRecord.wins}</div>
-                    <div className="text-[10px] text-[#6B7280]">{an.awayRecord.wins}W {an.awayRecord.losses}L</div>
-                    <div className={`text-[10px] mt-0.5 ${
-                      an.awayRecord.wins > an.awayRecord.losses ? "text-[#22C55E]" :
-                      an.awayRecord.wins < an.awayRecord.losses ? "text-[#EF4444]" : "text-[#F59E0B]"
-                    }`}>
-                      {an.awayRecord.wins + an.awayRecord.losses > 0
-                        ? `${Math.round((an.awayRecord.wins / (an.awayRecord.wins + an.awayRecord.losses)) * 100)}%`
-                        : "—"}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Section>
-      )}
-
-      {/* ── 7. H2H ──────────────────────────────────────────────── */}
-      {h2hS && h2hS.total > 0 ? (
-        <Section title="Head-to-Head">
-          {/* Summary bar */}
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex-1 text-center">
-              <div className="text-2xl font-black text-[#3B82F6]">{h2hS.homeWins}</div>
-              <div className="text-[10px] text-[#374151]">{homeTeam.shortName} Wins</div>
-            </div>
-            <div className="flex-1 text-center">
-              <div className="text-2xl font-black text-[#F59E0B]">{h2hS.draws}</div>
-              <div className="text-[10px] text-[#374151]">Draws</div>
-            </div>
-            <div className="flex-1 text-center">
-              <div className="text-2xl font-black text-[#9CA3AF]">{h2hS.awayWins}</div>
-              <div className="text-[10px] text-[#374151]">{awayTeam.shortName} Wins</div>
-            </div>
-          </div>
-          {/* H2H streak */}
-          {h2hS.streak && (
-            <div className="mb-3 text-xs">
-              <span className="text-[#374151]">Current streak: </span>
-              <span className="text-[#3B82F6] font-semibold">{h2hS.streak.team} — {h2hS.streak.count} in a row</span>
-            </div>
+            </Section>
           )}
-          {/* Meetings */}
-          {h2hS.meetings.map((m, i) => {
-            const isHomeWin = m.winner === homeTeam.name;
-            const isAwayWin = m.winner === awayTeam.name;
-            return (
-              <Link key={m.gameId || i} href={m.gameId ? `/game/${m.gameId}` : "#"}
-                className="flex items-center gap-2 py-1.5 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.03] rounded px-1 text-xs group">
-                <span className="text-[#374151] w-16 shrink-0">{m.date}</span>
-                <span className={`flex-1 truncate text-right ${isHomeWin ? "text-white font-medium" : "text-[#9CA3AF]"}`}>{m.home}</span>
-                <span className="font-bold text-white tabular-nums w-14 text-center shrink-0">{m.score}</span>
-                <span className={`flex-1 truncate ${isAwayWin ? "text-white font-medium" : "text-[#9CA3AF]"}`}>{m.away}</span>
-                <span className="text-[#374151] text-[10px] tabular-nums shrink-0">±{m.margin}</span>
-              </Link>
-            );
-          })}
-        </Section>
-      ) : h2h.length > 0 ? (
-        <Section title="Head-to-Head">
-          <H2HPanel h2h={h2h} homeTeam={homeTeam.name} awayTeam={awayTeam.name} compact />
-        </Section>
-      ) : null}
+        </div>
 
-      {/* ── 8. TEAM COMPARISON ──────────────────────────────────── */}
-      {(ha && aa) && (
-        <Section title="Team Comparison">
-          <div className="space-y-3">
-            {([
-              { key: "Avg Scored",       hv: ha.avgScored,     av: aa.avgScored     },
-              { key: "Avg Conceded",     hv: ha.avgConceded,   av: aa.avgConceded   },
-              { key: "Avg Win Margin",   hv: ha.avgMarginWin,  av: aa.avgMarginWin  },
-              { key: "Avg Loss Margin",  hv: ha.avgMarginLoss, av: aa.avgMarginLoss },
-              { key: "Days Rest",        hv: ha.daysRest ?? 0, av: aa.daysRest ?? 0 },
-            ] as { key: string; hv: number; av: number }[]).map(({ key, hv, av }) => {
-              const max = Math.max(hv, av, 1);
-              return (
-                <div key={key}>
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-white font-medium tabular-nums w-10">{hv}</span>
-                    <span className="text-[#374151] uppercase text-[10px] tracking-wider flex-1 text-center">{key}</span>
-                    <span className="text-[#9CA3AF] tabular-nums w-10 text-right">{av}</span>
+        {/* RIGHT — 2 cols */}
+        <div className="lg:col-span-2 space-y-4">
+
+          {/* Weather */}
+          {weather && weather.condition !== "Indoor" && (
+            <Section title="Weather">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{WEATHER_ICON_AFL[weather.condition]??"🌤"}</span>
+                <div>
+                  <div className={`text-sm font-medium ${weather.windKph>40||["Storm","Rain"].includes(weather.condition)?"text-[#F59E0B]":"text-white"}`}>
+                    {weather.condition}
                   </div>
-                  <div className="flex gap-1 h-[3px]">
-                    <div className="flex-1 bg-white/5 rounded-full overflow-hidden flex justify-end">
-                      <div className="h-full bg-[#3B82F6] rounded-full" style={{ width: `${(hv/max)*100}%` }} />
-                    </div>
-                    <div className="flex-1 bg-white/5 rounded-full overflow-hidden">
-                      <div className="h-full bg-[#9CA3AF] rounded-full" style={{ width: `${(av/max)*100}%` }} />
-                    </div>
-                  </div>
+                  <div className="text-xs text-[#6B7280]">{weather.tempC}°C · {weather.windKph} km/h wind</div>
                 </div>
-              );
-            })}
-          </div>
-        </Section>
-      )}
+              </div>
+            </Section>
+          )}
 
-      {/* Key Insights */}
-      {insights.length > 0 && (
-        <Section title="Key Insights">
-          <ul className="space-y-2">
-            {insights.slice(0, 5).map((ins, i) => (
-              <li key={i} className="flex items-start gap-1.5 text-xs">
-                <span className="text-[#3B82F6] shrink-0">{ins.icon}</span>
-                <span className="text-[#E5E7EB] leading-snug">{ins.text}</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
+          {/* Team News */}
+          {(ha?.injuryImpact||aa?.injuryImpact) && (
+            <Section title="Team News">
+              <div className="grid grid-cols-2 gap-3">
+                {([{t:homeTeam,an:ha},{t:awayTeam,an:aa}] as const).map(({t,an})=>{
+                  if(!an) return null;
+                  const {out,doubtful,suspended}=an.injuryImpact;
+                  const hasAny=out.length>0||doubtful.length>0||suspended.length>0;
+                  return (
+                    <div key={t.name}>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        {t.logoUrl&&<img src={t.logoUrl} alt="" className="w-4 h-4 object-contain"/>}
+                        <span className="text-[10px] font-medium text-[#9CA3AF]">{t.shortName}</span>
+                      </div>
+                      {!hasAny&&<p className="text-[10px] text-[#22C55E]">✓ None</p>}
+                      {out.length>0&&(
+                        <div className="mb-1.5">
+                          <div className="text-[9px] text-[#EF4444] uppercase tracking-widest mb-0.5">Out</div>
+                          {out.map((p,i)=>(
+                            <div key={i} className="text-[10px] text-[#D1D5DB] truncate py-0.5 border-b border-white/[0.03]">
+                              {p.playerName}{p.note?<span className="text-[#4B5563] ml-1">·{p.note.slice(0,12)}</span>:null}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {doubtful.length>0&&(
+                        <div>
+                          <div className="text-[9px] text-[#F59E0B] uppercase tracking-widest mb-0.5">Doubtful</div>
+                          {doubtful.map((p,i)=>(
+                            <div key={i} className="text-[10px] text-[#D1D5DB] truncate py-0.5 border-b border-white/[0.03]">{p.playerName}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
+
+          {/* Predicted Squad */}
+          {isUpcoming && (homeSquad.length > 0 || awaySquad.length > 0) && (
+            <Section title="Predicted Squads">
+              <div className="grid grid-cols-2 gap-3">
+                <PlayerList
+                  players={homeSquad}
+                  teamName={homeTeam.name}
+                  teamLogo={homeTeam.logoUrl}
+                  teamEspnId={homeTeam.espnId ?? ""}
+                  matchContext="home"
+                  opponent={awayTeam.name}
+                />
+                <PlayerList
+                  players={awaySquad}
+                  teamName={awayTeam.name}
+                  teamLogo={awayTeam.logoUrl}
+                  teamEspnId={awayTeam.espnId ?? ""}
+                  matchContext="away"
+                  opponent={homeTeam.name}
+                />
+              </div>
+            </Section>
+          )}
+
+          {/* Team comparison */}
+          {(ha && aa) && (
+            <Section title="Team Comparison">
+              {([
+                {key:"Avg Scored",hv:ha.avgScored,av:aa.avgScored},
+                {key:"Avg Conceded",hv:ha.avgConceded,av:aa.avgConceded},
+                {key:"Win Margin",hv:ha.avgMarginWin,av:aa.avgMarginWin},
+                {key:"Loss Margin",hv:ha.avgMarginLoss,av:aa.avgMarginLoss},
+              ] as {key:string;hv:number;av:number}[]).map(({key,hv,av})=>{
+                const max=Math.max(hv,av,1);
+                return (
+                  <div key={key} className="mb-2 last:mb-0">
+                    <div className="flex items-center justify-between text-[10px] mb-0.5">
+                      <span className="text-white font-medium tabular-nums w-8">{hv}</span>
+                      <span className="text-[#374151] uppercase text-[9px] tracking-wide flex-1 text-center">{key}</span>
+                      <span className="text-[#9CA3AF] tabular-nums w-8 text-right">{av}</span>
+                    </div>
+                    <div className="flex gap-0.5 h-[2px]">
+                      <div className="flex-1 bg-white/5 rounded-full overflow-hidden flex justify-end">
+                        <div className="h-full bg-[#3B82F6] rounded-full" style={{width:`${(hv/max)*100}%`}}/>
+                      </div>
+                      <div className="flex-1 bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-[#9CA3AF] rounded-full" style={{width:`${(av/max)*100}%`}}/>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </Section>
+          )}
+
+          {/* Key Insights */}
+          {insights.length > 0 && (
+            <Section title="Key Insights">
+              <ul className="space-y-1.5">
+                {insights.slice(0,5).map((ins,i)=>(
+                  <li key={i} className="flex items-start gap-1.5 text-xs">
+                    <span className="text-[#3B82F6] shrink-0">{ins.icon}</span>
+                    <span className="text-[#E5E7EB] leading-snug">{ins.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1450,7 +1431,8 @@ async function buildESPNGame(id: string, sport: keyof typeof ESPN_PATHS, eventId
   }
 
   const isIndoor = sport === "basketball";
-  const weather  = summary.weather && !isIndoor ? summary.weather : await fetchWeather(base.city, isIndoor);
+  const weatherLoc = (base.venue && base.venue !== "TBA") ? base.venue : base.city;
+  const weather  = summary.weather && !isIndoor ? summary.weather : await fetchWeather(weatherLoc, isIndoor);
   const betRisk  = calcBetRisk(base.homeTeam, base.awayTeam, weather, (summary.injuries ?? []).length, h2h.filter(g => g.winner === base.homeTeam.name).length, h2h.length);
 
   return { ...base, h2h, weather, betRisk, boxScore: summary.boxScore, teamStats: summary.teamStats, lineScores: summary.lineScores } as Game;

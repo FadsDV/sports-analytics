@@ -22,7 +22,26 @@ function wmoCondition(code: number): string {
 // City/venue string → [latitude, longitude]
 // Covers all major sports cities used by ESPN + Squiggle venues.
 const COORDS: Record<string, [number, number]> = {
-  // Australian AFL venues
+  // AFL named venues (matched before city names due to longer keys)
+  "Optus Stadium":    [-31.951,  115.889],
+  "MCG":              [-37.820,  144.983],
+  "Marvel Stadium":   [-37.817,  144.952],
+  "Adelaide Oval":    [-34.916,  138.596],
+  "Gabba":            [-27.485,  153.038],
+  "SCG":              [-33.891,  151.225],
+  "GIANTS Stadium":   [-33.847,  150.790],
+  "Engie Stadium":    [-33.847,  150.790],
+  "GMHBA Stadium":    [-38.157,  144.354],
+  "UTAS Stadium":     [-41.447,  147.131],
+  "Manuka Oval":      [-35.319,  149.137],
+  "Blundstone Arena": [-42.887,  147.331],
+  "TIO Stadium":      [-12.389,  130.881],
+  "Traeger Park":     [-23.699,  133.880],
+  "Cazaly's Stadium": [-16.921,  145.765],
+  "Mars Stadium":     [-37.570,  143.850],
+  "Victoria Park":    [-37.820,  144.983],
+  "Docklands":        [-37.817,  144.952],
+  // Australian AFL cities
   "Melbourne":        [-37.81,  144.96],
   "Geelong":          [-38.15,  144.36],
   "Sydney":           [-33.87,  151.21],
@@ -107,7 +126,9 @@ const COORDS: Record<string, [number, number]> = {
 function findCoords(city: string): [number, number] | null {
   if (!city) return null;
   const lower = city.toLowerCase();
-  for (const [key, coords] of Object.entries(COORDS)) {
+  // Try longest key match first (venue names beat city names)
+  const entries = Object.entries(COORDS).sort((a, b) => b[0].length - a[0].length);
+  for (const [key, coords] of entries) {
     if (lower.includes(key.toLowerCase())) return coords;
   }
   return null;
