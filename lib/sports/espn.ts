@@ -110,7 +110,7 @@ export async function fetchESPNScoreboard(sport: ESPNSport): Promise<any[]> {
   const url = `${BASE}/${ESPN_PATHS[sport]}/scoreboard?limit=50&dates=${dateRange()}`;
   try {
     const res = await fetch(url, {
-      next: { revalidate: 300 },
+      next: { revalidate: 30 },
       headers: { "User-Agent": "SportsPulse/1.0 personal" },
     });
     console.info("[SportsPulse] fetchESPNScoreboard", { sport, status: res.status, url });
@@ -235,7 +235,7 @@ export async function fetchESPNSummary(sport: ESPNSport, eventId: string): Promi
   try {
     console.info("[SportsPulse] fetchESPNSummary", { sport, eventId, url });
     const res = await fetch(url, {
-      next: { revalidate: 60 },
+      next: { revalidate: 30 },
       headers: { "User-Agent": "SportsPulse/1.0 personal" },
     });
     console.info("[SportsPulse] fetchESPNSummary status", { sport, eventId, status: res.status });

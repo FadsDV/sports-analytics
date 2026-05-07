@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { LiveGameState } from "@/app/api/game/[id]/live/route";
 import { formatAFLKickoff, formatKickoffFull } from "@/lib/utils";
 
@@ -27,13 +27,13 @@ export default function LiveScorePanel({
 }: LiveScorePanelProps) {
   const [data, setData]           = useState<LiveGameState>(initial);
   const [updatedSec, setUpdatedSec] = useState(0);
-  const [fetching, setFetching]   = useState(false);
+  const fetchingRef               = useRef(false);
 
   const isLive = data.status === "live";
 
   const poll = useCallback(async () => {
-    if (fetching) return;
-    setFetching(true);
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
     try {
       const res = await fetch(`/api/game/${gameId}/live`, { cache: "no-store" });
       if (!res.ok) return;
@@ -43,9 +43,9 @@ export default function LiveScorePanel({
     } catch {
       // silently ignore — stale data is fine
     } finally {
-      setFetching(false);
+      fetchingRef.current = false;
     }
-  }, [gameId, fetching]);
+  }, [gameId]);
 
   // Kick off immediate poll on mount when live (get fresh clock from server)
   useEffect(() => {
