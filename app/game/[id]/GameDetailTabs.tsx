@@ -12,7 +12,7 @@ import type { TeamHistoryGame, VenueFilter } from "@/lib/sports/espn";
 import FormPills from "@/components/FormPills";
 import SquadList from "@/components/SquadList";
 import PlayerList from "@/components/afl/PlayerList";
-import AFLDashboard from "./AFLDashboard";
+import AFLDashboard from "@/components/afl/AFLDashboard";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
