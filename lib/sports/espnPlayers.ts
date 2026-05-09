@@ -50,6 +50,7 @@ export interface ESPNInjury {
   position?:  string;
   status:     string; // "Out", "Doubtful", "Questionable", "Suspended"
   note:       string; // "Hamstring", "Groin — Out 2 weeks"
+  headshot?:  string; // AFL CDN portrait URL (resolved server-side for AFL only)
 }
 
 export interface ESPNGameLogEntry {
@@ -121,45 +122,162 @@ export async function fetchPlayerSeasonStats(
 
 // ─── Roster ──────────────────────────────────────────────────────────────────
 
+import {
+  resolveAFLFantasyHeadshot, getAFLFantasyMap, normalizeAFLName,
+  getAFLSquadSync, ESPN_TO_AFL_SQUAD,
+} from "./afl/fantasyMapper";
+import { resolveAFLCDNHeadshotSync, getAFLCDNPortraitUrl } from "./afl/champIDImages";
+
 export async function fetchTeamRoster(
   sportPath: string,
   teamId:    string
 ): Promise<ESPNPlayer[]> {
-  // AFL's /roster endpoint returns empty — use ?enable=roster on the team endpoint instead
   const isAFL = sportPath.includes("australian-football");
   const url = isAFL
     ? `${BASE}/${sportPath}/teams/${teamId}?enable=roster`
     : `${BASE}/${sportPath}/teams/${teamId}/roster`;
+    
   try {
     const res = await fetch(url, {
       next: { revalidate: 3600 },
       headers: { "User-Agent": "SportsPulse/1.0 personal" },
     });
+    
+    console.info("[SportsPulse] Roster fetch", { sportPath, teamId, url });
+    
     if (!res.ok) return [];
     const data = await res.json();
-    // AFL: athletes are nested under team.athletes, deduplicated by id
+    
+    // AFL: use AFL Fantasy squad as the authoritative active-player + team-membership filter.
+    // ESPN roster is used only for player details (jersey, ESPN ID, position).
+    // This prevents retired players, wrong-team players, and historical duplicates.
     if (isAFL) {
       const rawAthletes: any[] = data.team?.athletes ?? [];
-      const seen = new Set<string>();
-      const unique: any[] = [];
-      for (const a of rawAthletes) {
-        if (!seen.has(a.id)) { seen.add(a.id); unique.push(a); }
+      const rawCount = rawAthletes.length;
+
+      // Warm both the name map and squad index in one fetch.
+      const fantasyMap = await getAFLFantasyMap();
+
+      // Look up the authoritative Fantasy squad for this ESPN team ID.
+      const fantasySquadId = ESPN_TO_AFL_SQUAD[teamId];
+      const fantasySquad   = fantasySquadId ? getAFLSquadSync(fantasySquadId) : [];
+
+      // Build a set of normalized names that belong to THIS team's current Fantasy squad.
+      // Players whose Fantasy squad_id is for a different team are excluded — prevents
+      // cross-team contamination (e.g. Jai Culley appearing for wrong team).
+      const fantasySquadNorms = new Set(
+        fantasySquad.map(p => normalizeAFLName(`${p.firstName} ${p.lastName}`))
+      );
+      const useFantasyFilter = fantasySquad.length > 0;
+
+      if (!useFantasyFilter) {
+        console.warn(`[SportsPulse] No Fantasy squad mapping for ESPN team ${teamId} — falling back to ESPN-only filter`);
       }
-      // Filter to players with useful position codes (exclude EMERG as primary sort)
-      const CORE_POSITIONS = new Set(["C","FPR","FPL","FF","CHF","CHB","BPR","BPL","FB","WR","WL","RK","INT","HFF","HBF","HFFR","HFFL","HBFR","HBFL"]);
-      const core = unique.filter(a => CORE_POSITIONS.has(a.position?.name ?? ""));
-      const rest = unique.filter(a => !CORE_POSITIONS.has(a.position?.name ?? ""));
-      return [...core, ...rest].slice(0, 26).map(a => ({
-        id:           a.id ?? "",
-        displayName:  a.displayName ?? a.fullName ?? "Unknown",
-        jersey:       a.jersey,
-        position:     a.position?.name ?? a.position?.displayName ?? "??",
-        positionFull: a.position?.displayName,
-        seasonStats:  {},
+
+      // Build ESPN athlete lookup by normalized name (keeps first occurrence per name).
+      const espnByNorm = new Map<string, any>();
+      const seenIds    = new Set<string>();
+      for (const a of rawAthletes) {
+        if (!a.id) continue;
+        const norm = normalizeAFLName(a.displayName ?? a.fullName ?? "");
+        if (norm && !espnByNorm.has(norm)) espnByNorm.set(norm, a);
+      }
+
+      let finalAthletes: any[];
+
+      if (useFantasyFilter) {
+        // Primary path: iterate Fantasy squad (authoritative), enrich with ESPN details.
+        // Status "not-playing" = delisted/inactive this season — exclude them.
+        const activeSquad = fantasySquad.filter(p => p.status !== "not-playing");
+
+        finalAthletes = activeSquad
+          .map(p => {
+            const norm      = normalizeAFLName(`${p.firstName} ${p.lastName}`);
+            const espnEntry = espnByNorm.get(norm);
+            return {
+              _fantasyPlayer: p,                         // keep for portrait resolution
+              id:             espnEntry?.id ?? "",       // ESPN ID for analytics
+              displayName:    espnEntry?.displayName ?? `${p.firstName} ${p.lastName}`,
+              jersey:         espnEntry?.jersey,
+              position:       espnEntry?.position?.name ?? espnEntry?.position?.displayName ?? "??",
+              positionFull:   espnEntry?.position?.displayName,
+            };
+          })
+          .filter(a => {
+            // Deduplicate by display name (ESPN may have multiple entries per player)
+            const key = a.displayName;
+            if (seenIds.has(key)) return false;
+            seenIds.add(key);
+            return true;
+          });
+
+        const removedFromESPN = rawCount - (rawCount - espnByNorm.size); // deduplicated ESPN count
+        const removedNotInSquad = rawCount; // ESPN athletes not cross-matched (tracked below)
+        const espnMatched  = activeSquad.filter(p =>
+          espnByNorm.has(normalizeAFLName(`${p.firstName} ${p.lastName}`))
+        ).length;
+        const fantasyOnly  = activeSquad.length - espnMatched;
+
+        console.info(
+          `[SportsPulse] AFL roster filtered — team ${teamId} (squad ${fantasySquadId}): ` +
+          `ESPN raw=${rawCount} → Fantasy squad active=${activeSquad.length} → final=${finalAthletes.length} | ` +
+          `ESPN-matched=${espnMatched}, fantasy-only=${fantasyOnly} (no ESPN ID), ` +
+          `ESPN-excluded=${rawCount - espnMatched} (wrong-team/retired/dup)`
+        );
+      } else {
+        // Fallback: ESPN-only filtering when Fantasy squad mapping is unavailable.
+        finalAthletes = rawAthletes.filter(a => {
+          if (!a.id || seenIds.has(a.id)) return false;
+          if (a.active === false) return false;
+          if (a.retired === true || a.status?.type === "retired") return false;
+          const status = a.status?.name?.toLowerCase() ?? "";
+          if (["retired", "former", "inactive", "historical"].includes(status)) return false;
+          seenIds.add(a.id);
+          return true;
+        });
+        console.info(`[SportsPulse] AFL ESPN-fallback roster — team ${teamId}: ${rawCount} → ${finalAthletes.length}`);
+      }
+
+      // Resolve portraits server-side for all final players.
+      const players: ESPNPlayer[] = await Promise.all(finalAthletes.map(async (a) => {
+        const name        = a.displayName;
+        const champId     = a._fantasyPlayer?.champId;   // direct from Fantasy (no name lookup needed)
+        const cdnHeadshot = champId
+          ? getAFLCDNPortraitUrl(String(champId))
+          : resolveAFLCDNHeadshotSync(name);
+        const fantasyHeadshot = (champId || cdnHeadshot) ? null : await resolveAFLFantasyHeadshot(name);
+        const headshot    = cdnHeadshot ?? fantasyHeadshot
+          ?? `https://a.espncdn.com/i/headshots/australian-football/players/full/${a.id}.png`;
+
+        if (!cdnHeadshot && !fantasyHeadshot) {
+          console.debug(`[SportsPulse] AFL roster portrait miss: "${name}"`);
+        }
+
+        return {
+          id:           a.id ?? "",
+          displayName:  name,
+          jersey:       a.jersey,
+          position:     a.position ?? "??",
+          positionFull: a.positionFull,
+          seasonStats:  {},
+          headshot,
+        };
       }));
+
+      const cdnCount = players.filter(p => p.headshot && !p.headshot.includes("espncdn")).length;
+      console.info(
+        `[SportsPulse] AFL roster portrait coverage: ${cdnCount}/${players.length}` +
+        ` (${players.length ? Math.round(cdnCount / players.length * 100) : 0}%) — team ${teamId}`
+      );
+
+      return players;
     }
-    return parseRoster(data);
-  } catch {
+    
+    const results = parseRoster(data);
+    console.info("[SportsPulse] Roster parsed", { sportPath, teamId, count: results.length });
+    return results;
+  } catch (err) {
+    console.error("[SportsPulse] Roster fetch error", { sportPath, teamId, err });
     return [];
   }
 }
@@ -244,6 +362,7 @@ export async function fetchTeamInjuries(
   teamId:    string
 ): Promise<ESPNInjury[]> {
   const url = `${BASE}/${sportPath}/teams/${teamId}/injuries`;
+  const isAFL = sportPath.includes("australian-football");
   try {
     const res = await fetch(url, {
       next: { revalidate: 900 },
@@ -252,7 +371,24 @@ export async function fetchTeamInjuries(
     console.info("[SportsPulse] fetchTeamInjuries", { sportPath, teamId, status: res.status, url });
     if (!res.ok) return [];
     const data = await res.json();
-    return parseInjuries(data);
+    const injuries = parseInjuries(data);
+
+    if (isAFL && injuries.length > 0) {
+      const map = await getAFLFantasyMap();
+      let matched = 0;
+      for (const inj of injuries) {
+        const champId = map.get(normalizeAFLName(inj.playerName));
+        if (champId) {
+          inj.headshot = getAFLCDNPortraitUrl(String(champId));
+          matched++;
+        } else {
+          console.debug(`[SportsPulse] AFL injury portrait miss: "${inj.playerName}"`);
+        }
+      }
+      console.info(`[SportsPulse] AFL injury portrait coverage: ${matched}/${injuries.length} — team ${teamId}`);
+    }
+
+    return injuries;
   } catch {
     return [];
   }

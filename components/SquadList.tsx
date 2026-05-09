@@ -1,7 +1,12 @@
-/* eslint-disable @next/next/no-img-element */
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import { ESPNPlayer, ESPNInjury } from "@/lib/sports/espnPlayers";
 import { Sport } from "@/lib/types";
+import PlayerDrawer from "./afl/PlayerDrawer";
+import PlayerAvatar from "./afl/PlayerAvatar";
+import { AFLPlayerAnalyticsResult } from "@/lib/sports/afl/players/types";
 
 // ─── Injury badge colours ───────────────────────────────────────────────────
 
@@ -68,107 +73,6 @@ function firstKeyStat(stats: Record<string, string | number>): string | null {
   return first ? `${first[0]} ${first[1]}` : null;
 }
 
-// ─── Sub-component: single player row ───────────────────────────────────────
-
-function PlayerRow({
-  player,
-  injury,
-  sport,
-  gameId,
-}: {
-  player: ESPNPlayer;
-  injury:  ESPNInjury | undefined;
-  sport:   Sport;
-  gameId?: string;
-}) {
-  console.info("[SportsPulse] PlayerRow route", {
-    sport,
-    gameId: gameId ?? null,
-    playerId: player.id ?? null,
-    playerName: player.displayName,
-  });
-
-  const badgeCls = injury?.status
-    ? (INJURY_COLORS[injury.status] ?? INJURY_COLORS.Questionable)
-    : null;
-
-  const keyStat = firstKeyStat(player.seasonStats);
-  const initials = player.displayName
-    .split(" ")
-    .map((w) => w[0])
-    .filter(Boolean)
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
-  const href = player.id
-    ? `/player/${sport}/${player.id}${gameId ? `?from=${gameId}` : ""}`
-    : "#";
-
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-2.5 py-2 px-2 rounded-lg hover:bg-[#1e293b]/70 transition-colors group"
-    >
-      {/* Headshot circle */}
-      <div className="relative w-8 h-8 rounded-full overflow-hidden shrink-0 bg-[#1e293b] flex items-center justify-center">
-        <span className="text-[10px] font-bold text-gray-500 select-none">{initials}</span>
-        {player.headshot && (
-          <img
-            src={player.headshot}
-            alt={player.displayName}
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-        )}
-      </div>
-
-      {/* Jersey number */}
-      {player.jersey && (
-        <span className="text-[11px] text-gray-600 font-mono w-5 shrink-0 text-right">
-          {player.jersey}
-        </span>
-      )}
-
-      {/* Name + injury */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span
-            className={`text-sm font-medium truncate transition-colors ${
-              injury?.status === "Out" || injury?.status === "Suspended"
-                ? "text-gray-500 line-through"
-                : "text-white group-hover:text-[#4361ee]"
-            }`}
-          >
-            {player.displayName}
-          </span>
-          {badgeCls && injury?.status && (
-            <span
-              className={`text-[10px] font-semibold px-1.5 py-px rounded border shrink-0 ${badgeCls}`}
-            >
-              {injury.status}
-            </span>
-          )}
-        </div>
-        {injury?.note && (
-          <div className="text-[11px] text-gray-600 truncate">{injury.note}</div>
-        )}
-      </div>
-
-      {/* Position + key stat */}
-      <div className="shrink-0 text-right">
-        <div className="text-xs font-semibold text-gray-500">{player.position}</div>
-        {keyStat && (
-          <div className="text-[10px] text-gray-600 mt-0.5">{keyStat}</div>
-        )}
-      </div>
-
-      <span className="text-gray-700 group-hover:text-gray-400 transition-colors ml-0.5 text-xs">
-        →
-      </span>
-    </Link>
-  );
-}
-
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function SquadList({
@@ -176,12 +80,57 @@ export default function SquadList({
   injuries,
   sport,
   gameId,
+  teamId,
+  opponent,
+  matchContext = "home"
 }: {
   players:   ESPNPlayer[];
   injuries:  ESPNInjury[];
   sport:     Sport;
   gameId?:   string;
+  teamId?:   string;
+  opponent?: string;
+  matchContext?: "home" | "away";
 }) {
+  const [selectedPlayer, setSelectedPlayer] = useState<ESPNPlayer | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [drawerData, setDrawerData] = useState<AFLPlayerAnalyticsResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const isAFL = sport === "afl";
+
+  async function handlePlayerClick(player: ESPNPlayer) {
+    if (!isAFL) return;
+    
+    setSelectedPlayer(player);
+    setLoading(true);
+    setDrawerData(null);
+    setError(null);
+
+    try {
+      const url = `/api/afl/player/${player.id}?homeAway=${matchContext}&opponent=${encodeURIComponent(opponent || "")}&teamId=${encodeURIComponent(teamId || "")}&name=${encodeURIComponent(player.displayName)}&position=${encodeURIComponent(player.position)}&jersey=${encodeURIComponent(player.jersey ?? "")}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        setError("Could not load player data.");
+        setLoading(false);
+        return;
+      }
+      const data: AFLPlayerAnalyticsResult = await res.json();
+      setDrawerData(data);
+    } catch {
+      setError("Failed to fetch player analytics.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleClose() {
+    setSelectedPlayer(null);
+    setDrawerData(null);
+    setError(null);
+    setLoading(false);
+  }
+
   if (players.length === 0) {
     return (
       <p className="text-sm text-gray-500 py-2">
@@ -190,7 +139,7 @@ export default function SquadList({
     );
   }
 
-  // Build injury lookup by player ID and name
+  // Build injury lookup
   const injuryById   = new Map<string, ESPNInjury>();
   const injuryByName = new Map<string, ESPNInjury>();
   for (const inj of injuries) {
@@ -201,54 +150,23 @@ export default function SquadList({
   const getInjury = (p: ESPNPlayer) =>
     injuryById.get(p.id) ?? injuryByName.get(p.displayName.toLowerCase());
 
-  // Sort players by position group
+  // Sort and Group
   const sorted = [...players].sort(
     (a, b) => positionRank(sport, a.position) - positionRank(sport, b.position)
   );
 
-  // Group into position sections
   type Group = { label: string; rank: number; players: ESPNPlayer[] };
   const groups: Group[] = [];
-
   for (const p of sorted) {
     const rank  = positionRank(sport, p.position);
     const label = getGroupLabel(sport, rank);
     const last  = groups[groups.length - 1];
-
-    if (!last || last.rank !== rank) {
-      groups.push({ label, rank, players: [p] });
-    } else {
-      last.players.push(p);
-    }
+    if (!last || last.rank !== rank) groups.push({ label, rank, players: [p] });
+    else last.players.push(p);
   }
-
-  // Injury summary counts (for header chip)
-  const outCount = injuries.filter((i) =>
-    i.status === "Out" || i.status === "Suspended"
-  ).length;
-  const doubtfulCount = injuries.filter((i) =>
-    i.status === "Doubtful" || i.status === "Questionable"
-  ).length;
 
   return (
     <div>
-      {/* Quick injury count */}
-      {(outCount > 0 || doubtfulCount > 0) && (
-        <div className="flex gap-2 mb-3 flex-wrap">
-          {outCount > 0 && (
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded border bg-red-900/40 text-red-400 border-red-800/60">
-              {outCount} Out / Suspended
-            </span>
-          )}
-          {doubtfulCount > 0 && (
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded border bg-yellow-900/40 text-yellow-400 border-yellow-800/60">
-              {doubtfulCount} Doubtful / Questionable
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Position groups */}
       <div className="space-y-3">
         {groups.map((group) => (
           <div key={group.rank}>
@@ -256,19 +174,96 @@ export default function SquadList({
               {group.label}
             </div>
             <div className="space-y-0.5">
-              {group.players.map((player) => (
-                <PlayerRow
-                  key={player.id}
-                  player={player}
-                  injury={getInjury(player)}
-                  sport={sport}
-                  gameId={gameId}
-                />
-              ))}
+              {group.players.map((player) => {
+                const injury = getInjury(player);
+                const badgeCls = injury?.status ? (INJURY_COLORS[injury.status] ?? INJURY_COLORS.Questionable) : null;
+                const keyStat = firstKeyStat(player.seasonStats);
+
+                if (isAFL) {
+                  return (
+                    <button
+                      key={player.id}
+                      onClick={() => handlePlayerClick(player)}
+                      className="w-full flex items-center gap-2.5 py-2 px-2 rounded-lg hover:bg-[#1e293b]/70 transition-colors group text-left"
+                    >
+                      <PlayerAvatar src={player.headshot} name={player.displayName} size={32} />
+                      {player.jersey && <span className="text-[11px] text-gray-600 font-mono w-5 shrink-0 text-right">{player.jersey}</span>}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-sm font-medium truncate transition-colors ${injury?.status === "Out" ? "text-gray-500 line-through" : "text-white group-hover:text-[#3B82F6]"}`}>
+                            {player.displayName}
+                          </span>
+                          {badgeCls && injury?.status && <span className={`text-[10px] font-semibold px-1.5 py-px rounded border shrink-0 ${badgeCls}`}>{injury.status}</span>}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-xs font-semibold text-gray-500">{player.position}</div>
+                      </div>
+                    </button>
+                  );
+                }
+
+                return (
+                  <Link
+                    key={player.id}
+                    href={`/player/${sport}/${player.id}${gameId ? `?from=${gameId}` : ""}`}
+                    className="flex items-center gap-2.5 py-2 px-2 rounded-lg hover:bg-[#1e293b]/70 transition-colors group"
+                  >
+                    <div className="relative w-8 h-8 rounded-full overflow-hidden shrink-0 bg-[#1e293b] flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-gray-500">{player.displayName[0]}</span>
+                      {player.headshot && <img src={player.headshot} alt="" className="absolute inset-0 w-full h-full object-cover" />}
+                    </div>
+                    {player.jersey && <span className="text-[11px] text-gray-600 font-mono w-5 shrink-0 text-right">{player.jersey}</span>}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-sm font-medium truncate transition-colors ${injury?.status === "Out" ? "text-gray-500 line-through" : "text-white group-hover:text-[#4361ee]"}`}>
+                          {player.displayName}
+                        </span>
+                        {badgeCls && injury?.status && <span className={`text-[10px] font-semibold px-1.5 py-px rounded border shrink-0 ${badgeCls}`}>{injury.status}</span>}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-xs font-semibold text-gray-500">{player.position}</div>
+                      {keyStat && <div className="text-[10px] text-gray-600 mt-0.5">{keyStat}</div>}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </div>
         ))}
       </div>
+
+      {/* Drawer */}
+      {selectedPlayer && isAFL && (
+        <>
+          {loading && (
+            <>
+              <div className="fixed inset-0 bg-black/80 z-[60] backdrop-blur-sm" />
+              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="w-10 h-10 border-2 border-[#3B82F6] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                  <p className="text-xs font-bold text-[#6B7280] uppercase tracking-widest">Loading Intel: {selectedPlayer.displayName}</p>
+                </div>
+              </div>
+            </>
+          )}
+          {error && !loading && (
+            <>
+              <div className="fixed inset-0 bg-black/80 z-[60]" onClick={handleClose} />
+              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center">
+                <div className="text-center px-10">
+                  <p className="text-[#EF4444] font-bold mb-4 uppercase tracking-tight">{error}</p>
+                  <button onClick={handleClose} className="text-xs font-black text-[#6B7280] hover:text-white underline uppercase tracking-widest">Close Link</button>
+                </div>
+              </div>
+            </>
+          )}
+          {drawerData && !loading && (
+            <PlayerDrawer data={drawerData} onClose={handleClose} />
+          )}
+        </>
+      )}
     </div>
   );
 }

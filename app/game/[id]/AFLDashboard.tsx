@@ -8,7 +8,6 @@ import type { TeamHistoryGame, VenueFilter } from "@/lib/sports/espn";
 import FormPills from "@/components/FormPills";
 import PlayerList from "@/components/afl/PlayerList";
 import PlayerAvatar from "@/components/afl/PlayerAvatar";
-import { aflHeadshotUrl } from "@/lib/aflPlayerImage";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -485,7 +484,7 @@ function AFLPreMatch({
                   {out.map((p, i) => (
                     <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/[0.03] last:border-0">
                       <PlayerAvatar
-                        src={p.playerId ? aflHeadshotUrl(p.playerId) : undefined}
+                        src={p.headshot}
                         name={p.playerName}
                         size={22}
                       />
@@ -496,7 +495,7 @@ function AFLPreMatch({
                   {doubtful.map((p, i) => (
                     <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/[0.03] last:border-0">
                       <PlayerAvatar
-                        src={p.playerId ? aflHeadshotUrl(p.playerId) : undefined}
+                        src={p.headshot}
                         name={p.playerName}
                         size={22}
                       />
@@ -604,7 +603,7 @@ function AFLLive({
                       return (
                         <div key={i} className="flex items-center py-1.5 border-b border-white/[0.03] last:border-0 gap-2">
                           <span className="text-[10px] text-[#374151] tabular-nums w-3 shrink-0 text-center">{i + 1}</span>
-                          <PlayerAvatar name={row.player} size={22} />
+                          <PlayerAvatar src={(row as any).headshot} name={row.player} size={22} />
                           <span className="text-xs text-[#E5E7EB] font-medium flex-1 truncate">{row.player}</span>
                           <div className="flex items-center gap-2 shrink-0">
                             {KEY_STATS.filter(k => row.stats[k] != null).slice(0, 3).map(k => (
@@ -644,7 +643,7 @@ function AFLLive({
                     </div>
                     {scorers.map((row, i) => (
                       <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/[0.03] last:border-0">
-                        <PlayerAvatar name={row.player} size={22} />
+                        <PlayerAvatar src={(row as any).headshot} name={row.player} size={22} />
                         <span className="text-xs text-[#E5E7EB] font-medium flex-1 truncate">{row.player}</span>
                         <span className="text-xs font-bold text-[#22C55E] tabular-nums shrink-0">
                           {row.stats["G"]}g {row.stats["B"] ?? 0}b
@@ -720,7 +719,7 @@ function AFLLive({
                             <tr key={i} className="border-b border-white/[0.03] last:border-0 hover:bg-white/[0.02]">
                               <td className="py-1.5 pr-2">
                                 <div className="flex items-center gap-1.5">
-                                  <PlayerAvatar name={r.player} size={20} />
+                                  <PlayerAvatar src={r.headshot} name={r.player} size={20} />
                                   <span className="text-[#D1D5DB] truncate max-w-[80px]">{r.player}</span>
                                 </div>
                               </td>
@@ -837,7 +836,7 @@ function AFLLive({
                   {out.map((p, i) => (
                     <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/[0.03] last:border-0">
                       <PlayerAvatar
-                        src={p.playerId ? aflHeadshotUrl(p.playerId) : undefined}
+                        src={p.headshot}
                         name={p.playerName}
                         size={20}
                       />
@@ -848,7 +847,7 @@ function AFLLive({
                   {doubtful.map((p, i) => (
                     <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/[0.03] last:border-0">
                       <PlayerAvatar
-                        src={p.playerId ? aflHeadshotUrl(p.playerId) : undefined}
+                        src={p.headshot}
                         name={p.playerName}
                         size={20}
                       />

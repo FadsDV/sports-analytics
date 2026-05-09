@@ -87,7 +87,7 @@ async function fetchSummary(gameId: string): Promise<any | null> {
 function extractPlayerStats(
   summary: any,
   athleteId: string,
-): Record<string, number | null> | null {
+): { stats: Record<string, number | null>; position?: string } | null {
   const playersData: any[] = summary?.boxscore?.players ?? [];
 
   for (const teamData of playersData) {
@@ -102,7 +102,10 @@ function extractPlayerStats(
           const n   = Number(raw);
           map[label] = raw != null && raw !== "" && !isNaN(n) ? n : null;
         });
-        return map;
+        return { 
+          stats: map, 
+          position: entry.athlete?.position?.abbreviation || entry.athlete?.position?.name 
+        };
       }
     }
   }
@@ -138,11 +141,11 @@ export async function fetchAFLPlayerHistory(
     seasons.map(year => fetchScheduleForSeason(teamId, year))
   );
 
-  // 2. Collect completed games, newest first, capped at 15
+  // 2. Collect completed games, newest first, capped at 25
   const allGames: ScheduleGame[] = schedulesBySeason
     .flatMap(events => extractCompletedGames(events, teamId))
     .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 15);
+    .slice(0, 25);
 
   if (allGames.length === 0) return [];
 
@@ -162,9 +165,10 @@ export async function fetchAFLPlayerHistory(
     const sum = summaries[i];
     if (!sum) continue;
 
-    const stats = extractPlayerStats(sum, athleteId);
-    if (!stats) continue;    // Player didn't appear in this game
+    const res = extractPlayerStats(sum, athleteId);
+    if (!res) continue;    // Player didn't appear in this game
 
+    const { stats, position } = res;
     const kicks     = stats["K"]  ?? null;
     const handballs = stats["H"]  ?? null;
     const disposals = stats["D"]  ?? (kicks != null && handballs != null ? kicks + handballs : null);
@@ -191,6 +195,7 @@ export async function fetchAFLPlayerHistory(
       freesFor:       stats["FF"] ?? null,
       freesAgainst:   stats["FA"] ?? null,
       fantasyScore:   fantasy,
+      positionPlayed: position,
       raw:            stats,
     });
   }

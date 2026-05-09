@@ -5,6 +5,8 @@
  */
 
 import { FormResult, Game, Team, Player, BoxScore, H2HGame } from "@/lib/types";
+import { getAFLFantasyMap, normalizeAFLName } from "./afl/fantasyMapper";
+import { getAFLCDNPortraitUrl } from "./afl/champIDImages";
 
 const BASE = "https://site.api.espn.com/apis/site/v2/sports";
 
@@ -251,13 +253,14 @@ export async function fetchESPNSummary(sport: ESPNSport, eventId: string, revali
       playerSections: Array.isArray(raw?.boxscore?.players) ? raw.boxscore.players.length : null,
       teamSections: Array.isArray(raw?.boxscore?.teams) ? raw.boxscore.teams.length : null,
     });
-    return parseSummary(raw, sport);
+    const fantasyMap = sport === "afl" ? await getAFLFantasyMap() : null;
+    return parseSummary(raw, sport, fantasyMap);
   } catch {
     return {};
   }
 }
 
-function parseSummary(raw: any, sport: ESPNSport): ESPNSummary {
+function parseSummary(raw: any, sport: ESPNSport, fantasyMap: Map<string, number> | null = null): ESPNSummary {
   const result: ESPNSummary = {};
 
   // ── Team IDs (needed for schedule lookups) ────────────────────────
@@ -304,12 +307,12 @@ function parseSummary(raw: any, sport: ESPNSport): ESPNSummary {
   // ── Box score ─────────────────────────────────────────────────────
   const bsPlayers = Array.isArray(raw?.boxscore?.players) ? raw.boxscore.players : [];
   if (bsPlayers.length > 0) {
-    result.boxScore = parseBoxScore(bsPlayers, sport);
+    result.boxScore = parseBoxScore(bsPlayers, sport, fantasyMap);
   } else if (sport === "soccer" && Array.isArray(raw?.rosters) && raw.rosters.length > 0) {
     // ESPN soccer uses rosters instead of boxscore.players
     result.boxScore = parseSoccerRostersBoxScore(raw.rosters);
   } else if (raw?.boxscore) {
-    result.boxScore = parseBoxScore(bsPlayers, sport);
+    result.boxScore = parseBoxScore(bsPlayers, sport, fantasyMap);
   }
 
   const bsTeams = raw.boxscore?.teams ?? [];
@@ -397,12 +400,12 @@ function mapESPNWeather(val: string): string {
   return "Clear";
 }
 
-function parseBoxScore(bsPlayers: any[], sport: ESPNSport): BoxScore | undefined {
+function parseBoxScore(bsPlayers: any[], sport: ESPNSport, fantasyMap: Map<string, number> | null = null): BoxScore | undefined {
   if (sport === "basketball") {
     return parseBasketballBoxScore(bsPlayers);
   }
   if (sport === "afl") {
-    return parseAFLBoxScore(bsPlayers);
+    return parseAFLBoxScore(bsPlayers, fantasyMap);
   }
 
   // Each entry in bsPlayers is { team: {...}, statistics: [{ names: [], athletes: [] }] }
@@ -513,7 +516,7 @@ function parseBasketballBoxScore(teamSections: any[]): BoxScore | undefined {
   };
 }
 
-function parseAFLBoxScore(teamSections: any[]): BoxScore | undefined {
+function parseAFLBoxScore(teamSections: any[], fantasyMap: Map<string, number> | null = null): BoxScore | undefined {
   // ESPN AFL boxscore: statistics[0].labels = ['D','G','B','T','M','FF','FA','CP','UP','K','H','CM','UM','DE','SI','GA','I50','T50','M50','GACC','HO',...]
   // We display the key AFL stats that fans care about
   const KEY_STATS = ["D", "G", "B", "T", "M", "HO", "K", "H"];
@@ -525,12 +528,29 @@ function parseAFLBoxScore(teamSections: any[]): BoxScore | undefined {
     const keyIndices = KEY_STATS.map((k) => allLabels.indexOf(k));
     return (statGroup.athletes ?? [])
       .filter((a: any) => a.active !== false)
-      .map((a: any) => ({
-        player: a.athlete?.displayName ?? "Unknown",
-        stats: Object.fromEntries(
-          KEY_STATS.map((k, ki) => [k, a.stats?.[keyIndices[ki]] ?? null])
-        ),
-      }))
+      .map((a: any) => {
+        const name = a.athlete?.displayName ?? "Unknown";
+        const normalized = normalizeAFLName(name);
+        const champId = fantasyMap?.get(normalized);
+        const headshot = champId
+          ? getAFLCDNPortraitUrl(String(champId))
+          : a.athlete?.id ? `https://a.espncdn.com/i/headshots/australian-football/players/full/${a.athlete.id}.png` : undefined;
+
+        if (!champId) {
+          console.debug(`[SportsPulse] AFL boxscore portrait miss: "${name}" (normalized: "${normalized}")`);
+        }
+
+        return {
+          player: name,
+          playerId: a.athlete?.id ? String(a.athlete.id) : undefined,
+          position: a.athlete?.position?.abbreviation || a.athlete?.position?.name,
+          jersey: a.athlete?.jersey,
+          headshot,
+          stats: Object.fromEntries(
+            KEY_STATS.map((k, ki) => [k, a.stats?.[keyIndices[ki]] ?? null])
+          ),
+        };
+      })
       .sort((a: any, b: any) => Number(b.stats.D ?? 0) - Number(a.stats.D ?? 0));
   }
 
@@ -539,6 +559,11 @@ function parseAFLBoxScore(teamSections: any[]): BoxScore | undefined {
   const home = extractRows(sections[0]);
   const away = extractRows(sections[1] ?? sections[0]);
   if (!home.length && !away.length) return undefined;
+
+  const total = home.length + away.length;
+  const matched = [...home, ...away].filter(r => r.headshot && !r.headshot.includes("espncdn")).length;
+  console.info(`[SportsPulse] AFL boxscore portrait coverage: ${matched}/${total} (${total ? Math.round(matched / total * 100) : 0}%)`);
+
   return { statHeaders: KEY_STATS, home, away };
 }
 

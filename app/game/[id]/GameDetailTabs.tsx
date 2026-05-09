@@ -13,6 +13,10 @@ import FormPills from "@/components/FormPills";
 import SquadList from "@/components/SquadList";
 import PlayerList from "@/components/afl/PlayerList";
 import AFLDashboard from "@/components/afl/AFLDashboard";
+import PlayerDrawer from "@/components/afl/PlayerDrawer";
+import PlayerAvatar from "@/components/afl/PlayerAvatar";
+
+import type { AFLPlayerAnalyticsResult } from "@/lib/sports/afl/players/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -191,9 +195,59 @@ function CompactBoxScore({ boxScore, homeTeam, awayTeam }: {
   );
 }
 
-function AFLPlayerList({ rows, headers }: { rows: BoxScoreRow[]; headers: string[] }) {
+function AFLPlayerList({ 
+  rows, 
+  headers,
+  teamId,
+  opponent,
+  matchContext
+}: { 
+  rows: BoxScoreRow[]; 
+  headers: string[];
+  teamId?: string;
+  opponent?: string;
+  matchContext?: "home" | "away";
+}) {
+  const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; name: string; position?: string; jersey?: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [drawerData, setDrawerData] = useState<AFLPlayerAnalyticsResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   const showHeaders = headers.slice(0, 7);
   if (!rows.length) return <p className="text-xs text-[#374151]">No data available.</p>;
+
+  async function handlePlayerClick(row: BoxScoreRow) {
+    if (!row.playerId) return;
+    
+    setSelectedPlayer({ id: row.playerId, name: row.player, position: row.position, jersey: row.jersey });
+    setLoading(true);
+    setDrawerData(null);
+    setError(null);
+
+    try {
+      const url = `/api/afl/player/${row.playerId}?homeAway=${matchContext}&opponent=${encodeURIComponent(opponent || "")}&teamId=${encodeURIComponent(teamId || "")}&name=${encodeURIComponent(row.player)}&position=${encodeURIComponent(row.position || "")}&jersey=${encodeURIComponent(row.jersey || "")}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        setError("Could not load player data.");
+        setLoading(false);
+        return;
+      }
+      const data: AFLPlayerAnalyticsResult = await res.json();
+      setDrawerData(data);
+    } catch {
+      setError("Failed to fetch player analytics.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleClose() {
+    setSelectedPlayer(null);
+    setDrawerData(null);
+    setError(null);
+    setLoading(false);
+  }
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs min-w-[360px]">
@@ -205,8 +259,22 @@ function AFLPlayerList({ rows, headers }: { rows: BoxScoreRow[]; headers: string
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} className="border-b border-white/[0.03] last:border-0 hover:bg-white/[0.03]">
-              <td className="py-1.5 pr-2 text-white truncate max-w-[120px]">{r.player}</td>
+            <tr 
+              key={i} 
+              className={`border-b border-white/[0.03] last:border-0 hover:bg-white/[0.03] transition-colors ${r.playerId ? "cursor-pointer" : ""}`}
+              onClick={() => handlePlayerClick(r)}
+            >
+              <td className="py-1.5 pr-2">
+                <div className="flex items-center gap-1.5">
+                  <PlayerAvatar
+                    src={r.headshot}
+                    name={r.player}
+                    size={20}
+                  />
+                  <span className="text-white truncate max-w-[120px] font-medium group-hover:text-[#3B82F6]">{r.player}</span>
+                  {r.playerId && <span className="text-[9px] text-[#374151]">INTEL</span>}
+                </div>
+              </td>
               {showHeaders.map(h => {
                 const v = r.stats[h];
                 const hi = h === "D" && Number(v) >= 25;
@@ -220,6 +288,37 @@ function AFLPlayerList({ rows, headers }: { rows: BoxScoreRow[]; headers: string
           ))}
         </tbody>
       </table>
+
+      {/* Drawer */}
+      {selectedPlayer && (
+        <>
+          {loading && (
+            <>
+              <div className="fixed inset-0 bg-black/80 z-[60] backdrop-blur-sm" />
+              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="w-10 h-10 border-2 border-[#3B82F6] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                  <p className="text-xs font-bold text-[#6B7280] uppercase tracking-widest">Loading Intel: {selectedPlayer.name}</p>
+                </div>
+              </div>
+            </>
+          )}
+          {error && !loading && (
+            <>
+              <div className="fixed inset-0 bg-black/80 z-[60]" onClick={handleClose} />
+              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center">
+                <div className="text-center px-10">
+                  <p className="text-[#EF4444] font-bold mb-4 uppercase tracking-tight">{error}</p>
+                  <button onClick={handleClose} className="text-xs font-black text-[#6B7280] hover:text-white underline uppercase tracking-widest">Close</button>
+                </div>
+              </div>
+            </>
+          )}
+          {drawerData && !loading && (
+            <PlayerDrawer data={drawerData} onClose={handleClose} />
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -1080,22 +1179,51 @@ export default function GameDetailTabs({
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Section title={`${homeTeam.shortName} — Players`}>
               {isAFL && boxScore ? (
-                <AFLPlayerList rows={boxScore.home} headers={boxScore.statHeaders} />
+                <AFLPlayerList 
+                  rows={boxScore.home} 
+                  headers={boxScore.statHeaders} 
+                  teamId={homeTeam.espnId}
+                  opponent={awayTeam.name}
+                  matchContext="home"
+                />
               ) : sofascore?.lineups ? (
                 <SofascoreList players={sofascore.lineups.home} sport={sport} />
               ) : (
-                <SquadList players={homeSquad} injuries={homeInjuries} sport={game.sport} gameId={game.id} />
+                <SquadList 
+                  players={homeSquad} 
+                  injuries={homeInjuries} 
+                  sport={game.sport} 
+                  gameId={game.id}
+                  teamId={homeTeam.espnId}
+                  opponent={awayTeam.name}
+                  matchContext="home"
+                />
               )}
             </Section>
             <Section title={`${awayTeam.shortName} — Players`}>
               {isAFL && boxScore ? (
-                <AFLPlayerList rows={boxScore.away} headers={boxScore.statHeaders} />
+                <AFLPlayerList 
+                  rows={boxScore.away} 
+                  headers={boxScore.statHeaders} 
+                  teamId={awayTeam.espnId}
+                  opponent={homeTeam.name}
+                  matchContext="away"
+                />
               ) : sofascore?.lineups ? (
                 <SofascoreList players={sofascore.lineups.away} sport={sport} />
               ) : (
-                <SquadList players={awaySquad} injuries={awayInjuries} sport={game.sport} gameId={game.id} />
+                <SquadList 
+                  players={awaySquad} 
+                  injuries={awayInjuries} 
+                  sport={game.sport} 
+                  gameId={game.id}
+                  teamId={awayTeam.espnId}
+                  opponent={homeTeam.name}
+                  matchContext="away"
+                />
               )}
             </Section>
+
           </div>
         </div>
       )}

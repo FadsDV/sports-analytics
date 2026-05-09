@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchPlayerProfile } from "@/lib/sports/espnPlayers";
+import { fetchPlayerProfile, fetchTeamInjuries } from "@/lib/sports/espnPlayers";
 import { fetchAFLPlayerHistory } from "@/lib/sports/afl/players/history";
 import { computeAFLPlayerAnalytics } from "@/lib/sports/afl/players/analytics";
 
@@ -26,14 +26,17 @@ export async function GET(
     const currentYear = new Date().getFullYear();
     const seasons     = [currentYear, currentYear - 1];
 
-    const [games, profile] = await Promise.all([
+    const [games, profile, injuries] = await Promise.all([
       fetchAFLPlayerHistory(teamId, athleteId, seasons),
       fetchPlayerProfile(SPORT_PATH, athleteId),
+      fetchTeamInjuries(SPORT_PATH, teamId),
     ]);
 
     if (games.length === 0) {
       return NextResponse.json({ error: "no game data found" }, { status: 404 });
     }
+
+    const playerInjury = injuries.find(i => i.playerId === athleteId || i.playerName.toLowerCase() === (profile?.name || nameHint).toLowerCase());
 
     const analytics = computeAFLPlayerAnalytics({
       playerId:     athleteId,
@@ -45,6 +48,8 @@ export async function GET(
       matchContext: homeAway,
       opponent,
       seasons,
+      injuryContext: playerInjury ? { status: playerInjury.status, note: playerInjury.note } : undefined,
+      totalGamesScheduled: undefined, // Could be derived from team schedule if needed
     });
 
     return NextResponse.json(analytics, {

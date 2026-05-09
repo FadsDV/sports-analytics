@@ -19,6 +19,7 @@ export interface AFLPlayerGame {
   freesFor: number | null;
   freesAgainst: number | null;
   fantasyScore: number | null;
+  positionPlayed?: string; // Position played in this specific game
   raw: Record<string, string | number | null>;
 }
 
@@ -44,13 +45,23 @@ export interface AFLPlayerAnalyticsResult {
   matchContext: "home" | "away";
   opponent: string;
   contextGames: AFLPlayerGame[];
+  fullSeasonGames: AFLPlayerGame[]; // Added for full season log
   seasonAvg: AFLStatLine;
   last5Context: AFLPlayerGame[];
-  vsOpponent: { games: AFLPlayerGame[]; avg: AFLStatLine | null };
+  vsOpponent: { 
+    games: AFLPlayerGame[]; 
+    avg: AFLStatLine | null;
+    lastMatchup?: AFLPlayerGame; // Added for specific last matchup highlight
+  };
   homeAvg: AFLStatLine | null;
   awayAvg: AFLStatLine | null;
   disposalTrend: (number | null)[];
   goalTrend: (number | null)[];
   tackleTrend: (number | null)[];
   fantasyTrend: (number | null)[];
+  injuryContext?: {
+    status: string;
+    note: string;
+  };
+  gamesMissedCount: number; // Added for games missed calculation
 }

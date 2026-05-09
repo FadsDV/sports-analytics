@@ -1,6 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Allow ESPN CDN logos loaded via plain <img> tags
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "a.espncdn.com" },
@@ -8,6 +7,7 @@ const nextConfig = {
       { protocol: "https", hostname: "a2.espncdn.com" },
       { protocol: "https", hostname: "a3.espncdn.com" },
       { protocol: "https", hostname: "a4.espncdn.com" },
+      { protocol: "https", hostname: "s.afl.com.au" },
     ],
   },
 };
