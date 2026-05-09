@@ -75,9 +75,9 @@ export default function LiveScorePanel({
   if (status === "upcoming") {
     return (
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-widest text-[#4B5563] mb-2">Pre-Match</div>
+        <div className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280] mb-2">Pre-Match</div>
         <div className="text-3xl font-bold text-[#1e3a5f]">vs</div>
-        <div className="text-xs text-[#3B82F6] mt-2">
+        <div className="text-sm font-medium text-[#3B82F6] mt-2">
           {isAFL ? formatAFLKickoff(kickoff, venue) : formatKickoffFull(kickoff)}
         </div>
       </div>
@@ -98,20 +98,20 @@ export default function LiveScorePanel({
       {(isBasketball || isAFL) && lineScores && lineScores.home.length > 0 && (
         <div className="mt-3 inline-block">
           <div
-            className="grid gap-x-3 text-[11px] tabular-nums"
+            className="grid gap-x-3 text-xs tabular-nums"
             style={{ gridTemplateColumns: `auto repeat(${lineScores.home.length}, 1fr)` }}
           >
             <span />
             {lineScores.home.map((_, i) => (
-              <span key={i} className="text-center text-[#374151]">Q{i + 1}</span>
+              <span key={i} className="text-center text-[#4B5563] font-medium">Q{i + 1}</span>
             ))}
-            <span className="text-right text-[#9CA3AF] pr-1">{homeShortName}</span>
+            <span className="text-right text-[#9CA3AF] pr-1 font-medium">{homeShortName}</span>
             {lineScores.home.map((q, i) => (
-              <span key={i} className="text-center text-[#E5E7EB]">{q}</span>
+              <span key={i} className="text-center text-[#E5E7EB] font-semibold">{q}</span>
             ))}
-            <span className="text-right text-[#9CA3AF] pr-1">{awayShortName}</span>
+            <span className="text-right text-[#9CA3AF] pr-1 font-medium">{awayShortName}</span>
             {lineScores.away.map((q, i) => (
-              <span key={i} className="text-center text-[#E5E7EB]">{q}</span>
+              <span key={i} className="text-center text-[#E5E7EB] font-semibold">{q}</span>
             ))}
           </div>
         </div>
@@ -120,14 +120,14 @@ export default function LiveScorePanel({
       {/* Live status + updated timestamp */}
       {status === "live" && (
         <div className="mt-2 flex flex-col items-center gap-0.5">
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-xs font-bold text-red-400">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_6px_rgba(239,68,68,0.6)]" />
+            <span className="text-sm font-black text-red-400 tracking-wide">
               {period ? `Q${period}` : "LIVE"}
-              {displayClock ? ` ${displayClock}` : ""}
+              {displayClock ? ` · ${displayClock}` : ""}
             </span>
           </div>
-          <span className="text-[10px] text-[#374151]">
+          <span className="text-xs text-[#6B7280] mt-0.5">
             Updated {updatedSec}s ago
           </span>
         </div>

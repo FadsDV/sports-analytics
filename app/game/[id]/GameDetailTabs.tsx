@@ -4,6 +4,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { Game, Team, H2HGame, BoxScore, BoxScoreRow, Insight } from "@/lib/types";
+import type { AFLInsight } from "@/lib/sports/afl/insights";
 import type { ESPNPlayer, ESPNInjury } from "@/lib/sports/espnPlayers";
 import type { SofascoreMatchData, SofascoreIncident } from "@/lib/sports/sofascore";
 import type { AFLMatchAnalytics } from "@/lib/sports/afl/analytics";
@@ -11,6 +12,7 @@ import type { TeamHistoryGame, VenueFilter } from "@/lib/sports/espn";
 import FormPills from "@/components/FormPills";
 import SquadList from "@/components/SquadList";
 import PlayerList from "@/components/afl/PlayerList";
+import AFLDashboard from "./AFLDashboard";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -53,7 +55,7 @@ export interface GameDetailTabsProps {
   h2hVariants:        H2HVariants;
   aflAnalytics:       AFLMatchAnalytics | null;
   sofascore:          SofascoreMatchData | null;
-  insights:           Insight[];
+  insights:           AFLInsight[];
   isSoccer:           boolean;
   isBasketball:       boolean;
   isAFL:              boolean;
@@ -628,6 +630,7 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function AFLOverview({ game, insights, boxScore, homeSquad, awaySquad, homeInjuries, awayInjuries, h2h, analytics, homeHistory, awayHistory, historyFilter, onHistoryFilterChange }: {
   game: Game; insights: Insight[]; boxScore?: BoxScore;
   homeHistory: TeamHistoryGame[]; awayHistory: TeamHistoryGame[];
@@ -1052,8 +1055,8 @@ export default function GameDetailTabs({
               h2h={h2hForOverview}
             />
           : isAFL
-          ? <AFLOverview
-              game={game} insights={insights} boxScore={boxScore}
+          ? <AFLDashboard
+              game={game} insights={insights}
               homeHistory={currentHomeHistory} awayHistory={currentAwayHistory}
               homeSquad={homeSquad} awaySquad={awaySquad}
               homeInjuries={homeInjuries} awayInjuries={awayInjuries}

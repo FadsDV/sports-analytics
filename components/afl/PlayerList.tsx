@@ -4,6 +4,8 @@ import { useState } from "react";
 import type { ESPNPlayer } from "@/lib/sports/espnPlayers";
 import type { AFLPlayerAnalyticsResult } from "@/lib/sports/afl/players/types";
 import PlayerDrawer from "./PlayerDrawer";
+import PlayerAvatar from "./PlayerAvatar";
+import { aflHeadshotUrl } from "@/lib/aflPlayerImage";
 
 interface PlayerListProps {
   players: ESPNPlayer[];
@@ -12,15 +14,6 @@ interface PlayerListProps {
   teamEspnId: string;
   matchContext: "home" | "away";
   opponent: string;
-}
-
-function initials(name: string): string {
-  return name
-    .split(" ")
-    .map((p) => p[0] ?? "")
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 }
 
 export default function PlayerList({
@@ -75,8 +68,8 @@ export default function PlayerList({
         {teamLogo && (
           <img src={teamLogo} alt="" className="w-4 h-4 object-contain" />
         )}
-        <span className="text-[10px] font-medium text-[#6B7280] truncate">{teamName}</span>
-        <span className="ml-auto text-[9px] text-[#3B82F6] bg-[#3B82F6]/10 px-1.5 py-px rounded uppercase tracking-wide shrink-0">
+        <span className="text-xs font-medium text-[#6B7280] truncate">{teamName}</span>
+        <span className="ml-auto text-[10px] text-[#3B82F6] bg-[#3B82F6]/10 px-1.5 py-px rounded uppercase tracking-wide shrink-0">
           {contextLabel}
         </span>
       </div>
@@ -86,27 +79,27 @@ export default function PlayerList({
         <button
           key={player.id}
           onClick={() => handlePlayerClick(player)}
-          className="w-full flex items-center gap-1.5 py-1.5 border-b border-white/[0.03] last:border-0 text-left hover:bg-white/[0.04] rounded px-1 transition-colors group"
+          className="w-full flex items-center gap-2 py-1.5 border-b border-white/[0.03] last:border-0 text-left hover:bg-white/[0.04] rounded px-1 transition-colors group"
         >
           {/* Jersey */}
-          <span className="text-[#374151] w-4 text-center font-mono text-[10px] shrink-0">
+          <span className="text-[#4B5563] w-5 text-center font-mono text-xs shrink-0">
             {player.jersey ?? i + 1}
           </span>
 
-          {/* Avatar initials */}
-          <div className="w-5 h-5 rounded-full bg-[#1F2937] flex items-center justify-center shrink-0">
-            <span className="text-[8px] font-bold text-[#9CA3AF]">
-              {initials(player.displayName)}
-            </span>
-          </div>
+          {/* Headshot / initials */}
+          <PlayerAvatar
+            src={aflHeadshotUrl(player.id)}
+            name={player.displayName}
+            size={24}
+          />
 
           {/* Name */}
-          <span className="text-[#E5E7EB] flex-1 truncate text-[10px] group-hover:text-white transition-colors">
+          <span className="text-[#E5E7EB] flex-1 truncate text-xs group-hover:text-white transition-colors">
             {player.displayName}
           </span>
 
           {/* Position badge */}
-          <span className="text-[9px] text-[#4B5563] bg-white/[0.04] px-1 py-px rounded shrink-0">
+          <span className="text-[10px] text-[#4B5563] bg-white/[0.04] px-1 py-px rounded shrink-0">
             {player.position}
           </span>
         </button>

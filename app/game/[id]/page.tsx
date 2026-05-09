@@ -15,6 +15,7 @@ import { calcBetRisk } from "@/lib/sports/betRisk";
 import { formatKickoffFull, formatAFLKickoff } from "@/lib/utils";
 import { fetchSofascoreMatchData } from "@/lib/sports/sofascore";
 import { computeAFLMatchAnalytics } from "@/lib/sports/afl/analytics";
+import { generateAFLInsights, type AFLInsight } from "@/lib/sports/afl/insights";
 import LiveScorePanel from "@/components/LiveScorePanel";
 import GameDetailTabs, { HistoryVariants, H2HVariants } from "./GameDetailTabs";
 
@@ -115,7 +116,14 @@ export default async function GameDetailPage({
   const { homeTeam, awayTeam, score, status, liveMinute, weather, lineScores } = game;
 
   const probs    = isSoccer ? computeProbs(h2hVariants.all, homeTeam.name) : [];
-  const insights = generateInsights(game, h2hVariants.all, homeHistories.all, awayHistories.all, isSoccer, isAFL);
+  const insights: AFLInsight[] = isAFL && aflAnalytics
+    ? generateAFLInsights({
+        analytics:     aflAnalytics,
+        homeShortName: homeTeam.shortName,
+        awayShortName: awayTeam.shortName,
+        weather:       game.weather ?? null,
+      })
+    : generateInsights(game, h2hVariants.all, homeHistories.all, awayHistories.all, isSoccer, false);
 
   const LEAGUE: Record<string, { name: string; logo: string }> = {
     soccer:     { name: "Premier League",  logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/23.png" },
@@ -143,7 +151,7 @@ export default async function GameDetailPage({
   }
 
   return (
-    <div className="max-w-5xl px-4 pt-4 pb-10 mx-auto">
+    <div className={`${isAFL ? "max-w-7xl" : "max-w-5xl"} px-4 pt-4 pb-10 mx-auto`}>
 
       {/* Back */}
       <Link href="/" className="inline-flex items-center gap-1 text-xs text-[#374151] hover:text-[#9CA3AF] mb-4 transition-colors">
@@ -411,44 +419,50 @@ function computeProbs(h2h: H2HGame[], homeTeam: string): ProbCard[] {
   ];
 }
 
-function generateInsights(game: Game, h2h: H2HGame[], homeHist: any[], awayHist: any[], isSoccer: boolean, isAFL: boolean): Insight[] {
-  const out: Insight[] = [];
+function generateInsights(game: Game, h2h: H2HGame[], homeHist: any[], awayHist: any[], isSoccer: boolean, isAFL: boolean): AFLInsight[] {
+  const out: AFLInsight[] = [];
   const { homeTeam, awayTeam } = game;
   const n = h2h.length;
+  let idx = 0;
+
+  const mk = (icon: string, text: string): AFLInsight => ({
+    icon, text, id: `gen-${idx++}`,
+    category: "h2h", direction: "neutral", severity: "medium", confidence: 60, title: text.split(" ").slice(0, 3).join(" "),
+  });
 
   if (n>=3) {
     const hw = h2h.filter(g=>g.winner===homeTeam.name).length;
     const aw = n-hw-h2h.filter(g=>g.winner==="Draw").length;
-    if (hw>aw) out.push({ icon:"◆", text:`${homeTeam.shortName} lead ${hw}-${aw} in last ${n} meetings` });
-    else if (aw>hw) out.push({ icon:"◆", text:`${awayTeam.shortName} lead ${aw}-${hw} in last ${n} meetings` });
-    else out.push({ icon:"◆", text:`Evenly matched — ${hw} wins each in last ${n} meetings` });
+    if (hw>aw) out.push(mk("◆", `${homeTeam.shortName} lead ${hw}-${aw} in last ${n} meetings`));
+    else if (aw>hw) out.push(mk("◆", `${awayTeam.shortName} lead ${aw}-${hw} in last ${n} meetings`));
+    else out.push(mk("◆", `Evenly matched — ${hw} wins each in last ${n} meetings`));
   }
 
   const homeAtHome = homeHist.filter(g=>g.homeAway==="home"&&g.result);
   const homeHomeW  = homeAtHome.filter(g=>g.result==="W").length;
   if (homeAtHome.length>=3 && homeHomeW>=homeAtHome.length-1)
-    out.push({ icon:"◈", text:`${homeTeam.shortName} unbeaten in last ${homeAtHome.length} home games` });
+    out.push(mk("◈", `${homeTeam.shortName} unbeaten in last ${homeAtHome.length} home games`));
   else if (homeAtHome.length>=3 && homeHomeW>=Math.ceil(homeAtHome.length*0.6))
-    out.push({ icon:"◈", text:`${homeTeam.shortName} win ${homeHomeW} of last ${homeAtHome.length} at home` });
+    out.push(mk("◈", `${homeTeam.shortName} win ${homeHomeW} of last ${homeAtHome.length} at home`));
 
   const awayAway = awayHist.filter(g=>g.homeAway==="away"&&g.result);
   const awayAwayW = awayAway.filter(g=>g.result==="W").length;
   if (awayAway.length>=3 && awayAwayW>=Math.ceil(awayAway.length*0.5))
-    out.push({ icon:"◇", text:`${awayTeam.shortName} win ${awayAwayW} of last ${awayAway.length} away` });
+    out.push(mk("◇", `${awayTeam.shortName} win ${awayAwayW} of last ${awayAway.length} away`));
 
   if (isSoccer && n>=3) {
     const goals  = h2h.map(g=>{const p=g.score.split("-").map(Number);return(p[0]??0)+(p[1]??0);});
     const over25 = goals.filter(v=>v>2.5).length;
-    if (over25>=Math.ceil(n*0.6)) out.push({ icon:"⚽", text:`Over 2.5 goals in ${over25} of last ${n} H2H` });
+    if (over25>=Math.ceil(n*0.6)) out.push(mk("⚽", `Over 2.5 goals in ${over25} of last ${n} H2H`));
     const btts = h2h.filter(g=>{const p=g.score.split("-").map(Number);return(p[0]??0)>0&&(p[1]??0)>0;}).length;
-    if (btts>=Math.ceil(n*0.6)) out.push({ icon:"⚽", text:`Both teams scored in ${btts} of last ${n} H2H` });
+    if (btts>=Math.ceil(n*0.6)) out.push(mk("⚽", `Both teams scored in ${btts} of last ${n} H2H`));
   }
 
   const streak = (form: string[], r: string) => { let s=0; for (const x of form){if(x===r)s++;else break;} return s; };
   const hs = streak(homeTeam.form,"W");
   const as_ = streak(awayTeam.form,"W");
-  if (hs>=3) out.push({ icon:"◉", text:`${homeTeam.shortName} on a ${hs}-match winning streak` });
-  if (as_>=3) out.push({ icon:"◉", text:`${awayTeam.shortName} on a ${as_}-match winning streak` });
+  if (hs>=3) out.push(mk("◉", `${homeTeam.shortName} on a ${hs}-match winning streak`));
+  if (as_>=3) out.push(mk("◉", `${awayTeam.shortName} on a ${as_}-match winning streak`));
 
   return out.slice(0,6);
 }
