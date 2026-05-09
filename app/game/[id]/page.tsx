@@ -329,12 +329,18 @@ async function buildESPNGame(
   sport: keyof typeof ESPN_PATHS,
   eventId: string,
 ): Promise<{ game: Game; homeSchedule: any[]; awaySchedule: any[] } | null> {
-  const [events, summary] = await Promise.all([
-    fetchESPNScoreboard(sport),
-    fetchESPNSummary(sport, eventId),
-  ]);
-
+  // 1. Fetch scoreboard first to check status (discovery)
+  const events = await fetchESPNScoreboard(sport);
   let raw = events.find((e: any) => e.id === eventId);
+
+  // 2. Determine if we should bypass cache for the summary (box score)
+  // We bypass if the game is live or if it's "pre" but kickoff has passed
+  const state = raw?.status?.type?.state ?? "pre";
+  const isActuallyLive = state === "in" || (state === "pre" && raw?.date && new Date(raw.date) <= new Date());
+  
+  // 3. Fetch summary with targeted revalidation
+  const summary = await fetchESPNSummary(sport, eventId, isActuallyLive ? 0 : 30);
+
   if (!raw && summary.homeTeamId) {
     const sched = await fetchTeamSchedule(sport, summary.homeTeamId);
     raw = sched.find((e: any) => String(e.id) === eventId);

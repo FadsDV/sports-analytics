@@ -106,14 +106,14 @@ function sportEmoji(sport: ESPNSport): string {
 // ─── Scoreboard (game list) ───────────────────────────────────────────────────
 
 /** Fetches the ESPN scoreboard for a sport and returns raw event objects. */
-export async function fetchESPNScoreboard(sport: ESPNSport): Promise<any[]> {
+export async function fetchESPNScoreboard(sport: ESPNSport, revalidate: number = 30): Promise<any[]> {
   const url = `${BASE}/${ESPN_PATHS[sport]}/scoreboard?limit=50&dates=${dateRange()}`;
   try {
     const res = await fetch(url, {
-      next: { revalidate: 30 },
+      next: { revalidate },
       headers: { "User-Agent": "SportsPulse/1.0 personal" },
     });
-    console.info("[SportsPulse] fetchESPNScoreboard", { sport, status: res.status, url });
+    console.info("[SportsPulse] fetchESPNScoreboard", { sport, status: res.status, url, revalidate });
     if (!res.ok) return [];
     const data = await res.json();
     return data.events ?? [];
@@ -230,14 +230,17 @@ export interface ESPNSummary {
   lineScores?: { home: number[]; away: number[] };
 }
 
-export async function fetchESPNSummary(sport: ESPNSport, eventId: string): Promise<ESPNSummary> {
+export async function fetchESPNSummary(sport: ESPNSport, eventId: string, revalidate: number = 30): Promise<ESPNSummary> {
   const url = `${BASE}/${ESPN_PATHS[sport]}/summary?event=${eventId}`;
   try {
-    console.info("[SportsPulse] fetchESPNSummary", { sport, eventId, url });
+    console.info("[SportsPulse] fetchESPNSummary", { sport, eventId, url, revalidate });
+    
+    // In Next.js, revalidate: 0 is equivalent to cache: 'no-store'
     const res = await fetch(url, {
-      next: { revalidate: 30 },
+      ...(revalidate === 0 ? { cache: "no-store" } : { next: { revalidate } }),
       headers: { "User-Agent": "SportsPulse/1.0 personal" },
     });
+    
     console.info("[SportsPulse] fetchESPNSummary status", { sport, eventId, status: res.status });
     if (!res.ok) return {};
     const raw = await res.json();
