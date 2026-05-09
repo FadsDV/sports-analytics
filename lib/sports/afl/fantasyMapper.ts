@@ -29,11 +29,13 @@ function aflCDNPortraitUrl(champNumericId: number): string {
 // ─── Fantasy API types ────────────────────────────────────────────────────────
 
 interface FantasyPlayer {
-  id:         number;   // Champion Data numeric ID (identical to portrait ID)
-  first_name: string;
-  last_name:  string;
-  squad_id:   number;   // Team membership — authoritative for current season
-  status:     string;   // "playing" | "injured" | "not-playing" | "medical_sub"
+  id:                 number;   // Champion Data numeric ID (identical to portrait ID)
+  first_name:         string;
+  last_name:          string;
+  squad_id:           number;   // Team membership — authoritative for current season
+  status:             string;   // "playing" | "injured" | "not-playing" | "medical_sub"
+  positions?:         number[]; // 1=DEF 2=MID 3=RUC 4=FWD
+  original_positions?: number[];
 }
 
 /** Minimal exported shape for consumers that need squad roster data. */
@@ -42,7 +44,8 @@ export interface AFLFantasySquadPlayer {
   firstName:  string;
   lastName:   string;
   squadId:    number;
-  status:     string;   // "playing" | "injured" | "not-playing" | "medical_sub"
+  status:     string;     // "playing" | "injured" | "not-playing" | "medical_sub"
+  positions:  number[];   // AFL Fantasy position codes: 1=DEF 2=MID 3=RUC 4=FWD
 }
 
 // ─── ESPN team ID → Fantasy squad_id mapping ─────────────────────────────────
@@ -147,6 +150,7 @@ export async function getAFLFantasyMap(): Promise<Map<string, number>> {
           lastName:  p.last_name,
           squadId:   p.squad_id,
           status:    p.status ?? "playing",
+          positions: Array.isArray(p.positions) ? p.positions : [],
         });
       }
     }

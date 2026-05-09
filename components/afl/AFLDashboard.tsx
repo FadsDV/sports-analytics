@@ -8,7 +8,6 @@ import type { ESPNPlayer, ESPNInjury } from "@/lib/sports/espnPlayers";
 import type { AFLMatchAnalytics } from "@/lib/sports/afl/analytics";
 import type { TeamHistoryGame, VenueFilter } from "@/lib/sports/espn";
 import FormPills from "@/components/FormPills";
-import PlayerList from "@/components/afl/PlayerList";
 import PlayerAvatar from "@/components/afl/PlayerAvatar";
 import OddsEdgePanel from "./OddsEdgePanel";
 
@@ -16,8 +15,6 @@ import OddsEdgePanel from "./OddsEdgePanel";
 
 export interface AFLDashboardProps {
   game:                 Game;
-  homeSquad:            ESPNPlayer[];
-  awaySquad:            ESPNPlayer[];
   homeInjuries:         ESPNInjury[];
   awayInjuries:         ESPNInjury[];
   homeHistory:          TeamHistoryGame[];
@@ -134,7 +131,7 @@ const WEATHER_ICONS: Record<string, string> = {
 // ─── PRE-MATCH DASHBOARD ──────────────────────────────────────────────────────
 
 function AFLPreMatch({
-  game, homeSquad, awaySquad, homeInjuries, awayInjuries,
+  game, homeInjuries, awayInjuries,
   homeHistory, awayHistory, h2h, analytics, insights,
   historyFilter, onHistoryFilterChange,
 }: AFLDashboardProps) {
@@ -525,29 +522,6 @@ function AFLPreMatch({
           </div>
         </Card>
 
-        {/* Predicted Squads */}
-        {(homeSquad.length > 0 || awaySquad.length > 0) && (
-          <Card title="Predicted Squads">
-            <div className="grid grid-cols-2 gap-2">
-              <PlayerList
-                players={homeSquad}
-                teamName={homeTeam.name}
-                teamLogo={homeTeam.logoUrl}
-                teamEspnId={homeTeam.espnId ?? ""}
-                matchContext="home"
-                opponent={awayTeam.name}
-              />
-              <PlayerList
-                players={awaySquad}
-                teamName={awayTeam.name}
-                teamLogo={awayTeam.logoUrl}
-                teamEspnId={awayTeam.espnId ?? ""}
-                matchContext="away"
-                opponent={homeTeam.name}
-              />
-            </div>
-          </Card>
-        )}
       </div>
     </div>
   );
@@ -556,7 +530,7 @@ function AFLPreMatch({
 // ─── LIVE / FINISHED DASHBOARD ────────────────────────────────────────────────
 
 function AFLLive({
-  game, homeSquad, awaySquad, homeInjuries, awayInjuries,
+  game, homeInjuries, awayInjuries,
   homeHistory, awayHistory, h2h, analytics, insights,
   historyFilter, onHistoryFilterChange,
 }: AFLDashboardProps) {

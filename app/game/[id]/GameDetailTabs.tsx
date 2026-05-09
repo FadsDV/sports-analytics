@@ -11,7 +11,6 @@ import type { AFLMatchAnalytics } from "@/lib/sports/afl/analytics";
 import type { TeamHistoryGame, VenueFilter } from "@/lib/sports/espn";
 import FormPills from "@/components/FormPills";
 import SquadList from "@/components/SquadList";
-import PlayerList from "@/components/afl/PlayerList";
 import AFLDashboard from "@/components/afl/AFLDashboard";
 import PlayerDrawer from "@/components/afl/PlayerDrawer";
 import PlayerAvatar from "@/components/afl/PlayerAvatar";
@@ -730,10 +729,9 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function AFLOverview({ game, insights, boxScore, homeSquad, awaySquad, homeInjuries, awayInjuries, h2h, analytics, homeHistory, awayHistory, historyFilter, onHistoryFilterChange }: {
+function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h, analytics, homeHistory, awayHistory, historyFilter, onHistoryFilterChange }: {
   game: Game; insights: Insight[]; boxScore?: BoxScore;
   homeHistory: TeamHistoryGame[]; awayHistory: TeamHistoryGame[];
-  homeSquad: ESPNPlayer[]; awaySquad: ESPNPlayer[];
   homeInjuries: ESPNInjury[]; awayInjuries: ESPNInjury[];
   h2h: H2HGame[];
   analytics: AFLMatchAnalytics | null;
@@ -984,29 +982,6 @@ function AFLOverview({ game, insights, boxScore, homeSquad, awaySquad, homeInjur
             </Section>
           )}
 
-          {isUpcoming && (homeSquad.length > 0 || awaySquad.length > 0) && (
-            <Section title="Predicted Squads">
-              <div className="grid grid-cols-2 gap-3">
-                <PlayerList
-                  players={homeSquad}
-                  teamName={homeTeam.name}
-                  teamLogo={homeTeam.logoUrl}
-                  teamEspnId={homeTeam.espnId ?? ""}
-                  matchContext="home"
-                  opponent={awayTeam.name}
-                />
-                <PlayerList
-                  players={awaySquad}
-                  teamName={awayTeam.name}
-                  teamLogo={awayTeam.logoUrl}
-                  teamEspnId={awayTeam.espnId ?? ""}
-                  matchContext="away"
-                  opponent={homeTeam.name}
-                />
-              </div>
-            </Section>
-          )}
-
           {(ha && aa) && (
             <Section title="Team Comparison">
               {([
@@ -1157,7 +1132,6 @@ export default function GameDetailTabs({
           ? <AFLDashboard
               game={game} insights={insights}
               homeHistory={currentHomeHistory} awayHistory={currentAwayHistory}
-              homeSquad={homeSquad} awaySquad={awaySquad}
               homeInjuries={homeInjuries} awayInjuries={awayInjuries}
               h2h={h2hForOverview} analytics={aflAnalytics}
               historyFilter={historyFilter} onHistoryFilterChange={setHistoryFilter}
