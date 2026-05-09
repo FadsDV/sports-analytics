@@ -138,16 +138,22 @@ export async function fetchAFLPlayerHistory(
     seasons.map(year => fetchScheduleForSeason(teamId, year))
   );
 
-  // 2. Collect completed games, newest first, capped at 30
+  // 2. Collect completed games, newest first, capped at 15
   const allGames: ScheduleGame[] = schedulesBySeason
     .flatMap(events => extractCompletedGames(events, teamId))
     .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 30);
+    .slice(0, 15);
 
   if (allGames.length === 0) return [];
 
-  // 3. Fetch summaries in parallel
-  const summaries = await Promise.all(allGames.map(g => fetchSummary(g.gameId)));
+  // 3. Fetch summaries in batches of 5 to avoid ESPN rate limiting
+  const BATCH_SIZE = 5;
+  const summaries: (any | null)[] = [];
+  for (let i = 0; i < allGames.length; i += BATCH_SIZE) {
+    const batch = allGames.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(batch.map(g => fetchSummary(g.gameId)));
+    summaries.push(...results);
+  }
 
   // 4. Build AFLPlayerGame[] by extracting player stats from each summary
   const result: AFLPlayerGame[] = [];

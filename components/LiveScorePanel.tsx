@@ -29,7 +29,8 @@ export default function LiveScorePanel({
   const [updatedSec, setUpdatedSec] = useState(0);
   const fetchingRef               = useRef(false);
 
-  const isLive = data.status === "live";
+  const isLive     = data.status === "live";
+  const isUpcoming = data.status === "upcoming";
 
   const poll = useCallback(async () => {
     if (fetchingRef.current) return;
@@ -53,12 +54,13 @@ export default function LiveScorePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 15-second polling interval — only when live
+  // Poll at 15s when live; 60s when upcoming to catch the kickoff transition
   useEffect(() => {
-    if (!isLive) return;
-    const id = setInterval(poll, 15_000);
+    if (!isLive && !isUpcoming) return;
+    const interval = isLive ? 15_000 : 60_000;
+    const id = setInterval(poll, interval);
     return () => clearInterval(id);
-  }, [isLive, poll]);
+  }, [isLive, isUpcoming, poll]);
 
   // "Updated Xs ago" — increments every second while live
   useEffect(() => {

@@ -95,3 +95,14 @@ export interface BoxScore {
   away: BoxScoreRow[];
   statHeaders: string[];
 }
+
+export interface Insight {
+  icon: string;
+  text: string;
+}
+
+export interface ProbCard {
+  label: string;
+  value: number;
+  conf: "high" | "medium" | "low";
+}
