@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import type { AFLPlayerAnalyticsResult } from "@/lib/sports/afl/players/types";
 import PlayerProfileContent from "./PlayerProfileContent";
@@ -11,11 +12,15 @@ interface PlayerDrawerProps {
 }
 
 function initials(name: string): string {
-  return name.split(" ").map((p) => p[0] ?? "").join("").slice(0, 2).toUpperCase();
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[parts.length - 1]?.[0] ?? "")).toUpperCase();
 }
 
 export default function PlayerDrawer({ data, onClose, teamEspnId }: PlayerDrawerProps) {
   const { playerName, position, jersey, headshot, injuryContext, matchContext, opponent, playerId } = data;
+  // Track per-render image failures so we can fall back to initials gracefully.
+  // Resets automatically when `data` changes (new player opened).
+  const [imgFailed, setImgFailed] = useState(false);
 
   const profileHref = teamEspnId
     ? `/player/afl/${playerId}?teamId=${teamEspnId}&homeAway=${matchContext}&opponent=${encodeURIComponent(opponent)}`
@@ -31,19 +36,24 @@ export default function PlayerDrawer({ data, onClose, teamEspnId }: PlayerDrawer
       />
 
       {/* Drawer */}
-      <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-[#0B0F1A] border-l border-[#3B82F6]/20 overflow-y-auto shadow-2xl transition-transform duration-300 translate-x-0 flex flex-col">
+      <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-2xl bg-[#0B0F1A] border-l border-[#3B82F6]/20 overflow-y-auto shadow-2xl transition-transform duration-300 translate-x-0 flex flex-col">
 
         {/* Header */}
         <div className="bg-[#111827] border-b border-[#3B82F6]/20 px-6 py-5 flex items-center gap-5 shrink-0">
-          <div className="relative group">
-            {headshot ? (
+          <div className="relative group shrink-0">
+            {/* AFL CDN headshot. onError falls back to initials — same source as PlayerList rows. */}
+            {headshot && !imgFailed ? (
               <img
                 src={headshot}
                 alt={playerName}
                 className="w-16 h-16 rounded-xl object-cover bg-white/5 border border-white/10 group-hover:border-[#3B82F6]/50 transition-colors"
+                onError={() => {
+                  console.warn(`[SportsPulse] PlayerDrawer headshot failed: ${playerName} (${headshot})`);
+                  setImgFailed(true);
+                }}
               />
             ) : (
-              <div className="w-16 h-16 rounded-xl bg-[#1F2937] flex items-center justify-center text-xl font-black text-[#9CA3AF] border border-white/10">
+              <div className="w-16 h-16 rounded-xl bg-[#1F2937] flex items-center justify-center text-xl font-black text-[#9CA3AF] border border-white/10 group-hover:border-[#3B82F6]/50 transition-colors">
                 {initials(playerName)}
               </div>
             )}

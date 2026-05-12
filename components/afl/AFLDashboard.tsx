@@ -91,35 +91,7 @@ function ResultPill({ result }: { result: "W" | "L" | "D" | null }) {
 
 // ─── Derived analytics ─────────────────────────────────────────────────────────
 
-function computeWinProb(
-  analytics: AFLMatchAnalytics | null,
-  h2h: H2HGame[],
-  homeTeamName: string,
-): { home: number; away: number } {
-  if (!analytics) return { home: 50, away: 50 };
-  const ha = analytics.home;
-  const aa = analytics.away;
-
-  const formLen   = Math.max(ha.form.length, aa.form.length, 1);
-  const homeFormS = ha.form.filter(r => r === "W").length / formLen;
-  const awayFormS = aa.form.filter(r => r === "W").length / formLen;
-
-  const homeTotal = ha.record.wins + ha.record.losses;
-  const awayTotal = aa.record.wins + aa.record.losses;
-  const homeRecS  = homeTotal > 0 ? ha.record.wins / homeTotal : 0.5;
-  const awayRecS  = awayTotal > 0 ? aa.record.wins / awayTotal : 0.5;
-
-  const n        = h2h.length;
-  const homeH2HW = n > 0 ? h2h.filter(g => g.winner === homeTeamName).length / n : 0.5;
-  const awayH2HW = n > 0 ? 1 - homeH2HW - h2h.filter(g => g.winner === "Draw").length / n : 0.5;
-
-  const homeRaw = homeFormS * 0.35 + homeRecS * 0.35 + homeH2HW * 0.15 + 0.55 * 0.15;
-  const awayRaw = awayFormS * 0.35 + awayRecS * 0.35 + awayH2HW * 0.15 + 0.45 * 0.15;
-  const total   = homeRaw + awayRaw;
-
-  const homeProb = Math.max(5, Math.min(95, Math.round((homeRaw / total) * 100)));
-  return { home: homeProb, away: 100 - homeProb };
-}
+// computeWinProb removed to improve trust and deterministic data presentation.
 
 // ─── WEATHER ICON MAP ─────────────────────────────────────────────────────────
 
@@ -138,7 +110,6 @@ function AFLPreMatch({
   const { homeTeam, awayTeam, weather } = game;
   const ha   = analytics?.home;
   const aa   = analytics?.away;
-  const prob = computeWinProb(analytics, h2h, homeTeam.name);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[260px_1fr_240px] gap-3">
@@ -148,43 +119,41 @@ function AFLPreMatch({
       ══════════════════════════════════════════ */}
       <div className="space-y-3">
 
-        {/* Win Probability */}
-        <Card title="Win Probability" accent>
-          <div className="space-y-3">
+        {/* Form Outlook */}
+        <Card title="Form Outlook" accent>
+          <div className="space-y-4">
             {([
-              { t: homeTeam, p: prob.home, role: "Home" },
-              { t: awayTeam, p: prob.away, role: "Away" },
-            ] as const).map(({ t, p, role }) => (
+              { t: homeTeam, an: ha, role: "Home" },
+              { t: awayTeam, an: aa, role: "Away" },
+            ] as const).map(({ t, an, role }) => (
               <div key={t.name}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain shrink-0" />}
-                    <span className="text-xs font-medium text-[#D1D5DB] truncate">{t.shortName}</span>
-                    <span className="text-[10px] text-[#4B5563]">{role}</span>
-                  </div>
-                  <span className={`text-base font-black tabular-nums ${
-                    p >= 55 ? "text-[#22C55E]" : p >= 45 ? "text-[#F59E0B]" : "text-[#9CA3AF]"
-                  }`}>{p}%</span>
+                <div className="flex items-center gap-1.5 mb-2">
+                  {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                  <span className="text-xs font-bold text-white truncate">{t.shortName}</span>
+                  <span className="text-[10px] text-[#4B5563] font-medium">{role}</span>
+                  {an?.streak.type && an.streak.count >= 2 && (
+                    <span className={`ml-auto text-[10px] font-bold px-1 py-px rounded ${
+                      an.streak.type === "W" ? "bg-[#22C55E]/10 text-[#22C55E]" : "bg-[#EF4444]/10 text-[#EF4444]"
+                    }`}>{an.streak.count}{an.streak.type}</span>
+                  )}
                 </div>
-                <div className="h-2 bg-white/5 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${p >= 55 ? "bg-[#22C55E]" : p >= 45 ? "bg-[#F59E0B]" : "bg-[#9CA3AF]"}`}
-                    style={{ width: `${p}%` }}
-                  />
+                <FormPills form={t.form} />
+                <div className="mt-2 space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-[#6B7280]">Record</span>
+                    <span className="text-[#D1D5DB] font-medium tabular-nums">
+                      {t.record.wins}W {t.record.losses}L{t.record.draws ? ` ${t.record.draws}D` : ""}
+                    </span>
+                  </div>
+                  {an && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-[#6B7280]">Avg Score</span>
+                      <span className="text-[#D1D5DB] font-medium tabular-nums">{an.avgScored} - {an.avgConceded}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
-
-            {/* Predicted margin highlight */}
-            {analytics?.predictedMargin != null && (
-              <div className="mt-1 bg-[#3B82F6]/8 border border-[#3B82F6]/20 rounded-lg px-3 py-2 flex items-center justify-between">
-                <span className="text-[10px] text-[#6B7280] uppercase tracking-wide">Model margin</span>
-                <span className="text-sm font-bold text-[#3B82F6]">
-                  {analytics.predictedMargin >= 0 ? homeTeam.shortName : awayTeam.shortName}
-                  {" by ~"}{Math.abs(analytics.predictedMargin)} pts
-                </span>
-              </div>
-            )}
           </div>
         </Card>
 
@@ -266,50 +235,6 @@ function AFLPreMatch({
           CENTER — Matchup
       ══════════════════════════════════════════ */}
       <div className="space-y-3">
-
-        {/* Form & Season Record */}
-        <Card title="Form &amp; Season Record">
-          <div className="grid grid-cols-2 gap-5">
-            {([
-              { t: homeTeam, an: ha, role: "Home" },
-              { t: awayTeam, an: aa, role: "Away" },
-            ] as const).map(({ t, an, role }) => (
-              <div key={t.name}>
-                <div className="flex items-center gap-1.5 mb-2">
-                  {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                  <span className="text-sm font-semibold text-white truncate">{t.shortName}</span>
-                  <span className="text-[10px] text-[#4B5563]">{role}</span>
-                  {an?.streak.type && an.streak.count >= 2 && (
-                    <span className={`ml-auto text-[10px] font-bold px-1 py-px rounded ${
-                      an.streak.type === "W" ? "bg-[#22C55E]/10 text-[#22C55E]" : "bg-[#EF4444]/10 text-[#EF4444]"
-                    }`}>{an.streak.count}{an.streak.type}</span>
-                  )}
-                </div>
-                <FormPills form={t.form} />
-                <div className="mt-2 space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-[#6B7280]">Season</span>
-                    <span className="text-[#D1D5DB] font-medium tabular-nums">
-                      {t.record.wins}W {t.record.losses}L{t.record.draws ? ` ${t.record.draws}D` : ""}
-                    </span>
-                  </div>
-                  {an && (
-                    <>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-[#6B7280]">Avg scored</span>
-                        <span className="text-[#D1D5DB] font-medium tabular-nums">{an.avgScored} pts</span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-[#6B7280]">Avg conceded</span>
-                        <span className="text-[#D1D5DB] font-medium tabular-nums">{an.avgConceded} pts</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
 
         {/* Team Comparison bars */}
         {ha && aa && (

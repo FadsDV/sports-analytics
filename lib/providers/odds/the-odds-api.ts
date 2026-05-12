@@ -2,6 +2,7 @@ import { Sport } from "@/lib/types";
 import { OddsEvent, MarketType, OddsMarket, OddsOutcome, BookmakerOdds } from "./types";
 import { OddsProvider } from "./interface";
 import { oddsCache, OddsCache } from "./cache";
+import { resolveTeamCanonicalId } from "@/lib/mappings";
 
 /**
  * Implementation for The Odds API
@@ -74,7 +75,9 @@ export class TheOddsApiProvider implements OddsProvider {
       id: event.id,
       sport,
       homeTeam: event.home_team,
+      homeTeamId: resolveTeamCanonicalId(event.home_team, sport) ?? undefined,
       awayTeam: event.away_team,
+      awayTeamId: resolveTeamCanonicalId(event.away_team, sport) ?? undefined,
       commenceTime: event.commence_time,
       bookmakers: event.bookmakers.map((bm: any): BookmakerOdds => ({
         id: bm.key,

@@ -28,7 +28,9 @@ export interface OddsEvent {
   id: string;          // Provider-specific ID or our internal mapping
   sport: Sport;
   homeTeam: string;
+  homeTeamId?: string; // Canonical team ID
   awayTeam: string;
+  awayTeamId?: string; // Canonical team ID
   commenceTime: string; // ISO timestamp
   bookmakers: BookmakerOdds[];
 }

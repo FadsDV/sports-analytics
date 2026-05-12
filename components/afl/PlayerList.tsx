@@ -41,7 +41,10 @@ export default function PlayerList({
     setError(null);
 
     try {
-      const url = `/api/afl/player/${player.id}?homeAway=${matchContext}&opponent=${encodeURIComponent(opponent)}&teamId=${encodeURIComponent(teamEspnId)}&name=${encodeURIComponent(player.displayName)}&position=${encodeURIComponent(player.position)}&jersey=${encodeURIComponent(player.jersey ?? "")}`;
+      // Pass the roster-derived headshot (champId-based AFL CDN URL) as a hint so the
+      // analytics API can use it as the primary source rather than re-deriving from ESPN,
+      // which has patchy AFL player coverage.
+      const url = `/api/afl/player/${player.id}?homeAway=${matchContext}&opponent=${encodeURIComponent(opponent)}&teamId=${encodeURIComponent(teamEspnId)}&name=${encodeURIComponent(player.displayName)}&position=${encodeURIComponent(player.position)}&jersey=${encodeURIComponent(player.jersey ?? "")}&headshot=${encodeURIComponent(player.headshot ?? "")}`;
       const res = await fetch(url);
       if (!res.ok) {
         setError("Could not load player data.");

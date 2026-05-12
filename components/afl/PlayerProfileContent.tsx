@@ -26,9 +26,9 @@ function ResultBadge({ result }: { result: "W" | "L" | "D" | null }) {
 
 function StatChip({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
   return (
-    <div className={`flex flex-col items-center rounded-lg px-3 py-2 min-w-[65px] ${accent ? "bg-[#3B82F6]/10 border border-[#3B82F6]/20" : "bg-white/[0.04]"}`}>
-      <span className="text-[9px] text-[#6B7280] uppercase tracking-wider font-semibold">{label}</span>
-      <span className={`text-sm font-black tabular-nums ${accent ? "text-[#3B82F6]" : "text-white"}`}>{fmt(value)}</span>
+    <div className={`flex flex-col items-center rounded-xl px-4 py-3 min-w-[72px] ${accent ? "bg-[#3B82F6]/10 border border-[#3B82F6]/20" : "bg-white/[0.04]"}`}>
+      <span className="text-[9px] text-[#6B7280] uppercase tracking-wider font-semibold mb-0.5">{label}</span>
+      <span className={`text-base font-black tabular-nums ${accent ? "text-[#3B82F6]" : "text-white"}`}>{fmt(value)}</span>
     </div>
   );
 }
@@ -39,20 +39,20 @@ function GameRow({ game }: { game: AFLPlayerGame }) {
       ? `${game.teamScore}-${game.oppScore}`
       : "-";
   return (
-    <tr className="border-b border-white/[0.04] last:border-0 text-[10px] hover:bg-white/[0.02] transition-colors">
-      <td className="py-2 pr-2 text-[#6B7280] whitespace-nowrap tabular-nums">{game.date.slice(5)}</td>
-      <td className="py-2 pr-2 text-[#9CA3AF] truncate max-w-[80px] font-medium">{game.opponent}</td>
-      <td className="py-2 pr-2">
+    <tr className="border-b border-white/[0.04] last:border-0 text-[11px] hover:bg-white/[0.02] transition-colors">
+      <td className="py-2.5 px-3 text-[#6B7280] whitespace-nowrap tabular-nums">{game.date.slice(5)}</td>
+      <td className="py-2.5 pr-3 text-[#9CA3AF] truncate max-w-[100px] font-medium">{game.opponent}</td>
+      <td className="py-2.5 pr-3">
         <div className="flex items-center gap-1.5">
           <ResultBadge result={game.result} />
-          <span className="text-[#4B5563] tabular-nums font-mono text-[9px]">{score}</span>
+          <span className="text-[#4B5563] tabular-nums font-mono text-[10px]">{score}</span>
         </div>
       </td>
-      <td className="py-2 pr-2 text-white tabular-nums text-center font-bold">{fmt(game.disposals, 0)}</td>
-      <td className="py-2 pr-2 text-[#9CA3AF] tabular-nums text-center">{fmt(game.goals, 0)}</td>
-      <td className="py-2 pr-2 text-[#9CA3AF] tabular-nums text-center">{fmt(game.tackles, 0)}</td>
-      <td className="py-2 pr-2 text-[#6B7280] tabular-nums text-center italic">{game.positionPlayed || "-"}</td>
-      <td className="py-2 text-[#3B82F6] tabular-nums text-center font-black">{fmt(game.fantasyScore, 0)}</td>
+      <td className="py-2.5 pr-3 text-white tabular-nums text-center font-bold">{fmt(game.disposals, 0)}</td>
+      <td className="py-2.5 pr-3 text-[#9CA3AF] tabular-nums text-center">{fmt(game.goals, 0)}</td>
+      <td className="py-2.5 pr-3 text-[#9CA3AF] tabular-nums text-center">{fmt(game.tackles, 0)}</td>
+      <td className="py-2.5 pr-3 text-[#6B7280] tabular-nums text-center italic">{game.positionPlayed || "-"}</td>
+      <td className="py-2.5 px-3 text-[#3B82F6] tabular-nums text-center font-black">{fmt(game.fantasyScore, 0)}</td>
     </tr>
   );
 }
@@ -60,17 +60,17 @@ function GameRow({ game }: { game: AFLPlayerGame }) {
 function SplitCard({ label, h, a }: { label: string; h: number; a: number }) {
   const total = h + a || 1;
   return (
-    <div className="bg-white/[0.02] rounded-lg p-2.5 border border-white/[0.04]">
-      <div className="flex justify-between items-center mb-2">
+    <div className="bg-white/[0.02] rounded-xl p-4 border border-white/[0.04]">
+      <div className="flex justify-between items-center mb-3">
         <span className="text-[10px] font-bold text-[#4B5563] uppercase tracking-widest">{label}</span>
-        <div className="flex gap-2 text-[10px] font-mono">
+        <div className="flex gap-3 text-[11px] font-mono">
           <span className="text-white">{fmt(h)} <span className="text-[#4B5563]">H</span></span>
           <span className="text-[#9CA3AF]">{fmt(a)} <span className="text-[#4B5563]">A</span></span>
         </div>
       </div>
-      <div className="flex gap-1 h-1.5 rounded-full overflow-hidden bg-white/5">
-        <div className="h-full bg-[#3B82F6] rounded-full" style={{ width: `${(h / total) * 100}%` }} />
-        <div className="h-full bg-[#9CA3AF]/40 rounded-full" style={{ width: `${(a / total) * 100}%` }} />
+      <div className="flex gap-1 h-2 rounded-full overflow-hidden bg-white/5">
+        <div className="h-full bg-[#3B82F6] rounded-full transition-all" style={{ width: `${(h / total) * 100}%` }} />
+        <div className="h-full bg-[#9CA3AF]/40 rounded-full transition-all" style={{ width: `${(a / total) * 100}%` }} />
       </div>
     </div>
   );
@@ -83,9 +83,9 @@ function Sparkline({ values, label }: { values: (number | null)[]; label: string
   const threshold = avg * 0.15;
 
   return (
-    <div className="bg-white/[0.02] rounded-lg p-2 border border-white/[0.04]">
-      <div className="text-[9px] text-[#4B5563] uppercase tracking-widest font-bold mb-2">{label} Trend</div>
-      <div className="flex items-end gap-1 h-8">
+    <div className="bg-white/[0.02] rounded-xl p-4 border border-white/[0.04]">
+      <div className="text-[9px] text-[#4B5563] uppercase tracking-widest font-bold mb-3">{label} Trend</div>
+      <div className="flex items-end gap-1.5 h-14">
         {values.map((v, i) => {
           let color = "bg-[#1F2937]";
           if (v != null) {
@@ -97,7 +97,7 @@ function Sparkline({ values, label }: { values: (number | null)[]; label: string
           return (
             <div
               key={i}
-              className={`flex-1 rounded-t-sm ${color} transition-all duration-300`}
+              className={`flex-1 rounded-t ${color} transition-all duration-300`}
               style={{ height: `${height}%` }}
               title={v != null ? String(Math.round(v)) : "-"}
             />
@@ -127,11 +127,11 @@ export default function PlayerProfileContent({ data }: { data: AFLPlayerAnalytic
   return (
     <div className="space-y-8">
       {/* Quick Stats Grid */}
-      <section className="grid grid-cols-4 gap-3">
-        <div className="col-span-1 bg-[#3B82F6]/5 border border-[#3B82F6]/10 rounded-xl p-3 flex flex-col items-center">
+      <section className="grid grid-cols-4 gap-4">
+        <div className="col-span-1 bg-[#3B82F6]/5 border border-[#3B82F6]/10 rounded-xl p-4 flex flex-col items-center justify-center">
           <span className="text-[9px] font-bold text-[#3B82F6] uppercase tracking-widest mb-1">Season</span>
-          <span className="text-lg font-black text-white tabular-nums">{seasonAvg.gamesCount}G</span>
-          <span className="text-[8px] text-[#4B5563] mt-0.5 uppercase">{gamesMissedCount} MISSED</span>
+          <span className="text-xl font-black text-white tabular-nums">{seasonAvg.gamesCount}G</span>
+          <span className="text-[8px] text-[#4B5563] mt-1 uppercase">{gamesMissedCount} MISSED</span>
         </div>
         <StatChip label="Avg Dis" value={seasonAvg.disposals} accent />
         <StatChip label="Avg Goals" value={seasonAvg.goals} accent />
@@ -176,13 +176,13 @@ export default function PlayerProfileContent({ data }: { data: AFLPlayerAnalytic
       )}
 
       {/* Season Split Performance */}
-      <section className="grid grid-cols-2 gap-4">
+      <section className="grid grid-cols-2 gap-5">
         <SplitCard label="Disposals" h={homeAvg?.disposals || 0} a={awayAvg?.disposals || 0} />
         <SplitCard label="Fantasy" h={homeAvg?.fantasyScore || 0} a={awayAvg?.fantasyScore || 0} />
       </section>
 
       {/* Form Trends */}
-      <section className="grid grid-cols-2 gap-4">
+      <section className="grid grid-cols-2 gap-5">
         <Sparkline values={disposalTrend} label="Disposals" />
         <Sparkline values={fantasyTrend} label="Fantasy" />
       </section>
@@ -202,14 +202,14 @@ export default function PlayerProfileContent({ data }: { data: AFLPlayerAnalytic
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="text-[9px] text-[#4B5563] uppercase tracking-widest border-b border-white/[0.08] bg-white/[0.02]">
-                <th className="py-2.5 px-3">Date</th>
-                <th className="py-2.5 pr-2">Opponent</th>
-                <th className="py-2.5 pr-2">Result</th>
-                <th className="py-2.5 pr-2 text-center">Dis</th>
-                <th className="py-2.5 pr-2 text-center">G</th>
-                <th className="py-2.5 pr-2 text-center">T</th>
-                <th className="py-2.5 pr-2 text-center">Pos</th>
-                <th className="py-2.5 pr-3 text-center">Fan</th>
+                <th className="py-3 px-3">Date</th>
+                <th className="py-3 pr-3">Opponent</th>
+                <th className="py-3 pr-3">Result</th>
+                <th className="py-3 pr-3 text-center">Dis</th>
+                <th className="py-3 pr-3 text-center">G</th>
+                <th className="py-3 pr-3 text-center">T</th>
+                <th className="py-3 pr-3 text-center">Pos</th>
+                <th className="py-3 px-3 text-center">Fan</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.03]">
