@@ -11,7 +11,7 @@ export default function CS2MatchCard({ match }: { match: EsportsMatch }) {
   return (
     <Link
       href={`/sports/cs2/match/${match.id}`}
-      className="block bg-[#0f172a] border border-[#1e293b] rounded-xl p-3 hover:border-[#3B82F6]/30 hover:bg-[#111827] transition-all"
+      className="block bg-[#0f172a] border border-[#1e293b] rounded-xl p-3 hover:border-[#3B82F6]/30 hover:bg-[#111827] transition-all group"
     >
       {/* Header: tournament · Bo */}
       <div className="flex items-center gap-2 mb-2.5">
@@ -66,7 +66,13 @@ function TeamSide({ team, side }: { team: EsportsTeam | null; side: "left" | "ri
 
 function TeamLogo({ team }: { team: EsportsTeam | null }) {
   if (team?.imageUrl) {
-    return <img src={team.imageUrl} alt="" className="w-7 h-7 object-contain shrink-0" />;
+    return (
+      <img
+        src={team.imageUrl}
+        alt=""
+        className="w-7 h-7 object-contain shrink-0"
+      />
+    );
   }
   return (
     <div className="w-7 h-7 rounded bg-[#1e293b] flex items-center justify-center shrink-0">

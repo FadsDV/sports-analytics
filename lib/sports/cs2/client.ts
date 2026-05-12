@@ -15,6 +15,12 @@ import type {
   EsportsMatchStatus,
   CS2Map,
 } from "@/lib/esports/types";
+import {
+  resolveCanonicalTeamId,
+  resolveCanonicalPlayerId,
+  resolveCanonicalTournamentId,
+  resolveCanonicalMatchId,
+} from "@/lib/mappings/esports";
 
 const PANDASCORE_BASE = "https://api.pandascore.co";
 
@@ -39,38 +45,40 @@ function normalizeStatus(raw: string): EsportsMatchStatus {
 
 function normalizePlayer(p: any): EsportsPlayer {
   return {
-    id:          `cs2.${p.slug ?? p.id}`,
+    id:          resolveCanonicalPlayerId({ name: p.name, slug: p.slug, id: p.id }, 'cs2'),
     externalId:  p.id,
     name:        [p.first_name, p.last_name].filter(Boolean).join(" ") || p.name || "",
-    firstName:   p.first_name  ?? undefined,
-    lastName:    p.last_name   ?? undefined,
-    handle:      p.name        ?? "",
+    firstName:   p.first_name ?? undefined,
+    lastName:    p.last_name  ?? undefined,
+    handle:      p.name ?? "",
     nationality: p.nationality ?? undefined,
-    role:        p.role        ?? undefined,
-    imageUrl:    p.image_url   ?? undefined,
+    role:        p.role ?? undefined,
+    imageUrl:    p.image_url ?? undefined,
   };
 }
 
 function normalizeTeam(t: any): EsportsTeam | null {
   if (!t) return null;
   return {
-    id:         `cs2.${t.slug ?? t.id}`,
+    id:         resolveCanonicalTeamId({ name: t.name, slug: t.slug, id: t.id }, 'cs2'),
     externalId: t.id,
-    name:       t.name       ?? "TBD",
-    acronym:    t.acronym    ?? t.name?.slice(0, 4).toUpperCase() ?? "TBD",
-    imageUrl:   t.image_url  ?? undefined,
-    players:    Array.isArray(t.players) ? t.players.map(normalizePlayer) : undefined,
+    name:       t.name    ?? "TBD",
+    acronym:    t.acronym ?? t.name?.slice(0, 4).toUpperCase() ?? "TBD",
+    imageUrl:   t.image_url ?? undefined,
+    players:    Array.isArray(t.players)
+      ? t.players.map(normalizePlayer)
+      : undefined,
   };
 }
 
 function normalizeTournament(m: any): EsportsTournament {
   return {
-    id:          `tournament.${m.tournament?.id ?? 0}`,
-    externalId:  m.tournament?.id   ?? 0,
+    id:          resolveCanonicalTournamentId({ name: m.tournament?.name, slug: m.tournament?.slug, id: m.tournament?.id }),
+    externalId:  m.tournament?.id ?? 0,
     name:        m.tournament?.name ?? m.league?.name ?? "Unknown Tournament",
-    leagueId:    m.league?.id       ?? 0,
-    seriesId:    m.serie?.id        ?? undefined,
-    leagueName:  m.league?.name     ?? undefined,
+    leagueId:    m.league?.id    ?? 0,
+    seriesId:    m.serie?.id     ?? undefined,
+    leagueName:  m.league?.name  ?? undefined,
     serieName:   m.serie?.full_name ?? undefined,
     beginAt:     m.tournament?.begin_at ?? undefined,
     endAt:       m.tournament?.end_at   ?? undefined,
@@ -80,29 +88,31 @@ function normalizeTournament(m: any): EsportsTournament {
 function normalizeMaps(games: any[], homeExtId: number, awayExtId: number): CS2Map[] {
   if (!Array.isArray(games)) return [];
   return games.map((g: any) => {
-    const homeData = g.teams?.find((t: any) => t.team?.id === homeExtId);
-    const awayData = g.teams?.find((t: any) => t.team?.id === awayExtId);
+    const homeTeamData = g.teams?.find((t: any) => t.team?.id === homeExtId);
+    const awayTeamData = g.teams?.find((t: any) => t.team?.id === awayExtId);
     return {
       name:      g.map?.name ?? "TBA",
-      homeScore: homeData?.score ?? 0,
-      awayScore: awayData?.score ?? 0,
-      winnerId:  g.winner?.id ? `cs2.${g.winner.slug ?? g.winner.id}` : undefined,
+      homeScore: homeTeamData?.score ?? 0,
+      awayScore: awayTeamData?.score ?? 0,
+      winnerId:  g.winner?.id
+        ? resolveCanonicalTeamId({ name: g.winner.name, slug: g.winner.slug, id: g.winner.id }, 'cs2')
+        : undefined,
       completed: g.status === "finished",
     };
   });
 }
 
 function normalizeMatch(m: any): EsportsMatch {
-  const home      = normalizeTeam(m.opponents?.[0]?.opponent ?? null);
-  const away      = normalizeTeam(m.opponents?.[1]?.opponent ?? null);
-  const homeExtId = m.opponents?.[0]?.opponent?.id as number | undefined;
-  const awayExtId = m.opponents?.[1]?.opponent?.id as number | undefined;
+  const home       = normalizeTeam(m.opponents?.[0]?.opponent ?? null);
+  const away       = normalizeTeam(m.opponents?.[1]?.opponent ?? null);
+  const homeExtId  = m.opponents?.[0]?.opponent?.id as number | undefined;
+  const awayExtId  = m.opponents?.[1]?.opponent?.id as number | undefined;
 
-  const homeScore = m.results?.find((r: any) => r.team_id === homeExtId)?.score ?? 0;
-  const awayScore = m.results?.find((r: any) => r.team_id === awayExtId)?.score ?? 0;
+  const homeScore  = m.results?.find((r: any) => r.team_id === homeExtId)?.score ?? 0;
+  const awayScore  = m.results?.find((r: any) => r.team_id === awayExtId)?.score ?? 0;
 
   return {
-    id:            `cs2.match.${m.id}`,
+    id:            resolveCanonicalMatchId(m.id, 'cs2'),
     externalId:    m.id,
     status:        normalizeStatus(m.status),
     scheduledAt:   m.scheduled_at ?? null,
@@ -111,7 +121,9 @@ function normalizeMatch(m: any): EsportsMatch {
     tournament:    normalizeTournament(m),
     homeTeam:      home,
     awayTeam:      away,
-    winnerId:      m.winner?.id ? `cs2.${m.winner.slug ?? m.winner.id}` : undefined,
+    winnerId:      m.winner?.id
+      ? resolveCanonicalTeamId({ name: m.winner.name, slug: m.winner.slug, id: m.winner.id }, 'cs2')
+      : undefined,
     score:         { home: homeScore, away: awayScore },
     numberOfGames: m.number_of_games ?? 1,
     gameType:      "cs2",
@@ -194,6 +206,18 @@ export async function fetchCS2TeamMatches(
     per_page: String(limit),
     sort: "-end_at",
     "filter[opponent_id]": String(teamRaw.id),
+  });
+  return (raw ?? []).map(normalizeMatch);
+}
+
+export async function fetchCS2TeamMatchesByExternalId(
+  externalId: number | string,
+  limit = 20,
+): Promise<EsportsMatch[]> {
+  const raw = await pandaFetch<any[]>("/csgo/matches/past", {
+    per_page: String(limit),
+    sort: "-end_at",
+    "filter[opponent_id]": String(externalId),
   });
   return (raw ?? []).map(normalizeMatch);
 }

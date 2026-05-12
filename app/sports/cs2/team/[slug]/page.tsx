@@ -1,13 +1,21 @@
 /* eslint-disable @next/next/no-img-element */
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import {
   fetchCS2Team,
   fetchCS2TeamMatches,
   hasAPIKey,
 } from "@/lib/sports/cs2/client";
+import {
+  getTeamForm,
+  getMapWinrates,
+  getRecentMatches,
+  getRosterStability,
+} from "@/lib/esports/analytics";
 import CS2RosterRow from "@/components/cs2/CS2RosterRow";
-import CS2MatchCard from "@/components/cs2/CS2MatchCard";
+import { TeamFormSection } from "@/components/cs2/analytics/TeamFormSection";
+import { MapPoolSection } from "@/components/cs2/analytics/MapPoolSection";
+import { RosterStabilitySection } from "@/components/cs2/analytics/RosterStabilitySection";
+import { RecentMatchesSection } from "@/components/cs2/analytics/RecentMatchesSection";
 
 export const revalidate = 3600;
 
@@ -18,106 +26,85 @@ export default async function CS2TeamPage({
 }) {
   if (!hasAPIKey()) {
     return (
-      <div className="max-w-3xl px-4 pt-10 pb-10 mx-auto">
-        <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl p-6 text-center">
-          <p className="text-sm text-[#4B5563]">
-            PandaScore API key required.
-          </p>
-        </div>
+      <div className="flex items-center justify-center h-64">
+        <p className="text-sm text-[#374151]">PANDASCORE_API_KEY not configured.</p>
       </div>
     );
   }
 
-  const [team, recentMatches] = await Promise.all([
+  const [team, matches] = await Promise.all([
     fetchCS2Team(params.slug),
-    fetchCS2TeamMatches(params.slug, 6),
+    fetchCS2TeamMatches(params.slug, 20),
   ]);
 
   if (!team) notFound();
 
+  // Compute analytics
+  const form = getTeamForm(team.id, matches, 10);
+  const mapWinrates = getMapWinrates(team.id, matches);
+  const recentMatches = getRecentMatches(team.id, matches, 10);
+  const stability = getRosterStability(team, matches, 5);
+
   return (
-    <div className="max-w-3xl px-4 pt-4 pb-10 mx-auto">
-
-      {/* Back */}
-      <Link
-        href="/sports/cs2"
-        className="inline-flex items-center gap-1 text-xs text-[#374151] hover:text-[#9CA3AF] mb-4 transition-colors"
-      >
-        ← CS2
-      </Link>
-
-      {/* ── Team header ── */}
-      <div className="bg-[#111827] rounded-2xl px-5 py-5 mb-4 flex items-center gap-4">
-        {team.imageUrl ? (
-          <img src={team.imageUrl} alt={team.name} className="w-16 h-16 object-contain shrink-0" />
-        ) : (
-          <div className="w-16 h-16 rounded-xl bg-[#1e293b] flex items-center justify-center shrink-0">
-            <span className="text-lg text-[#4B5563] font-bold">{team.acronym.slice(0, 3)}</span>
-          </div>
-        )}
-        <div>
-          <h1 className="text-xl font-bold text-white leading-tight">{team.name}</h1>
-          <div className="text-xs text-[#4B5563] mt-0.5">{team.acronym} · CS2</div>
-        </div>
-
-        {/* Ranking placeholder */}
-        <div className="ml-auto text-right">
-          <div className="text-[9px] text-[#374151] uppercase tracking-wider mb-0.5">Ranking</div>
-          <div className="text-xs text-[#1e3a5f]">—</div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-        {/* ── Roster ── */}
-        <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden">
-          <SectionHeader title="Active Roster" />
-          <div className="px-3 pb-1">
-            {team.players && team.players.length > 0 ? (
-              team.players.map(p => <CS2RosterRow key={p.id} player={p} />)
-            ) : (
-              <p className="text-xs text-[#374151] py-4 text-center">No roster data.</p>
-            )}
-          </div>
-        </div>
-
-        {/* ── Right column ── */}
-        <div className="flex flex-col gap-4">
-
-          {/* Recent matches */}
-          <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden">
-            <SectionHeader title="Recent Matches" />
-            <div className="px-3 pb-3 flex flex-col gap-2">
-              {recentMatches.length > 0 ? (
-                recentMatches.map(m => <CS2MatchCard key={m.id} match={m} />)
-              ) : (
-                <p className="text-xs text-[#374151] py-4 text-center">No recent matches.</p>
+    <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+      {/* Team header */}
+      <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl p-5">
+        <div className="flex items-center gap-4">
+          {team.imageUrl ? (
+            <img
+              src={team.imageUrl}
+              alt=""
+              className="w-14 h-14 object-contain shrink-0"
+            />
+          ) : (
+            <div className="w-14 h-14 rounded-xl bg-[#1e293b] flex items-center justify-center shrink-0">
+              <span className="text-sm font-bold text-[#4B5563]">
+                {team.acronym?.slice(0, 4)}
+              </span>
+            </div>
+          )}
+          <div>
+            <h1 className="text-xl font-bold text-white">{team.name}</h1>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[10px] font-semibold text-[#374151] uppercase tracking-wider border border-[#1e293b] rounded px-1.5 py-0.5">
+                {team.acronym}
+              </span>
+              {team.region && (
+                <span className="text-[10px] text-[#374151]">{team.region}</span>
               )}
+              <span className="text-[10px] text-[#374151] uppercase tracking-wider">CS2</span>
             </div>
           </div>
-
-          {/* Tournament history placeholder */}
-          <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden">
-            <SectionHeader title="Tournament History" />
-            <div className="px-3 pb-4 pt-2">
-              <p className="text-[11px] text-[#1e3a5f]">
-                Tournament results will be available in a future update.
-              </p>
-            </div>
-          </div>
-
         </div>
       </div>
-    </div>
-  );
-}
 
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="px-3 py-2.5 border-b border-[#1e293b]">
-      <span className="text-[10px] font-semibold text-[#374151] uppercase tracking-wider">
-        {title}
-      </span>
+      {/* Form + Maps row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <TeamFormSection form={form} />
+        <MapPoolSection mapWinrates={mapWinrates} />
+      </div>
+
+      {/* Roster stability */}
+      <RosterStabilitySection stability={stability} />
+
+      {/* Recent matches */}
+      <RecentMatchesSection entries={recentMatches} />
+
+      {/* Full roster */}
+      {team.players && team.players.length > 0 && (
+        <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-[#1e293b]">
+            <span className="text-[10px] font-semibold text-[#374151] uppercase tracking-widest">
+              Roster
+            </span>
+          </div>
+          <div className="px-4">
+            {team.players.map((p) => (
+              <CS2RosterRow key={p.id} player={p} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

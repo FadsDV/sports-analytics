@@ -3,32 +3,31 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
   fetchCS2Match,
-  fetchCS2TeamMatches,
+  fetchCS2TeamMatchesByExternalId,
   hasAPIKey,
 } from "@/lib/sports/cs2/client";
+import {
+  getTeamForm,
+  getHeadToHead,
+  getMapWinrates,
+  getRecentMatches,
+} from "@/lib/esports/analytics";
 import CS2StatusBadge from "@/components/cs2/CS2StatusBadge";
-import CS2MapScore from "@/components/cs2/CS2MapScore";
-import CS2MatchCard from "@/components/cs2/CS2MatchCard";
 import CS2RosterRow from "@/components/cs2/CS2RosterRow";
+import { HeadToHeadSection } from "@/components/cs2/analytics/HeadToHeadSection";
+import { TeamFormComparison } from "@/components/cs2/analytics/TeamFormComparison";
+import { MapPoolComparison } from "@/components/cs2/analytics/MapPoolComparison";
+import { RecentMatchesSection } from "@/components/cs2/analytics/RecentMatchesSection";
+import { formatKickoff } from "@/lib/utils";
 import type { EsportsTeam } from "@/lib/esports/types";
-import { formatKickoffFull } from "@/lib/utils";
 
 export const revalidate = 30;
 
-export default async function CS2MatchPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function CS2MatchPage({ params }: { params: { id: string } }) {
   if (!hasAPIKey()) {
     return (
-      <div className="max-w-3xl px-4 pt-10 pb-10 mx-auto">
-        <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl p-6 text-center">
-          <p className="text-sm text-[#4B5563]">
-            PandaScore API key required. Add <code className="text-[#9CA3AF]">PANDASCORE_API_KEY</code> to{" "}
-            <code className="text-[#9CA3AF]">.env.local</code>.
-          </p>
-        </div>
+      <div className="flex items-center justify-center h-64">
+        <p className="text-sm text-[#374151]">PANDASCORE_API_KEY not configured.</p>
       </div>
     );
   }
@@ -36,211 +35,199 @@ export default async function CS2MatchPage({
   const match = await fetchCS2Match(params.id);
   if (!match) notFound();
 
-  const { homeTeam, awayTeam, status, score, tournament, scheduledAt, numberOfGames, maps, winnerId } = match;
+  const homeExtId = match.homeTeam?.externalId;
+  const awayExtId = match.awayTeam?.externalId;
 
-  const isLive     = status === "live";
-  const isDone     = status === "completed";
-  const showScore  = isLive || isDone;
-
-  // Fetch recent matches for both teams in parallel
-  const homeSlug = homeTeam?.id.replace(/^cs2\./, "") ?? "";
-  const awaySlug = awayTeam?.id.replace(/^cs2\./, "") ?? "";
-
-  const [homeRecent, awayRecent] = await Promise.all([
-    homeSlug ? fetchCS2TeamMatches(homeSlug, 5) : Promise.resolve([]),
-    awaySlug ? fetchCS2TeamMatches(awaySlug, 5) : Promise.resolve([]),
+  const [homeMatches, awayMatches] = await Promise.all([
+    homeExtId ? fetchCS2TeamMatchesByExternalId(homeExtId, 20) : Promise.resolve([]),
+    awayExtId ? fetchCS2TeamMatchesByExternalId(awayExtId, 20) : Promise.resolve([]),
   ]);
 
+  const combined = homeMatches.concat(awayMatches);
+
+  const homeId = match.homeTeam?.id ?? "";
+  const awayId = match.awayTeam?.id ?? "";
+
+  const homeForm = getTeamForm(homeId, homeMatches, 10);
+  const awayForm = getTeamForm(awayId, awayMatches, 10);
+  const h2h = getHeadToHead(homeId, awayId, combined);
+  const homeMaps = getMapWinrates(homeId, homeMatches);
+  const awayMaps = getMapWinrates(awayId, awayMatches);
+  const homeRecent = getRecentMatches(homeId, homeMatches, 5);
+  const awayRecent = getRecentMatches(awayId, awayMatches, 5);
+
+  const isCompleted = match.status === "completed";
+  const isLive = match.status === "live";
+
   return (
-    <div className="max-w-3xl px-4 pt-4 pb-10 mx-auto">
-
-      {/* Back */}
-      <Link
-        href="/sports/cs2"
-        className="inline-flex items-center gap-1 text-xs text-[#374151] hover:text-[#9CA3AF] mb-4 transition-colors"
-      >
-        ← CS2
-      </Link>
-
-      {/* ── Hero ── */}
-      <div className="bg-[#111827] rounded-2xl overflow-hidden mb-4">
-
-        {/* Tournament bar */}
-        <div className="flex items-center gap-2 px-5 py-2.5 border-b border-white/5">
-          <span className="text-xs text-[#4B5563] truncate flex-1">
-            {tournament.leagueName ?? tournament.name}
-            {tournament.serieName ? ` · ${tournament.serieName}` : ""}
-          </span>
-          <span className="text-[10px] text-[#374151]">Bo{numberOfGames}</span>
-          <div className="ml-2">
-            <CS2StatusBadge status={status} />
-          </div>
+    <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+      {/* Match header */}
+      <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl p-5">
+        {/* Tournament label */}
+        <div className="text-[10px] text-[#374151] uppercase tracking-wider mb-3">
+          {match.tournament.leagueName ?? match.tournament.name}
+          {match.tournament.serieName ? ` · ${match.tournament.serieName}` : ""}
+          {" · "}Bo{match.numberOfGames}
         </div>
 
         {/* Teams + score */}
-        <div className="px-5 py-6 flex items-center gap-4">
-          <TeamHero team={homeTeam} winnerId={winnerId} />
+        <div className="flex items-center gap-4">
+          <TeamBlock
+            team={match.homeTeam}
+            isWinner={isCompleted && match.winnerId === match.homeTeam?.id}
+            isLoser={isCompleted && match.winnerId !== undefined && match.winnerId !== match.homeTeam?.id}
+            align="left"
+          />
 
-          <div className="flex-1 text-center">
-            {showScore ? (
-              <div className="text-4xl font-black tabular-nums text-white leading-none">
-                {score?.home ?? 0}
-                <span className="text-[#1e293b] mx-2 font-light">–</span>
-                {score?.away ?? 0}
+          <div className="shrink-0 text-center min-w-[80px]">
+            {isLive || isCompleted ? (
+              <div className="text-3xl font-black text-white tabular-nums leading-none">
+                {match.score?.home ?? 0}
+                <span className="text-[#1e293b] mx-1">–</span>
+                {match.score?.away ?? 0}
               </div>
             ) : (
-              <div>
-                <div className="text-lg text-[#374151] font-light mb-1">vs</div>
-                {scheduledAt && (
-                  <div className="text-xs text-[#9CA3AF]">
-                    {formatKickoffFull(scheduledAt)}
+              <div className="space-y-1">
+                <div className="text-sm text-[#374151]">vs</div>
+                {match.scheduledAt && (
+                  <div className="text-xs text-[#3B82F6]">
+                    {formatKickoff(match.scheduledAt)}
                   </div>
                 )}
               </div>
             )}
+            <div className="mt-1.5 flex justify-center">
+              <CS2StatusBadge status={match.status} />
+            </div>
           </div>
 
-          <TeamHero team={awayTeam} winnerId={winnerId} mirror />
+          <TeamBlock
+            team={match.awayTeam}
+            isWinner={isCompleted && match.winnerId === match.awayTeam?.id}
+            isLoser={isCompleted && match.winnerId !== undefined && match.winnerId !== match.awayTeam?.id}
+            align="right"
+          />
         </div>
 
         {/* Map scores */}
-        {maps && maps.length > 0 && (
-          <div className="px-5 pb-5 border-t border-white/[0.04] pt-4">
-            <CS2MapScore
-              maps={maps}
-              bestOf={numberOfGames}
-              homeTeamId={homeTeam?.id}
-              awayTeamId={awayTeam?.id}
-            />
+        {match.maps && match.maps.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-[#1e293b]">
+            <div className="text-[10px] text-[#374151] uppercase tracking-wider mb-2">Maps</div>
+            <div className="flex gap-2 flex-wrap">
+              {match.maps.map((map, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 bg-[#111827] border border-[#1e293b] rounded px-3 py-1.5"
+                >
+                  <span className="text-xs text-[#94a3b8]">{map.name}</span>
+                  {map.completed && (
+                    <span className="text-xs font-bold text-white tabular-nums">
+                      {map.homeScore}–{map.awayScore}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
 
-      {/* ── Odds placeholder ── */}
-      <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl p-4 mb-4">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-[10px] font-semibold text-[#374151] uppercase tracking-wider">
-            Odds
-          </span>
-          <span className="text-[9px] text-[#1e293b] bg-[#1e293b] px-1.5 py-0.5 rounded">
-            Coming soon
-          </span>
+      {/* H2H */}
+      <HeadToHeadSection
+        h2h={h2h}
+        homeTeamName={match.homeTeam?.name ?? "Home"}
+        awayTeamName={match.awayTeam?.name ?? "Away"}
+      />
+
+      {/* Form comparison */}
+      <TeamFormComparison
+        homeForm={homeForm}
+        awayForm={awayForm}
+        homeTeamName={match.homeTeam?.name ?? "Home"}
+        awayTeamName={match.awayTeam?.name ?? "Away"}
+      />
+
+      {/* Map pool comparison */}
+      <MapPoolComparison
+        homeMaps={homeMaps}
+        awayMaps={awayMaps}
+        homeTeamName={match.homeTeam?.acronym ?? match.homeTeam?.name ?? "Home"}
+        awayTeamName={match.awayTeam?.acronym ?? match.awayTeam?.name ?? "Away"}
+      />
+
+      {/* Recent results — two columns */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <RecentMatchesSection entries={homeRecent} />
+        <RecentMatchesSection entries={awayRecent} />
+      </div>
+
+      {/* Rosters */}
+      {(match.homeTeam?.players?.length || match.awayTeam?.players?.length) ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <RosterPanel team={match.homeTeam} />
+          <RosterPanel team={match.awayTeam} />
         </div>
-        <p className="text-[11px] text-[#1e3a5f]">
-          Odds integration will be available in a future update.
-        </p>
-      </div>
-
-      {/* ── Recent matches + Rosters ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-        {/* Home team panel */}
-        <TeamPanel team={homeTeam} recentMatches={homeRecent} />
-
-        {/* Away team panel */}
-        <TeamPanel team={awayTeam} recentMatches={awayRecent} />
-      </div>
+      ) : null}
     </div>
   );
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function TeamHero({
+function TeamBlock({
   team,
-  winnerId,
-  mirror,
+  isWinner,
+  isLoser,
+  align,
 }: {
   team: EsportsTeam | null;
-  winnerId?: string;
-  mirror?: boolean;
+  isWinner: boolean;
+  isLoser: boolean;
+  align: "left" | "right";
 }) {
-  const isWinner = team && winnerId && team.id === winnerId;
+  const isRight = align === "right";
+  const opacity = isLoser ? "opacity-40" : "";
   return (
-    <div className={`flex-1 flex flex-col items-center gap-2 text-center min-w-0 ${mirror ? "" : ""}`}>
-      {team?.imageUrl ? (
-        <img
-          src={team.imageUrl}
-          alt={team.name}
-          className={`w-14 h-14 sm:w-16 sm:h-16 object-contain ${!isWinner && winnerId ? "opacity-40" : ""}`}
-        />
-      ) : (
-        <div className="w-14 h-14 rounded-lg bg-[#1e293b] flex items-center justify-center">
-          <span className="text-sm text-[#4B5563] font-bold">
-            {team?.acronym?.slice(0, 3) ?? "TBD"}
-          </span>
-        </div>
-      )}
-      <div>
-        <div className="font-bold text-white text-sm leading-tight">
-          {team?.name ?? "TBD"}
-        </div>
+    <div
+      className={`flex-1 flex items-center gap-3 min-w-0 ${isRight ? "flex-row-reverse" : ""} ${opacity}`}
+    >
+      <TeamLogo team={team} />
+      <div className={`min-w-0 ${isRight ? "text-right" : ""}`}>
+        <div className="text-sm font-bold text-white truncate">{team?.name ?? "TBD"}</div>
         {isWinner && (
-          <div className="text-[9px] text-[#22C55E] mt-0.5 uppercase tracking-wider">
-            Winner
-          </div>
+          <div className="text-[10px] text-emerald-400 font-medium mt-0.5">Winner</div>
         )}
       </div>
     </div>
   );
 }
 
-function TeamPanel({
-  team,
-  recentMatches,
-}: {
-  team: EsportsTeam | null;
-  recentMatches: Awaited<ReturnType<typeof fetchCS2TeamMatches>>;
-}) {
-  if (!team) return null;
-  const teamSlug = team.id.replace(/^cs2\./, "");
+function TeamLogo({ team }: { team: EsportsTeam | null }) {
+  if (team?.imageUrl) {
+    return <img src={team.imageUrl} alt="" className="w-10 h-10 object-contain shrink-0" />;
+  }
+  return (
+    <div className="w-10 h-10 rounded-lg bg-[#1e293b] flex items-center justify-center shrink-0">
+      <span className="text-[10px] text-[#4B5563] font-bold">
+        {team?.acronym?.slice(0, 3) ?? "TBD"}
+      </span>
+    </div>
+  );
+}
 
+function RosterPanel({ team }: { team: EsportsTeam | null }) {
+  if (!team?.players?.length) return null;
   return (
     <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden">
-      {/* Team header */}
-      <div className="flex items-center gap-2.5 px-3 py-2.5 border-b border-[#1e293b]">
-        {team.imageUrl ? (
-          <img src={team.imageUrl} alt="" className="w-5 h-5 object-contain shrink-0" />
-        ) : (
-          <div className="w-5 h-5 rounded bg-[#1e293b] flex items-center justify-center shrink-0">
-            <span className="text-[7px] text-[#4B5563] font-bold">
-              {team.acronym.slice(0, 3)}
-            </span>
-          </div>
-        )}
-        <Link
-          href={`/sports/cs2/team/${teamSlug}`}
-          className="text-xs font-semibold text-white hover:text-[#3B82F6] transition-colors truncate"
-        >
+      <div className="px-4 py-2.5 border-b border-[#1e293b] flex items-center gap-2">
+        <span className="text-[10px] font-semibold text-[#374151] uppercase tracking-widest">
           {team.name}
-        </Link>
+        </span>
+        <span className="text-[10px] text-[#1e293b]">Roster</span>
       </div>
-
-      {/* Roster preview */}
-      {team.players && team.players.length > 0 && (
-        <div className="px-3 pb-1">
-          <div className="text-[9px] text-[#374151] uppercase tracking-wider pt-2.5 pb-1">
-            Roster
-          </div>
-          {team.players.slice(0, 5).map(p => (
-            <CS2RosterRow key={p.id} player={p} />
-          ))}
-        </div>
-      )}
-
-      {/* Recent matches */}
-      {recentMatches.length > 0 && (
-        <div className="px-3 pt-2 pb-3">
-          <div className="text-[9px] text-[#374151] uppercase tracking-wider mb-2">
-            Recent
-          </div>
-          <div className="flex flex-col gap-1.5">
-            {recentMatches.slice(0, 3).map(m => (
-              <CS2MatchCard key={m.id} match={m} />
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="px-4">
+        {team.players.map((p) => (
+          <CS2RosterRow key={p.id} player={p} />
+        ))}
+      </div>
     </div>
   );
 }

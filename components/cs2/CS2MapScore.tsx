@@ -7,7 +7,12 @@ interface CS2MapScoreProps {
   awayTeamId?: string;
 }
 
-export default function CS2MapScore({ maps, bestOf }: CS2MapScoreProps) {
+export default function CS2MapScore({
+  maps,
+  bestOf,
+  homeTeamId,
+  awayTeamId,
+}: CS2MapScoreProps) {
   if (maps.length === 0) return null;
 
   return (
@@ -20,7 +25,10 @@ export default function CS2MapScore({ maps, bestOf }: CS2MapScoreProps) {
           const homeWon = map.completed && map.homeScore > map.awayScore;
           const awayWon = map.completed && map.awayScore > map.homeScore;
           return (
-            <div key={i} className="flex items-center gap-2 text-[10px] py-0.5">
+            <div
+              key={i}
+              className="flex items-center gap-2 text-[10px] py-0.5"
+            >
               <span className="text-[#374151] w-20 truncate shrink-0">{map.name}</span>
               <div className="flex items-center gap-1 tabular-nums">
                 <span className={homeWon ? "text-white font-semibold" : "text-[#4B5563]"}>

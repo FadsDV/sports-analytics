@@ -1,5 +1,14 @@
 import type { EsportsMatchStatus } from "@/lib/esports/types";
 
+const LABELS: Record<EsportsMatchStatus, string> = {
+  not_started: "Upcoming",
+  live:        "LIVE",
+  paused:      "PAUSED",
+  completed:   "FT",
+  cancelled:   "Cancelled",
+  postponed:   "Postponed",
+};
+
 export default function CS2StatusBadge({ status }: { status: EsportsMatchStatus }) {
   if (status === "live") {
     return (
@@ -19,7 +28,7 @@ export default function CS2StatusBadge({ status }: { status: EsportsMatchStatus 
   if (status === "cancelled" || status === "postponed") {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-medium bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">
-        {status === "cancelled" ? "Cancelled" : "Postponed"}
+        {LABELS[status]}
       </span>
     );
   }
