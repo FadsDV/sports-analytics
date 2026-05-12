@@ -13,9 +13,10 @@ const NAV_MAIN = [
 ];
 
 const NAV_EXPLORE = [
-  { href: "/leagues", icon: "◈", label: "Leagues" },
-  { href: "/teams",   icon: "◎", label: "Teams"   },
-  { href: "/players", icon: "◉", label: "Players"  },
+  { href: "/leagues",     icon: "◈", label: "Leagues" },
+  { href: "/teams",       icon: "◎", label: "Teams"   },
+  { href: "/players",     icon: "◉", label: "Players"  },
+  { href: "/sports/cs2",  icon: "⊕", label: "CS2"     },
 ];
 
 // Inner component uses useSearchParams — must be inside Suspense
