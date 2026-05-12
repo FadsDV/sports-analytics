@@ -9,7 +9,7 @@ import type { AFLMatchAnalytics } from "@/lib/sports/afl/analytics";
 import type { TeamHistoryGame, VenueFilter } from "@/lib/sports/espn";
 import FormPills from "@/components/FormPills";
 import PlayerAvatar from "@/components/afl/PlayerAvatar";
-import OddsEdgePanel from "./OddsEdgePanel";
+import AFLUpcomingOdds from "./AFLUpcomingOdds";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -188,14 +188,11 @@ function AFLPreMatch({
           </div>
         </Card>
 
-        {/* Value Intelligence */}
-        <Card title="Value Intelligence">
-          <OddsEdgePanel
-            gameId={game.id}
-            sport={game.sport}
+        {/* Sportsbook Odds */}
+        <Card title="Sportsbook Odds">
+          <AFLUpcomingOdds
             homeTeamName={homeTeam.name}
             awayTeamName={awayTeam.name}
-            estimatedHomeProb={prob.home}
           />
         </Card>
 
