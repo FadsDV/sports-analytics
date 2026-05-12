@@ -15,6 +15,12 @@ import type {
   EsportsMatchStatus,
   CS2Map,
 } from "@/lib/esports/types";
+import {
+  resolveCanonicalTeamId,
+  resolveCanonicalPlayerId,
+  resolveCanonicalTournamentId,
+  resolveCanonicalMatchId,
+} from "@/lib/mappings/esports";
 
 const PANDASCORE_BASE = "https://api.pandascore.co";
 
@@ -39,7 +45,7 @@ function normalizeStatus(raw: string): EsportsMatchStatus {
 
 function normalizePlayer(p: any): EsportsPlayer {
   return {
-    id:          `cs2.${p.slug ?? p.id}`,
+    id:          resolveCanonicalPlayerId({ name: p.name, slug: p.slug, id: p.id }, 'cs2'),
     externalId:  p.id,
     name:        [p.first_name, p.last_name].filter(Boolean).join(" ") || p.name || "",
     firstName:   p.first_name ?? undefined,
@@ -54,7 +60,7 @@ function normalizePlayer(p: any): EsportsPlayer {
 function normalizeTeam(t: any): EsportsTeam | null {
   if (!t) return null;
   return {
-    id:         `cs2.${t.slug ?? t.id}`,
+    id:         resolveCanonicalTeamId({ name: t.name, slug: t.slug, id: t.id }, 'cs2'),
     externalId: t.id,
     name:       t.name    ?? "TBD",
     acronym:    t.acronym ?? t.name?.slice(0, 4).toUpperCase() ?? "TBD",
@@ -67,7 +73,7 @@ function normalizeTeam(t: any): EsportsTeam | null {
 
 function normalizeTournament(m: any): EsportsTournament {
   return {
-    id:          `tournament.${m.tournament?.id ?? 0}`,
+    id:          resolveCanonicalTournamentId({ name: m.tournament?.name, slug: m.tournament?.slug, id: m.tournament?.id }),
     externalId:  m.tournament?.id ?? 0,
     name:        m.tournament?.name ?? m.league?.name ?? "Unknown Tournament",
     leagueId:    m.league?.id    ?? 0,
@@ -88,7 +94,9 @@ function normalizeMaps(games: any[], homeExtId: number, awayExtId: number): CS2M
       name:      g.map?.name ?? "TBA",
       homeScore: homeTeamData?.score ?? 0,
       awayScore: awayTeamData?.score ?? 0,
-      winnerId:  g.winner?.id ? `cs2.${g.winner.slug ?? g.winner.id}` : undefined,
+      winnerId:  g.winner?.id
+        ? resolveCanonicalTeamId({ name: g.winner.name, slug: g.winner.slug, id: g.winner.id }, 'cs2')
+        : undefined,
       completed: g.status === "finished",
     };
   });
@@ -104,7 +112,7 @@ function normalizeMatch(m: any): EsportsMatch {
   const awayScore  = m.results?.find((r: any) => r.team_id === awayExtId)?.score ?? 0;
 
   return {
-    id:            `cs2.match.${m.id}`,
+    id:            resolveCanonicalMatchId(m.id, 'cs2'),
     externalId:    m.id,
     status:        normalizeStatus(m.status),
     scheduledAt:   m.scheduled_at ?? null,
@@ -113,7 +121,9 @@ function normalizeMatch(m: any): EsportsMatch {
     tournament:    normalizeTournament(m),
     homeTeam:      home,
     awayTeam:      away,
-    winnerId:      m.winner?.id ? `cs2.${m.winner.slug ?? m.winner.id}` : undefined,
+    winnerId:      m.winner?.id
+      ? resolveCanonicalTeamId({ name: m.winner.name, slug: m.winner.slug, id: m.winner.id }, 'cs2')
+      : undefined,
     score:         { home: homeScore, away: awayScore },
     numberOfGames: m.number_of_games ?? 1,
     gameType:      "cs2",
