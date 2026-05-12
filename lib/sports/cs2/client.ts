@@ -210,6 +210,18 @@ export async function fetchCS2TeamMatches(
   return (raw ?? []).map(normalizeMatch);
 }
 
+export async function fetchCS2TeamMatchesByExternalId(
+  externalId: number | string,
+  limit = 20,
+): Promise<EsportsMatch[]> {
+  const raw = await pandaFetch<any[]>("/csgo/matches/past", {
+    per_page: String(limit),
+    sort: "-end_at",
+    "filter[opponent_id]": String(externalId),
+  });
+  return (raw ?? []).map(normalizeMatch);
+}
+
 export function hasAPIKey(): boolean {
   return Boolean(process.env.PANDASCORE_API_KEY);
 }
