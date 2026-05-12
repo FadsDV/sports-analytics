@@ -19,8 +19,8 @@ export const EsportsUtils = {
    */
   sortByDate(matches: EsportsMatch[], order: 'asc' | 'desc' = 'asc'): EsportsMatch[] {
     return [...matches].sort((a, b) => {
-      const dateA = new Date(a.scheduledAt).getTime();
-      const dateB = new Date(b.scheduledAt).getTime();
+      const dateA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
+      const dateB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
       return order === 'asc' ? dateA - dateB : dateB - dateA;
     });
   },

@@ -14,11 +14,16 @@ export class PandaScoreProvider {
    */
   async getUpcomingMatches(game: "cs2" | "lol", limit = 10): Promise<EsportsMatch[]> {
     const endpoint = `/${game}/matches/upcoming`;
-    const rawMatches = await this.client.fetch<any[]>(endpoint, { 
-      per_page: limit,
-      sort: "scheduled_at" 
-    });
-    return rawMatches.map(m => normalizeMatch(m, game));
+    try {
+      const rawMatches = await this.client.fetch<any[]>(endpoint, { 
+        per_page: limit,
+        sort: "scheduled_at" 
+      });
+      return rawMatches.map(m => normalizeMatch(m, game));
+    } catch (error) {
+      console.error(`Failed to fetch upcoming ${game} matches:`, error);
+      return [];
+    }
   }
 
   /**
@@ -26,8 +31,13 @@ export class PandaScoreProvider {
    */
   async getLiveMatches(game: "cs2" | "lol"): Promise<EsportsMatch[]> {
     const endpoint = `/${game}/matches/running`;
-    const rawMatches = await this.client.fetch<any[]>(endpoint);
-    return rawMatches.map(m => normalizeMatch(m, game));
+    try {
+      const rawMatches = await this.client.fetch<any[]>(endpoint);
+      return rawMatches.map(m => normalizeMatch(m, game));
+    } catch (error) {
+      console.error(`Failed to fetch live ${game} matches:`, error);
+      return [];
+    }
   }
 
   /**
@@ -35,11 +45,16 @@ export class PandaScoreProvider {
    */
   async getPastMatches(game: "cs2" | "lol", limit = 10): Promise<EsportsMatch[]> {
     const endpoint = `/${game}/matches/past`;
-    const rawMatches = await this.client.fetch<any[]>(endpoint, { 
-      per_page: limit,
-      sort: "-end_at" 
-    });
-    return rawMatches.map(m => normalizeMatch(m, game));
+    try {
+      const rawMatches = await this.client.fetch<any[]>(endpoint, { 
+        per_page: limit,
+        sort: "-end_at" 
+      });
+      return rawMatches.map(m => normalizeMatch(m, game));
+    } catch (error) {
+      console.error(`Failed to fetch past ${game} matches:`, error);
+      return [];
+    }
   }
 
   /**
