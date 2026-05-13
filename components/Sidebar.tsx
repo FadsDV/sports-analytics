@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
@@ -112,11 +113,29 @@ export default function Sidebar() {
     <aside className="fixed left-0 top-0 h-full w-[60px] xl:w-[200px] bg-[#0a1628] border-r border-white/5 z-40 flex flex-col">
 
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-3 xl:px-5 py-4 border-b border-white/5">
-        <div className="w-8 h-8 rounded-lg bg-[#3B82F6] flex items-center justify-center shrink-0">
-          <span className="text-white text-sm font-black">D</span>
+      <div className="flex items-center justify-center xl:justify-start px-1 xl:px-3 py-4 xl:py-5 border-b border-white/[0.07] shrink-0">
+        {/* Collapsed (60px sidebar): icon fills nearly the full width */}
+        <div className="block xl:hidden relative w-[50px] h-[50px] shrink-0">
+          <Image
+            src="/logo.png"
+            alt="DegenHUB"
+            fill
+            sizes="50px"
+            className="object-contain"
+            priority
+          />
         </div>
-        <span className="font-bold text-white text-base tracking-tight hidden xl:block">DegenHUB</span>
+        {/* Expanded (200px sidebar): tall horizontal lockup */}
+        <div className="hidden xl:block relative h-[64px] w-[176px] shrink-0">
+          <Image
+            src="/logo.png"
+            alt="DegenHUB"
+            fill
+            sizes="176px"
+            className="object-contain object-left"
+            priority
+          />
+        </div>
       </div>
 
       {/* Main nav — wrapped in Suspense for useSearchParams */}

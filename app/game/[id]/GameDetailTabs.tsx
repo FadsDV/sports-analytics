@@ -8,10 +8,16 @@ import type { AFLInsight } from "@/lib/sports/afl/insights";
 import type { ESPNPlayer, ESPNInjury } from "@/lib/sports/espnPlayers";
 import type { SofascoreMatchData, SofascoreIncident } from "@/lib/sports/sofascore";
 import type { AFLMatchAnalytics } from "@/lib/sports/afl/analytics";
+import type { SoccerMatchAnalytics } from "@/lib/sports/soccer/analytics";
+import type { NBAMatchAnalytics } from "@/lib/sports/nba/analytics";
 import type { TeamHistoryGame, VenueFilter } from "@/lib/sports/espn";
 import FormPills from "@/components/FormPills";
 import SquadList from "@/components/SquadList";
 import AFLDashboard from "@/components/afl/AFLDashboard";
+import SoccerDashboard from "@/components/soccer/SoccerDashboard";
+import NBADashboard from "@/components/nba/NBADashboard";
+import NBAPlayerList from "@/components/nba/NBAPlayerList";
+
 import PlayerDrawer from "@/components/afl/PlayerDrawer";
 import PlayerAvatar from "@/components/afl/PlayerAvatar";
 
@@ -57,6 +63,8 @@ export interface GameDetailTabsProps {
   awayHistories:      HistoryVariants;
   h2hVariants:        H2HVariants;
   aflAnalytics:       AFLMatchAnalytics | null;
+  soccerAnalytics:    SoccerMatchAnalytics | null;
+  nbaAnalytics:       NBAMatchAnalytics | null;
   sofascore:          SofascoreMatchData | null;
   insights:           AFLInsight[];
   isSoccer:           boolean;
@@ -69,7 +77,48 @@ export interface GameDetailTabsProps {
 
 // ─── Shared atoms ─────────────────────────────────────────────────────────────
 
+function MatchIncidents({ incidents, homeTeam, awayTeam }: {
+  incidents: SofascoreIncident[]; homeTeam: string; awayTeam: string;
+}) {
+  const filtered = incidents.filter(i => i.type === "goal" || i.type === "card" || i.type === "substitution");
+  if (!filtered.length) return <p className="text-xs text-[#374151]">No events recorded.</p>;
+  return (
+    <div>
+      {filtered.map((inc, idx) => {
+        const isHome = inc.isHome;
+        const min = `${inc.minute}${inc.addedTime ? `+${inc.addedTime}` : ""}′`;
+        let icon = "·"; let cls = "text-[#374151]"; let label = "";
+        if (inc.type === "goal") {
+          icon = "⚽"; cls = "text-[#22C55E]";
+          label = inc.playerName ?? "?";
+          if (inc.assistName) label += ` (${inc.assistName})`;
+          if (inc.incidentClass === "penalty") label += " [P]";
+          if (inc.incidentClass === "ownGoal") { icon = "⚽"; cls = "text-[#EF4444]"; label += " [OG]"; }
+        } else if (inc.type === "card") {
+          icon = inc.incidentClass === "yellow" ? "🟨" : "🟥";
+          cls  = inc.incidentClass === "yellow" ? "text-[#F59E0B]" : "text-[#EF4444]";
+          label = inc.playerName ?? "?";
+        } else {
+          icon = "↕"; cls = "text-[#3B82F6]";
+          label = `${inc.playerInName ?? "?"} ↑ / ${inc.playerOutName ?? "?"} ↓`;
+        }
+        return (
+          <div key={idx} className={`flex items-center gap-2 py-1.5 border-b border-white/[0.04] last:border-0 text-xs ${isHome ? "" : "flex-row-reverse"}`}>
+            <span className="text-[#374151] w-8 shrink-0 text-center">{min}</span>
+            <span className={`shrink-0 ${cls}`}>{icon}</span>
+            <div className={`flex-1 ${isHome ? "text-left" : "text-right"}`}>
+              <span className="text-[#E5E7EB]">{label}</span>
+              <span className="text-[#374151] ml-1">· {isHome ? homeTeam : awayTeam}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+
   return (
     <div className="bg-[#111827] rounded-xl p-4 border border-white/[0.04]">
       <h3 className="text-[10px] font-semibold uppercase tracking-widest text-[#374151] mb-3">{title}</h3>
@@ -376,222 +425,6 @@ function SofascoreList({ players, sport }: { players: any[]; sport: string }) {
   );
 }
 
-function MatchIncidents({ incidents, homeTeam, awayTeam }: {
-  incidents: SofascoreIncident[]; homeTeam: string; awayTeam: string;
-}) {
-  const filtered = incidents.filter(i => i.type === "goal" || i.type === "card" || i.type === "substitution");
-  if (!filtered.length) return <p className="text-xs text-[#374151]">No events recorded.</p>;
-  return (
-    <div>
-      {filtered.map((inc, idx) => {
-        const isHome = inc.isHome;
-        const min = `${inc.minute}${inc.addedTime ? `+${inc.addedTime}` : ""}′`;
-        let icon = "·"; let cls = "text-[#374151]"; let label = "";
-        if (inc.type === "goal") {
-          icon = "⚽"; cls = "text-[#22C55E]";
-          label = inc.playerName ?? "?";
-          if (inc.assistName) label += ` (${inc.assistName})`;
-          if (inc.incidentClass === "penalty") label += " [P]";
-          if (inc.incidentClass === "ownGoal") { icon = "⚽"; cls = "text-[#EF4444]"; label += " [OG]"; }
-        } else if (inc.type === "card") {
-          icon = inc.incidentClass === "yellow" ? "🟨" : "🟥";
-          cls  = inc.incidentClass === "yellow" ? "text-[#F59E0B]" : "text-[#EF4444]";
-          label = inc.playerName ?? "?";
-        } else {
-          icon = "↕"; cls = "text-[#3B82F6]";
-          label = `${inc.playerInName ?? "?"} ↑ / ${inc.playerOutName ?? "?"} ↓`;
-        }
-        return (
-          <div key={idx} className={`flex items-center gap-2 py-1.5 border-b border-white/[0.04] last:border-0 text-xs ${isHome ? "" : "flex-row-reverse"}`}>
-            <span className="text-[#374151] w-8 shrink-0 text-center">{min}</span>
-            <span className={`shrink-0 ${cls}`}>{icon}</span>
-            <div className={`flex-1 ${isHome ? "text-left" : "text-right"}`}>
-              <span className="text-[#E5E7EB]">{label}</span>
-              <span className="text-[#374151] ml-1">· {isHome ? homeTeam : awayTeam}</span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Sport overview sections ──────────────────────────────────────────────────
-
-function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather, homeSquad, awaySquad, sofascore, historyFilter, onHistoryFilterChange }: {
-  game: Game; insights: Insight[]; weather: any;
-  homeHistory: TeamHistoryGame[]; awayHistory: TeamHistoryGame[];
-  h2h: H2HGame[]; historyFilter: VenueFilter;
-  onHistoryFilterChange: (f: VenueFilter) => void;
-  homeSquad: ESPNPlayer[]; awaySquad: ESPNPlayer[];
-  sofascore: SofascoreMatchData | null;
-}) {
-  const { homeTeam, awayTeam, status } = game;
-  const isUpcoming = status === "upcoming";
-  const isFinished = status === "finished";
-  const homeInjured = homeTeam.players.filter(p => p.injured);
-  const awayInjured = awayTeam.players.filter(p => p.injured);
-
-  return (
-    <div className="space-y-4">
-      {isFinished && sofascore?.incidents && sofascore.incidents.length > 0 && (
-        <Section title="Match Events">
-          <MatchIncidents incidents={sofascore.incidents} homeTeam={homeTeam.name} awayTeam={awayTeam.name} />
-        </Section>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        <div className="lg:col-span-3 space-y-4">
-          {isUpcoming && (homeSquad.length > 0 || awaySquad.length > 0) && (
-            <Section title="Probable Lineups">
-              <div className="grid grid-cols-2 gap-4">
-                {[{ t: homeTeam, squad: homeSquad }, { t: awayTeam, squad: awaySquad }].map(({ t, squad }) => {
-                  const starters = squad.sort((a, b) => (a.position || "").localeCompare(b.position || "")).slice(0, 11);
-                  return (
-                    <div key={t.name}>
-                      <div className="flex items-center gap-1.5 mb-2">
-                        {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                        <span className="text-xs font-medium text-[#9CA3AF]">{t.shortName}</span>
-                      </div>
-                      {starters.map((p, i) => (
-                        <div key={i} className="flex items-center gap-2 py-1 border-b border-white/[0.04] last:border-0 text-xs">
-                          <span className="text-[#374151] w-5 text-center font-mono">{p.jersey || i+1}</span>
-                          <span className="text-[#E5E7EB] flex-1 truncate">{p.displayName}</span>
-                          <span className="text-[#4B5563] text-[10px]">{p.position}</span>
-                        </div>
-                      ))}
-                      {starters.length === 0 && <p className="text-xs text-[#374151]">Not announced yet</p>}
-                    </div>
-                  );
-                })}
-              </div>
-            </Section>
-          )}
-
-          <Section title="Recent Form">
-            <div className="grid grid-cols-2 gap-5">
-              {[{ t: homeTeam, role: "Home" }, { t: awayTeam, role: "Away" }].map(({ t, role }) => (
-                <div key={t.name}>
-                  <div className="flex items-center gap-2 mb-2">
-                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-5 h-5 object-contain" />}
-                    <span className="text-sm font-medium text-white truncate">{t.name}</span>
-                    <span className="text-xs text-[#374151]">{role}</span>
-                  </div>
-                  <FormPills form={t.form} />
-                  <div className="text-xs text-[#374151] mt-1.5">
-                    {t.record.wins}W {t.record.losses}L{t.record.draws != null ? ` ${t.record.draws}D` : ""}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Section>
-
-          {h2h.length > 0 && (
-            <Section title="Head-to-Head">
-              <H2HPanel h2h={h2h} homeTeam={homeTeam.name} awayTeam={awayTeam.name} compact />
-            </Section>
-          )}
-
-          <Section title="Recent Results">
-            <div className="flex gap-2 mb-3">
-              {(["all","home","away"] as VenueFilter[]).map(f => (
-                <button key={f} onClick={() => onHistoryFilterChange(f)}
-                  className={`text-xs px-2 py-1 rounded transition-all ${
-                    historyFilter === f ? "text-[#3B82F6]" : "text-[#374151] hover:text-[#9CA3AF]"
-                  }`}>
-                  {f === "all" ? "All" : f === "home" ? "Home" : "Away"}
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {[{ t: homeTeam, h: homeHistory }, { t: awayTeam, h: awayHistory }].map(({ t, h }) => (
-                <div key={t.name}>
-                  <div className="text-[10px] uppercase tracking-widest text-[#374151] mb-1.5">{t.shortName}</div>
-                  {h.slice(0, 6).map(g => (
-                    <Link key={g.gameId} href={`/game/${g.gameId}`}
-                      className="flex items-center justify-between py-1.5 border-b border-white/[0.04] hover:bg-white/[0.03] px-1 rounded text-xs group">
-                      <span className="text-[#9CA3AF] truncate max-w-[45%]">{g.opponent}</span>
-                      <span className={`font-semibold ${g.result==="W"?"text-[#22C55E]":g.result==="L"?"text-[#EF4444]":"text-[#F59E0B]"}`}>
-                        {g.score ?? "—"}
-                      </span>
-                    </Link>
-                  ))}
-                  {h.length === 0 && <p className="text-xs text-[#374151]">No data</p>}
-                </div>
-              ))}
-            </div>
-          </Section>
-        </div>
-
-        <div className="lg:col-span-2 space-y-4">
-          {insights.length > 0 && (
-            <Section title="Key Insights">
-              <ul className="space-y-2">
-                {insights.map((ins, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm">
-                    <span className="text-[#3B82F6] shrink-0 text-xs mt-0.5">{ins.icon}</span>
-                    <span className="text-[#E5E7EB] leading-snug">{ins.text}</span>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
-
-          <Section title="Injuries">
-            {homeInjured.length === 0 && awayInjured.length === 0 ? (
-              <p className="text-xs text-[#22C55E]">✓ None reported</p>
-            ) : (
-              <div className="space-y-1">
-                {[...homeInjured, ...awayInjured].slice(0, 6).map((p, i) => (
-                  <div key={i} className="flex items-center justify-between py-1 border-b border-white/[0.04] last:border-0 text-xs">
-                    <span className="text-[#E5E7EB]">{p.name}</span>
-                    <span className="text-[#F59E0B] shrink-0 text-[10px] ml-2">{p.position}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Section>
-
-          <Section title="Home / Away">
-            {[
-              { label: `${homeTeam.shortName} Home`, split: homeTeam.splits.home },
-              { label: `${awayTeam.shortName} Away`,  split: awayTeam.splits.away },
-            ].map(({ label, split }) => {
-              const total = split.wins + split.losses + (split.draws ?? 0);
-              const pct   = total > 0 ? Math.round((split.wins/total)*100) : 0;
-              return (
-                <div key={label} className="mb-3 last:mb-0">
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-[#9CA3AF]">{label}</span>
-                    <span className="text-white font-medium">{pct}%</span>
-                  </div>
-                  <div className="h-[2px] bg-white/5 rounded-full">
-                    <div className="h-full bg-[#3B82F6] rounded-full" style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="text-[10px] text-[#374151] mt-0.5">{split.wins}W {split.losses}L{split.draws ? ` ${split.draws}D` : ""}</div>
-                </div>
-              );
-            })}
-          </Section>
-
-          {weather && weather.condition !== "Indoor" && (
-            <Section title="Weather">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-xl">{WEATHER_ICON[weather.condition] ?? "🌤"}</span>
-                <div>
-                  <span className={weather.windKph > 40 || ["Storm","Rain"].includes(weather.condition) ? "text-[#F59E0B]" : "text-white"}>
-                    {weather.condition}
-                  </span>
-                  <div className="text-xs text-[#374151]">{weather.tempC}°C · {weather.windKph}km/h</div>
-                </div>
-              </div>
-            </Section>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistory, homeSquad, awaySquad, homeInjuries, awayInjuries, h2h }: {
   game: Game; insights: Insight[]; sofascore: SofascoreMatchData | null;
@@ -1071,8 +904,8 @@ function GenericOverview({ game, insights, homeHistory, awayHistory }: {
 
 export default function GameDetailTabs({
   game, id, homeSquad, awaySquad, homeInjuries, awayInjuries,
-  homeHistories, awayHistories, h2hVariants, aflAnalytics, sofascore,
-  insights, isSoccer, isBasketball, isAFL,
+  homeHistories, awayHistories, h2hVariants, aflAnalytics, soccerAnalytics,
+  nbaAnalytics, sofascore, insights, isSoccer, isBasketball, isAFL,
   initialTab, initialH2hFilter, initialHistoryFilter,
 }: GameDetailTabsProps) {
   const [tab, setTab] = useState<"overview"|"players"|"stats"|"h2h">(
@@ -1113,20 +946,21 @@ export default function GameDetailTabs({
       {/* ── Overview ─────────────────────────────────────────────────────── */}
       {tab === "overview" && (
         isSoccer
-          ? <SoccerOverview
-              game={game} insights={insights} weather={game.weather}
+          ? <SoccerDashboard
+              game={game} insights={insights}
               homeHistory={currentHomeHistory} awayHistory={currentAwayHistory}
               h2h={h2hForOverview} historyFilter={historyFilter}
               onHistoryFilterChange={setHistoryFilter}
-              homeSquad={homeSquad} awaySquad={awaySquad} sofascore={sofascore}
+              analytics={soccerAnalytics} sofascore={sofascore}
             />
           : isBasketball
-          ? <BasketballOverview
-              game={game} insights={insights} sofascore={sofascore}
+
+          ? <NBADashboard
+              game={game} insights={insights}
               homeHistory={currentHomeHistory} awayHistory={currentAwayHistory}
-              homeSquad={homeSquad} awaySquad={awaySquad}
               homeInjuries={homeInjuries} awayInjuries={awayInjuries}
-              h2h={h2hForOverview}
+              h2h={h2hForOverview} analytics={nbaAnalytics}
+              historyFilter={historyFilter} onHistoryFilterChange={setHistoryFilter}
             />
           : isAFL
           ? <AFLDashboard
@@ -1152,10 +986,20 @@ export default function GameDetailTabs({
           )}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Section title={`${homeTeam.shortName} — Players`}>
-              {isAFL && boxScore ? (
-                <AFLPlayerList 
-                  rows={boxScore.home} 
-                  headers={boxScore.statHeaders} 
+              {isBasketball ? (
+                <NBAPlayerList
+                  players={homeSquad}
+                  injuries={homeInjuries}
+                  teamName={homeTeam.name}
+                  teamLogo={homeTeam.logoUrl}
+                  teamEspnId={homeTeam.espnId}
+                  matchContext="home"
+                  opponent={awayTeam.name}
+                />
+              ) : isAFL && boxScore ? (
+                <AFLPlayerList
+                  rows={boxScore.home}
+                  headers={boxScore.statHeaders}
                   teamId={homeTeam.espnId}
                   opponent={awayTeam.name}
                   matchContext="home"
@@ -1163,10 +1007,10 @@ export default function GameDetailTabs({
               ) : sofascore?.lineups ? (
                 <SofascoreList players={sofascore.lineups.home} sport={sport} />
               ) : (
-                <SquadList 
-                  players={homeSquad} 
-                  injuries={homeInjuries} 
-                  sport={game.sport} 
+                <SquadList
+                  players={homeSquad}
+                  injuries={homeInjuries}
+                  sport={game.sport}
                   gameId={game.id}
                   teamId={homeTeam.espnId}
                   opponent={awayTeam.name}
@@ -1175,10 +1019,20 @@ export default function GameDetailTabs({
               )}
             </Section>
             <Section title={`${awayTeam.shortName} — Players`}>
-              {isAFL && boxScore ? (
-                <AFLPlayerList 
-                  rows={boxScore.away} 
-                  headers={boxScore.statHeaders} 
+              {isBasketball ? (
+                <NBAPlayerList
+                  players={awaySquad}
+                  injuries={awayInjuries}
+                  teamName={awayTeam.name}
+                  teamLogo={awayTeam.logoUrl}
+                  teamEspnId={awayTeam.espnId}
+                  matchContext="away"
+                  opponent={homeTeam.name}
+                />
+              ) : isAFL && boxScore ? (
+                <AFLPlayerList
+                  rows={boxScore.away}
+                  headers={boxScore.statHeaders}
                   teamId={awayTeam.espnId}
                   opponent={homeTeam.name}
                   matchContext="away"
@@ -1186,10 +1040,10 @@ export default function GameDetailTabs({
               ) : sofascore?.lineups ? (
                 <SofascoreList players={sofascore.lineups.away} sport={sport} />
               ) : (
-                <SquadList 
-                  players={awaySquad} 
-                  injuries={awayInjuries} 
-                  sport={game.sport} 
+                <SquadList
+                  players={awaySquad}
+                  injuries={awayInjuries}
+                  sport={game.sport}
                   gameId={game.id}
                   teamId={awayTeam.espnId}
                   opponent={homeTeam.name}

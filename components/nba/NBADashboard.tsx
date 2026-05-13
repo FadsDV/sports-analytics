@@ -1,0 +1,813 @@
+/* eslint-disable @next/next/no-img-element */
+"use client";
+
+import Link from "next/link";
+import type { Game, Team, H2HGame } from "@/lib/types";
+import type { AFLInsight } from "@/lib/sports/afl/insights";
+import type { ESPNInjury } from "@/lib/sports/espnPlayers";
+import type { NBAMatchAnalytics, NBASeasonStats } from "@/lib/sports/nba/analytics";
+import type { TeamHistoryGame, VenueFilter } from "@/lib/sports/espn";
+
+// ─── Props ────────────────────────────────────────────────────────────────────
+
+export interface NBADashboardProps {
+  game:                   Game;
+  homeInjuries:           ESPNInjury[];
+  awayInjuries:           ESPNInjury[];
+  homeHistory:            TeamHistoryGame[];
+  awayHistory:            TeamHistoryGame[];
+  h2h:                    H2HGame[];
+  analytics:              NBAMatchAnalytics | null;
+  insights:               AFLInsight[];
+  historyFilter:          VenueFilter;
+  onHistoryFilterChange:  (f: VenueFilter) => void;
+}
+
+// ─── Shared atoms ─────────────────────────────────────────────────────────────
+
+function Card({
+  title, children, className = "", accent = false,
+}: {
+  title?: string; children: React.ReactNode; className?: string; accent?: boolean;
+}) {
+  return (
+    <div className={`bg-[#111827] rounded-xl border border-white/[0.05] overflow-hidden ${accent ? "border-l-2 border-l-[#3B82F6]" : ""} ${className}`}>
+      {title && (
+        <div className="px-3 py-2 border-b border-white/[0.05] bg-white/[0.01]">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6B7280]">{title}</span>
+        </div>
+      )}
+      <div className="p-3">{children}</div>
+    </div>
+  );
+}
+
+function StatRow({
+  label, value, sub, accent = false,
+}: {
+  label: string; value: string | number; sub?: string; accent?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-white/[0.03] last:border-0">
+      <span className="text-xs text-[#6B7280]">{label}</span>
+      <span className={`text-xs font-medium tabular-nums ${accent ? "text-[#3B82F6]" : "text-[#D1D5DB]"}`}>
+        {value}{sub && <span className="text-[#4B5563] ml-1 font-normal">{sub}</span>}
+      </span>
+    </div>
+  );
+}
+
+function Badge({
+  children, color = "blue",
+}: {
+  children: React.ReactNode; color?: "blue" | "green" | "yellow" | "red" | "gray" | "orange";
+}) {
+  const cls = {
+    blue:   "bg-[#3B82F6]/10 text-[#3B82F6]",
+    green:  "bg-[#22C55E]/10 text-[#22C55E]",
+    yellow: "bg-[#F59E0B]/10 text-[#F59E0B]",
+    red:    "bg-[#EF4444]/10 text-[#EF4444]",
+    gray:   "bg-white/5 text-[#4B5563]",
+    orange: "bg-[#F97316]/10 text-[#F97316]",
+  }[color];
+  return (
+    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide ${cls}`}>{children}</span>
+  );
+}
+
+function ResultPill({ result }: { result: "W" | "L" | null }) {
+  if (!result) return null;
+  const cls = result === "W"
+    ? "bg-[#22C55E]/20 text-[#22C55E]"
+    : "bg-[#EF4444]/20 text-[#EF4444]";
+  return (
+    <span className={`w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center shrink-0 ${cls}`}>{result}</span>
+  );
+}
+
+// ─── Comparison bar ───────────────────────────────────────────────────────────
+
+function CompBar({
+  label, hv, av,
+}: {
+  label: string; hv: number; av: number;
+}) {
+  const max = Math.max(hv, av, 1);
+  return (
+    <div className="mb-2.5 last:mb-0">
+      <div className="flex items-center justify-between text-xs mb-1">
+        <span className="text-[#D1D5DB] font-semibold tabular-nums w-10">{hv}</span>
+        <span className="text-[#4B5563] uppercase text-[10px] tracking-wide flex-1 text-center">{label}</span>
+        <span className="text-[#9CA3AF] tabular-nums w-10 text-right">{av}</span>
+      </div>
+      <div className="flex gap-0.5 h-[3px]">
+        <div className="flex-1 bg-white/5 rounded-full overflow-hidden flex justify-end">
+          <div className="h-full bg-[#3B82F6] rounded-full" style={{ width: `${(hv / max) * 100}%` }} />
+        </div>
+        <div className="flex-1 bg-white/5 rounded-full overflow-hidden">
+          <div className="h-full bg-[#9CA3AF] rounded-full" style={{ width: `${(av / max) * 100}%` }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Season stats display ─────────────────────────────────────────────────────
+
+function fmt1(v: number | null): string {
+  return v != null ? v.toFixed(1) : "—";
+}
+function fmtPct(v: number | null): string {
+  return v != null ? `${v.toFixed(1)}%` : "—";
+}
+
+function SeasonStatsPanel({ home, away, homeStats, awayStats }: {
+  home: Team; away: Team;
+  homeStats: NBASeasonStats; awayStats: NBASeasonStats;
+}) {
+  const rows = [
+    { label: "PPG",  hv: homeStats.ppg,      av: awayStats.ppg,      fmt: fmt1    },
+    { label: "Opp",  hv: homeStats.oppPpg,   av: awayStats.oppPpg,   fmt: fmt1    },
+    { label: "FG%",  hv: homeStats.fgPct,    av: awayStats.fgPct,    fmt: fmtPct  },
+    { label: "3P%",  hv: homeStats.threePct, av: awayStats.threePct, fmt: fmtPct  },
+    { label: "FT%",  hv: homeStats.ftPct,    av: awayStats.ftPct,    fmt: fmtPct  },
+    { label: "RPG",  hv: homeStats.rpg,      av: awayStats.rpg,      fmt: fmt1    },
+    { label: "APG",  hv: homeStats.apg,      av: awayStats.apg,      fmt: fmt1    },
+    { label: "TPG",  hv: homeStats.tpg,      av: awayStats.tpg,      fmt: fmt1    },
+  ];
+
+  const visible = rows.filter(r => r.hv != null || r.av != null);
+  if (visible.length === 0) return null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2 text-[10px]">
+        <div className="flex items-center gap-1">
+          {home.logoUrl && <img src={home.logoUrl} alt="" className="w-3 h-3 object-contain" />}
+          <span className="text-[#3B82F6] font-bold">{home.shortName}</span>
+        </div>
+        <span className="text-[#374151] uppercase tracking-widest">Season</span>
+        <div className="flex items-center gap-1">
+          <span className="text-[#9CA3AF] font-bold">{away.shortName}</span>
+          {away.logoUrl && <img src={away.logoUrl} alt="" className="w-3 h-3 object-contain" />}
+        </div>
+      </div>
+      {visible.map(r => (
+        <div key={r.label} className="flex items-center justify-between py-1 border-b border-white/[0.03] last:border-0 text-xs">
+          <span className="text-[#D1D5DB] font-medium tabular-nums w-10">{r.fmt(r.hv)}</span>
+          <span className="text-[#4B5563] uppercase text-[10px] tracking-wide">{r.label}</span>
+          <span className="text-[#9CA3AF] tabular-nums w-10 text-right">{r.fmt(r.av)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── PRE-MATCH DASHBOARD ──────────────────────────────────────────────────────
+
+function NBAPreMatch({
+  game, homeInjuries, awayInjuries, homeHistory, awayHistory, h2h,
+  analytics, insights, historyFilter, onHistoryFilterChange,
+}: NBADashboardProps) {
+  const { homeTeam, awayTeam } = game;
+  const ha = analytics?.home;
+  const aa = analytics?.away;
+  const ra = analytics?.restAdvantage;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[260px_1fr_240px] gap-3">
+
+      {/* ══════════════════════════════════════════
+          LEFT — Intelligence
+      ══════════════════════════════════════════ */}
+      <div className="space-y-3">
+
+        {/* Form Outlook */}
+        <Card title="Form Outlook" accent>
+          <div className="space-y-4">
+            {([
+              { t: homeTeam, an: ha, role: "Home" },
+              { t: awayTeam, an: aa, role: "Away" },
+            ] as const).map(({ t, an, role }) => (
+              <div key={t.name}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                  <span className="text-xs font-bold text-white truncate">{t.shortName}</span>
+                  <span className="text-[10px] text-[#4B5563] font-medium">{role}</span>
+                  {an?.streak.type && an.streak.count >= 2 && (
+                    <span className={`ml-auto text-[10px] font-bold px-1 py-px rounded ${
+                      an.streak.type === "W" ? "bg-[#22C55E]/10 text-[#22C55E]" : "bg-[#EF4444]/10 text-[#EF4444]"
+                    }`}>{an.streak.count}{an.streak.type}</span>
+                  )}
+                </div>
+                {/* Form pills */}
+                <div className="flex gap-0.5 mb-2">
+                  {(an?.form5 ?? t.form.slice(0, 5)).map((r, i) => (
+                    <span key={i} className={`w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center ${
+                      r === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" : "bg-[#EF4444]/20 text-[#EF4444]"
+                    }`}>{r}</span>
+                  ))}
+                  {an?.form10.slice(5).map((r, i) => (
+                    <span key={`l10-${i}`} className={`w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center opacity-60 ${
+                      r === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" : "bg-[#EF4444]/20 text-[#EF4444]"
+                    }`}>{r}</span>
+                  ))}
+                </div>
+                <div className="space-y-0">
+                  <div className="flex items-center justify-between text-[11px] py-0.5">
+                    <span className="text-[#6B7280]">Record</span>
+                    <span className="text-[#D1D5DB] font-medium tabular-nums">
+                      {t.record.wins}W {t.record.losses}L
+                    </span>
+                  </div>
+                  {an && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px] py-0.5">
+                        <span className="text-[#6B7280]">Win rate</span>
+                        <span className="text-[#D1D5DB] font-medium tabular-nums">{an.winRate}%</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] py-0.5">
+                        <span className="text-[#6B7280]">Avg pts</span>
+                        <span className="text-[#D1D5DB] font-medium tabular-nums">{an.avgScored} – {an.avgConceded}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Schedule Context */}
+        {(ha || aa) && (
+          <Card title="Schedule Context">
+            {/* Rest advantage badge */}
+            {ra && ra !== "even" && (
+              <div className={`flex items-center gap-2 mb-2 p-2 rounded-lg ${
+                ra === "home" ? "bg-[#3B82F6]/5 border border-[#3B82F6]/20" : "bg-white/[0.03] border border-white/[0.06]"
+              }`}>
+                <span className={`text-[10px] font-bold uppercase tracking-wide ${ra === "home" ? "text-[#3B82F6]" : "text-[#9CA3AF]"}`}>
+                  {ra === "home" ? homeTeam.shortName : awayTeam.shortName} rest edge
+                </span>
+              </div>
+            )}
+            {ha?.isBackToBack && (
+              <div className="flex items-center gap-2 mb-2 p-2 rounded-lg bg-[#F59E0B]/5 border border-[#F59E0B]/20">
+                <span className="text-[10px] font-bold text-[#F59E0B] uppercase tracking-wide">
+                  {homeTeam.shortName} back-to-back
+                </span>
+              </div>
+            )}
+            {aa?.isBackToBack && (
+              <div className="flex items-center gap-2 mb-2 p-2 rounded-lg bg-[#F59E0B]/5 border border-[#F59E0B]/20">
+                <span className="text-[10px] font-bold text-[#F59E0B] uppercase tracking-wide">
+                  {awayTeam.shortName} back-to-back
+                </span>
+              </div>
+            )}
+            {ha?.daysRest != null && (
+              <StatRow
+                label={`${homeTeam.shortName} rest`}
+                value={`${ha.daysRest}d`}
+                accent={ha.daysRest <= 1}
+              />
+            )}
+            {aa?.daysRest != null && (
+              <StatRow
+                label={`${awayTeam.shortName} rest`}
+                value={`${aa.daysRest}d`}
+                accent={aa.daysRest <= 1}
+              />
+            )}
+            {ha && (
+              <StatRow label={`${homeTeam.shortName} home`} value={`${ha.homeRecord.wins}W ${ha.homeRecord.losses}L`} />
+            )}
+            {aa && (
+              <StatRow label={`${awayTeam.shortName} away`} value={`${aa.awayRecord.wins}W ${aa.awayRecord.losses}L`} />
+            )}
+          </Card>
+        )}
+
+        {/* Key Edges */}
+        {insights.length > 0 && (
+          <Card title="Key Edges" accent>
+            <div className="space-y-0">
+              {insights.map((ins, i) => {
+                const dot = ins.severity === "high"
+                  ? "bg-[#EF4444]"
+                  : ins.severity === "medium"
+                  ? "bg-[#F59E0B]"
+                  : "bg-[#22C55E]";
+                const dirCls = ins.direction === "home"
+                  ? "text-[#3B82F6] bg-[#3B82F6]/10"
+                  : ins.direction === "away"
+                  ? "text-[#9CA3AF] bg-white/5"
+                  : "";
+                return (
+                  <div key={ins.id || i} className="flex items-start gap-2 py-2 border-b border-white/[0.04] last:border-0">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-[5px] ${dot}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-xs font-semibold text-[#E5E7EB] leading-none">{ins.title}</span>
+                        {ins.direction !== "neutral" && (
+                          <span className={`text-[9px] font-bold px-1 py-px rounded uppercase tracking-wide ${dirCls}`}>
+                            {ins.direction}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-[#9CA3AF] leading-snug">{ins.text}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* ══════════════════════════════════════════
+          CENTER — Matchup
+      ══════════════════════════════════════════ */}
+      <div className="space-y-3">
+
+        {/* Team Comparison */}
+        {ha && aa && (
+          <Card title="Team Comparison">
+            <CompBar label="Avg Points"     hv={ha.avgScored}     av={aa.avgScored}     />
+            <CompBar label="Avg Allowed"    hv={ha.avgConceded}   av={aa.avgConceded}   />
+            <CompBar label="Win Margin"     hv={ha.avgMarginWin}  av={aa.avgMarginWin}  />
+            <CompBar label="Loss Margin"    hv={ha.avgMarginLoss} av={aa.avgMarginLoss} />
+            {ha.seasonStats && aa.seasonStats && (
+              <>
+                <div className="border-t border-white/[0.04] my-2" />
+                <SeasonStatsPanel
+                  home={homeTeam} away={awayTeam}
+                  homeStats={ha.seasonStats} awayStats={aa.seasonStats}
+                />
+              </>
+            )}
+          </Card>
+        )}
+
+        {/* H2H */}
+        {h2h.length > 0 && (
+          <Card title="Head-to-Head">
+            <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/[0.05]">
+              {(() => {
+                const hw = h2h.filter(g => g.winner === homeTeam.name).length;
+                const aw = h2h.length - hw;
+                return (
+                  <>
+                    <div className="flex-1 text-center">
+                      <div className="text-2xl font-black text-[#3B82F6] tabular-nums">{hw}</div>
+                      <div className="text-[10px] text-[#6B7280] mt-0.5">{homeTeam.shortName}</div>
+                    </div>
+                    <div className="flex-1 text-center">
+                      <div className="text-xl font-black text-[#4B5563] tabular-nums">{analytics?.h2h.avgMargin ?? "—"}</div>
+                      <div className="text-[10px] text-[#6B7280] mt-0.5">Avg margin</div>
+                    </div>
+                    <div className="flex-1 text-center">
+                      <div className="text-2xl font-black text-[#9CA3AF] tabular-nums">{aw}</div>
+                      <div className="text-[10px] text-[#6B7280] mt-0.5">{awayTeam.shortName}</div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            {h2h.slice(0, 5).map((g, i) => {
+              const isHW = g.winner === homeTeam.name;
+              return (
+                <Link key={g.gameId || i} href={g.gameId ? `/game/${g.gameId}` : "#"}
+                  className="flex items-center gap-1.5 py-1.5 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.03] rounded px-0.5 text-xs">
+                  <span className="text-[10px] text-[#4B5563] w-16 shrink-0 tabular-nums">{g.date}</span>
+                  <span className={`flex-1 truncate text-right ${isHW ? "text-white font-semibold" : "text-[#6B7280]"}`}>{g.homeTeam}</span>
+                  <span className="font-bold text-white tabular-nums w-12 text-center shrink-0 text-[11px]">{g.score}</span>
+                  <span className={`flex-1 truncate ${!isHW ? "text-white font-semibold" : "text-[#6B7280]"}`}>{g.awayTeam}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
+                    isHW ? "bg-[#3B82F6]/20 text-[#3B82F6]" : "bg-white/10 text-[#9CA3AF]"
+                  }`}>{isHW ? "H" : "A"}</span>
+                </Link>
+              );
+            })}
+          </Card>
+        )}
+
+        {/* Recent Results */}
+        <Card title="Recent Results">
+          <div className="flex gap-1.5 mb-3">
+            {(["all", "home", "away"] as VenueFilter[]).map(f => (
+              <button key={f} onClick={() => onHistoryFilterChange(f)}
+                className={`text-xs px-2.5 py-1 rounded-lg transition-all ${
+                  historyFilter === f
+                    ? "text-[#3B82F6] bg-[#3B82F6]/10 font-medium"
+                    : "text-[#6B7280] hover:text-[#9CA3AF]"
+                }`}>
+                {f === "all" ? "All" : f === "home" ? "Home" : "Away"}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {([{ t: homeTeam, h: homeHistory }, { t: awayTeam, h: awayHistory }] as const).map(({ t, h }) => (
+              <div key={t.name}>
+                <div className="flex items-center gap-1 mb-2">
+                  {t.logoUrl && <img src={t.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-[#4B5563]">{t.shortName}</span>
+                </div>
+                {h.slice(0, 5).map(g => (
+                  <Link key={g.gameId} href={`/game/${g.gameId}`}
+                    className="flex items-center justify-between py-1.5 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] px-0.5 rounded text-xs">
+                    <span className="text-[#9CA3AF] truncate max-w-[55%]">{g.opponent}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {g.result && <ResultPill result={g.result as "W" | "L"} />}
+                      <span className={`font-semibold tabular-nums text-[11px] ${
+                        g.result === "W" ? "text-[#22C55E]" : g.result === "L" ? "text-[#EF4444]" : "text-[#D1D5DB]"
+                      }`}>{g.score ?? "—"}</span>
+                    </div>
+                  </Link>
+                ))}
+                {h.length === 0 && <p className="text-xs text-[#4B5563]">No data</p>}
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      {/* ══════════════════════════════════════════
+          RIGHT — Context
+      ══════════════════════════════════════════ */}
+      <div className="space-y-3 md:col-span-2 lg:col-span-1">
+
+        {/* Team News */}
+        <Card title="Team News">
+          {([{ t: homeTeam, inj: homeInjuries }, { t: awayTeam, inj: awayInjuries }] as const).map(({ t, inj }) => {
+            const out          = inj.filter(i => i.status === "Out");
+            const doubtful     = inj.filter(i => i.status === "Doubtful");
+            const questionable = inj.filter(i => i.status === "Questionable");
+            const hasAny       = out.length > 0 || doubtful.length > 0 || questionable.length > 0;
+            return (
+              <div key={t.name} className="mb-3 last:mb-0">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                  <span className="text-xs font-semibold text-[#9CA3AF]">{t.shortName}</span>
+                </div>
+                {!hasAny && <p className="text-xs text-[#22C55E]">✓ No injuries reported</p>}
+                {out.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between py-1.5 border-b border-white/[0.03] last:border-0">
+                    <span className="text-xs text-[#D1D5DB] truncate flex-1">{p.playerName}</span>
+                    <Badge color="red">Out</Badge>
+                  </div>
+                ))}
+                {doubtful.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between py-1.5 border-b border-white/[0.03] last:border-0">
+                    <span className="text-xs text-[#D1D5DB] truncate flex-1">{p.playerName}</span>
+                    <Badge color="yellow">Doubt</Badge>
+                  </div>
+                ))}
+                {questionable.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between py-1.5 border-b border-white/[0.03] last:border-0">
+                    <span className="text-xs text-[#D1D5DB] truncate flex-1">{p.playerName}</span>
+                    <Badge color="orange">GTD</Badge>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </Card>
+
+        {/* Home / Away Record */}
+        {ha && aa && (
+          <Card title="Home / Away Record">
+            {([
+              { t: homeTeam, rec: ha.homeRecord, label: "Home" },
+              { t: awayTeam, rec: aa.awayRecord, label: "Away" },
+            ] as const).map(({ t, rec, label }) => {
+              const total = rec.wins + rec.losses;
+              const pct   = total > 0 ? Math.round((rec.wins / total) * 100) : 0;
+              return (
+                <div key={t.name} className="mb-3 last:mb-0">
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <div className="flex items-center gap-1">
+                      {t.logoUrl && <img src={t.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
+                      <span className="text-[#9CA3AF]">{t.shortName} {label}</span>
+                    </div>
+                    <span className="text-[#D1D5DB] font-medium tabular-nums">{pct}%</span>
+                  </div>
+                  <div className="h-[3px] bg-white/5 rounded-full mb-1">
+                    <div className={`h-full rounded-full ${pct >= 50 ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="text-[10px] text-[#4B5563]">{rec.wins}W {rec.losses}L</div>
+                </div>
+              );
+            })}
+          </Card>
+        )}
+
+        {/* Last 5 detail */}
+        {(ha?.last5.length || aa?.last5.length) ? (
+          <Card title="Last 5 Detail">
+            {([{ t: homeTeam, an: ha }, { t: awayTeam, an: aa }] as const).map(({ t, an }) => {
+              if (!an?.last5.length) return null;
+              return (
+                <div key={t.name} className="mb-3 last:mb-0">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
+                    <span className="text-[10px] font-semibold text-[#6B7280]">{t.shortName}</span>
+                  </div>
+                  {an.last5.map((g, i) => (
+                    <Link key={g.gameId || i} href={g.gameId ? `/game/${g.gameId}` : "#"}
+                      className="flex items-center gap-1 py-1.5 border-b border-white/[0.03] last:border-0 hover:bg-white/[0.02] rounded px-0.5 text-xs">
+                      <span className={`w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center shrink-0 ${
+                        g.result === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" : "bg-[#EF4444]/20 text-[#EF4444]"
+                      }`}>{g.result}</span>
+                      <span className="text-[#6B7280] w-7 text-[10px] text-center shrink-0">{g.oppAbbr}</span>
+                      <span className="text-[#D1D5DB] tabular-nums text-[10px] shrink-0">{g.teamScore}–{g.oppScore}</span>
+                      <span className={`tabular-nums text-[9px] shrink-0 ml-auto ${g.margin > 0 ? "text-[#22C55E]" : "text-[#EF4444]"}`}>
+                        {g.margin > 0 ? `+${g.margin}` : g.margin}
+                      </span>
+                      <span className="text-[#4B5563] text-[9px] shrink-0">{g.homeAway}</span>
+                    </Link>
+                  ))}
+                </div>
+              );
+            })}
+          </Card>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ─── LIVE / FINISHED DASHBOARD ────────────────────────────────────────────────
+
+function NBALive({
+  game, homeInjuries, awayInjuries, homeHistory, awayHistory, h2h,
+  analytics, insights, historyFilter, onHistoryFilterChange,
+}: NBADashboardProps) {
+  const { homeTeam, awayTeam, boxScore, status } = game;
+  const ha = analytics?.home;
+  const aa = analytics?.away;
+  const isLive = status === "live";
+
+  const NBA_STATS = ["PTS", "REB", "AST"] as const;
+  const topHome = boxScore?.home.slice(0, 8) ?? [];
+  const topAway = boxScore?.away.slice(0, 8) ?? [];
+  const hasBoxScore = topHome.length > 0 || topAway.length > 0;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[260px_1fr_240px] gap-3">
+
+      {/* ══════════════════════════════════════════
+          LEFT — Leaders
+      ══════════════════════════════════════════ */}
+      <div className="space-y-3">
+
+        {/* Point Leaders */}
+        {hasBoxScore && (
+          <Card title="Point Leaders">
+            <div className="space-y-3">
+              {([{ t: homeTeam, rows: topHome }, { t: awayTeam, rows: topAway }] as const).map(({ t, rows }) => {
+                const sorted = [...rows]
+                  .sort((a, b) => Number(b.stats["PTS"] ?? 0) - Number(a.stats["PTS"] ?? 0))
+                  .slice(0, 5);
+                return (
+                  <div key={t.name}>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                      <span className="text-xs font-semibold text-[#6B7280]">{t.shortName}</span>
+                    </div>
+                    {sorted.map((row, i) => {
+                      const pts    = Number(row.stats["PTS"] ?? 0);
+                      const elite  = pts >= 25;
+                      return (
+                        <div key={i} className="flex items-center py-1.5 border-b border-white/[0.03] last:border-0 gap-2">
+                          <span className="text-[10px] text-[#374151] tabular-nums w-3 shrink-0 text-center">{i + 1}</span>
+                          <span className="text-xs text-[#E5E7EB] font-medium flex-1 truncate">{row.player}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {NBA_STATS.filter(k => row.stats[k] != null).map(k => (
+                              <span key={k} className="text-[10px] tabular-nums">
+                                <span className="text-[#4B5563]">{k} </span>
+                                <span className={k === "PTS" && elite ? "text-[#3B82F6] font-bold" : "text-[#9CA3AF]"}>
+                                  {row.stats[k]}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+
+        {/* Season Averages */}
+        {ha && aa && (
+          <Card title="Season Averages">
+            <CompBar label="Avg Points"  hv={ha.avgScored}   av={aa.avgScored}   />
+            <CompBar label="Avg Allowed" hv={ha.avgConceded} av={aa.avgConceded} />
+          </Card>
+        )}
+      </div>
+
+      {/* ══════════════════════════════════════════
+          CENTER — Match State
+      ══════════════════════════════════════════ */}
+      <div className="space-y-3">
+
+        {/* Full Box Score */}
+        {hasBoxScore && boxScore && (
+          <Card title="Player Stats">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+              {([{ t: homeTeam, rows: boxScore.home }, { t: awayTeam, rows: boxScore.away }] as const).map(({ t, rows }) => {
+                const showHeaders = boxScore.statHeaders.slice(0, 6);
+                return (
+                  <div key={t.name}>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                      <span className="text-xs font-semibold text-[#9CA3AF]">{t.shortName}</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs min-w-[240px]">
+                        <thead>
+                          <tr className="border-b border-white/[0.06]">
+                            <th className="text-left py-1.5 pr-2 text-[#4B5563] font-medium">Player</th>
+                            {showHeaders.map(h => (
+                              <th key={h} className="text-right py-1.5 px-1 text-[#4B5563] font-medium">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.slice(0, 10).map((r, i) => (
+                            <tr key={i} className="border-b border-white/[0.03] last:border-0 hover:bg-white/[0.02]">
+                              <td className="py-1.5 pr-2">
+                                <span className="text-[#D1D5DB] truncate block max-w-[90px]">{r.player}</span>
+                              </td>
+                              {showHeaders.map(h => {
+                                const v  = r.stats[h];
+                                const hi = h === "PTS" && Number(v) >= 25;
+                                return (
+                                  <td key={h} className={`py-1.5 px-1 text-right tabular-nums ${
+                                    hi ? "text-[#3B82F6] font-bold" : "text-[#9CA3AF]"
+                                  }`}>
+                                    {v ?? "—"}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+
+        {/* Form Context */}
+        {ha && aa && (
+          <Card title="Form Context">
+            <div className="grid grid-cols-2 gap-4">
+              {([{ t: homeTeam, an: ha, role: "Home" }, { t: awayTeam, an: aa, role: "Away" }] as const).map(({ t, an, role }) => (
+                <div key={t.name}>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                    <span className="text-xs font-semibold text-white">{t.shortName}</span>
+                    {an.streak.type && an.streak.count >= 2 && (
+                      <span className={`ml-auto text-[10px] font-bold px-1 py-px rounded ${
+                        an.streak.type === "W" ? "bg-[#22C55E]/10 text-[#22C55E]" : "bg-[#EF4444]/10 text-[#EF4444]"
+                      }`}>{an.streak.count}{an.streak.type}</span>
+                    )}
+                  </div>
+                  <div className="flex gap-0.5 mb-2">
+                    {an.form5.map((r, i) => (
+                      <span key={i} className={`w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center ${
+                        r === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" : "bg-[#EF4444]/20 text-[#EF4444]"
+                      }`}>{r}</span>
+                    ))}
+                  </div>
+                  <StatRow label="Season" value={`${an.record.wins}W ${an.record.losses}L`} />
+                  <StatRow label="Avg pts" value={`${an.avgScored}`} />
+                  <StatRow label="Win rate" value={`${an.winRate}%`} />
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* ══════════════════════════════════════════
+          RIGHT — Intelligence
+      ══════════════════════════════════════════ */}
+      <div className="space-y-3 md:col-span-2 lg:col-span-1">
+
+        {/* Live pulse */}
+        {isLive && (
+          <div className="bg-red-950/30 border border-red-500/30 rounded-xl p-3 flex items-center gap-3">
+            <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.7)] shrink-0" />
+            <div>
+              <div className="text-sm font-bold text-red-400 tracking-wide">LIVE</div>
+              <div className="text-xs text-[#6B7280] mt-0.5">Stats update every 15s</div>
+            </div>
+          </div>
+        )}
+
+        {/* Team News */}
+        <Card title="Team News">
+          {([{ t: homeTeam, inj: homeInjuries }, { t: awayTeam, inj: awayInjuries }] as const).map(({ t, inj }) => {
+            const out          = inj.filter(i => i.status === "Out");
+            const doubtful     = inj.filter(i => i.status === "Doubtful");
+            const questionable = inj.filter(i => i.status === "Questionable");
+            return (
+              <div key={t.name} className="mb-2.5 last:mb-0">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  {t.logoUrl && <img src={t.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
+                  <span className="text-xs font-semibold text-[#6B7280]">{t.shortName}</span>
+                </div>
+                {out.length === 0 && doubtful.length === 0 && questionable.length === 0
+                  ? <p className="text-xs text-[#22C55E]">✓ No changes</p>
+                  : null}
+                {out.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between py-1 border-b border-white/[0.03] last:border-0 text-xs">
+                    <span className="text-[#D1D5DB] flex-1 truncate">{p.playerName}</span>
+                    <span className="text-[10px] font-semibold text-[#EF4444]">Out</span>
+                  </div>
+                ))}
+                {doubtful.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between py-1 border-b border-white/[0.03] last:border-0 text-xs">
+                    <span className="text-[#D1D5DB] flex-1 truncate">{p.playerName}</span>
+                    <span className="text-[10px] font-semibold text-[#F59E0B]">Doubt</span>
+                  </div>
+                ))}
+                {questionable.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between py-1 border-b border-white/[0.03] last:border-0 text-xs">
+                    <span className="text-[#D1D5DB] flex-1 truncate">{p.playerName}</span>
+                    <span className="text-[10px] font-semibold text-[#F97316]">GTD</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </Card>
+
+        {/* Key Edges */}
+        {insights.length > 0 && (
+          <Card title="Pre-Game Context">
+            <div className="space-y-0">
+              {insights.slice(0, 4).map((ins, i) => {
+                const dot = ins.severity === "high" ? "bg-[#EF4444]" : ins.severity === "medium" ? "bg-[#F59E0B]" : "bg-[#22C55E]";
+                const dirCls = ins.direction === "home" ? "text-[#3B82F6] bg-[#3B82F6]/10" : ins.direction === "away" ? "text-[#9CA3AF] bg-white/5" : "";
+                return (
+                  <div key={ins.id || i} className="flex items-start gap-2 py-2 border-b border-white/[0.04] last:border-0">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-[5px] ${dot}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-xs font-semibold text-[#E5E7EB] leading-none">{ins.title}</span>
+                        {ins.direction !== "neutral" && (
+                          <span className={`text-[9px] font-bold px-1 py-px rounded uppercase tracking-wide ${dirCls}`}>
+                            {ins.direction}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-[#9CA3AF] leading-snug">{ins.text}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+
+        {/* Recent Form */}
+        <Card title="Recent Form">
+          {([{ t: homeTeam, h: homeHistory }, { t: awayTeam, h: awayHistory }] as const).map(({ t, h }) => (
+            <div key={t.name} className="mb-2.5 last:mb-0">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                {t.logoUrl && <img src={t.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
+                <span className="text-xs font-medium text-[#6B7280]">{t.shortName}</span>
+              </div>
+              <div className="flex gap-1">
+                {h.slice(0, 5).map((g, i) => (
+                  <ResultPill key={i} result={g.result as "W" | "L"} />
+                ))}
+                {h.length === 0 && <span className="text-xs text-[#4B5563]">No data</span>}
+              </div>
+            </div>
+          ))}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
+
+export default function NBADashboard(props: NBADashboardProps) {
+  if (props.game.status === "upcoming") {
+    return <NBAPreMatch {...props} />;
+  }
+  return <NBALive {...props} />;
+}

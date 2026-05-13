@@ -111,11 +111,29 @@ export interface SofascoreIncident {
   description?:   string;
 }
 
+export interface SofascoreStatItem {
+  name:  string;
+  home:  string;
+  away:  string;
+}
+
+export interface SofascoreStatGroup {
+  groupName:       string;
+  statisticsItems: SofascoreStatItem[];
+}
+
+export interface SofascoreStatistics {
+  period: string;
+  groups: SofascoreStatGroup[];
+}
+
 export interface SofascoreMatchData {
   sofascoreId: number;
   lineups:     SofascoreLineup | null;
   incidents:   SofascoreIncident[];
+  statistics:  SofascoreStatistics[] | null;
 }
+
 
 // ─── Name normalisation ───────────────────────────────────────────────────────
 
@@ -312,10 +330,21 @@ export async function fetchSofascoreIncidents(
     .reverse(); // Sofascore returns newest first — reverse to oldest first
 }
 
+// ─── Fetch statistics ─────────────────────────────────────────────────────────
+
+export async function fetchSofascoreStatistics(
+  sofascoreId: number
+): Promise<SofascoreStatistics[] | null> {
+  const url  = `${BASE}/event/${sofascoreId}/statistics`;
+  const data = await sofaFetch(url, 300) as Record<string, unknown> | null;
+  if (!data || !Array.isArray(data.statistics)) return null;
+  return data.statistics as SofascoreStatistics[];
+}
+
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 /**
- * Fetches lineups + incidents for a game.
+ * Fetches lineups + incidents + stats for a game.
  * Returns null if the game can't be found on Sofascore.
  */
 export async function fetchSofascoreMatchData(
@@ -336,10 +365,11 @@ export async function fetchSofascoreMatchData(
     return null;
   }
 
-  console.info("[SportsPulse/sofascore] fetching lineups + incidents", { sofascoreId });
-  const [lineups, incidents] = await Promise.all([
+  console.info("[SportsPulse/sofascore] fetching lineups + incidents + stats", { sofascoreId });
+  const [lineups, incidents, statistics] = await Promise.all([
     fetchSofascoreLineups(sofascoreId, sport),
     fetchSofascoreIncidents(sofascoreId),
+    fetchSofascoreStatistics(sofascoreId),
   ]);
 
   console.info("[SportsPulse/sofascore] fetchSofascoreMatchData done", {
@@ -348,7 +378,9 @@ export async function fetchSofascoreMatchData(
     homePlayers: lineups?.home.length ?? 0,
     awayPlayers: lineups?.away.length ?? 0,
     incidents: incidents.length,
+    hasStats: Boolean(statistics),
   });
 
-  return { sofascoreId, lineups, incidents };
+  return { sofascoreId, lineups, incidents, statistics };
 }
+

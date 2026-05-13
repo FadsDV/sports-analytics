@@ -125,6 +125,8 @@ export async function fetchPlayerSeasonStats(
 // AFL uses a dedicated roster provider — AFL Fantasy is the authoritative source.
 // ESPN is used only for injuries, box scores, game logs, and player profile lookups.
 import { fetchAFLTeamRoster } from "./afl/roster";
+// NBA uses a dedicated roster provider for correct ESPN CDN headshot URLs.
+import { fetchNBATeamRoster } from "./nba/roster";
 
 // Retained for fetchTeamInjuries below
 import { getAFLFantasyMap, normalizeAFLName } from "./afl/fantasyMapper";
@@ -135,16 +137,13 @@ export async function fetchTeamRoster(
   teamId:    string
 ): Promise<ESPNPlayer[]> {
   const isAFL = sportPath.includes("australian-football");
+  const isNBA = sportPath.includes("basketball/nba");
 
-  // AFL: delegate entirely to the official AFL roster provider.
-  // The provider uses AFL Fantasy (official AFL Digital product) as the sole
-  // source of squad membership — ESPN is not involved in determining who
-  // belongs to the team.
-  if (isAFL) {
-    return fetchAFLTeamRoster(teamId);
-  }
+  if (isAFL) return fetchAFLTeamRoster(teamId);
+  // NBA: dedicated provider fixes ESPN CDN headshot path (nba vs soccer)
+  if (isNBA) return fetchNBATeamRoster(teamId);
 
-  // Non-AFL: standard ESPN roster fetch
+  // Non-AFL/NBA: standard ESPN roster fetch
   const url = `${BASE}/${sportPath}/teams/${teamId}/roster`;
   try {
     const res = await fetch(url, {
@@ -371,11 +370,12 @@ export async function fetchPlayerProfile(
 
 export async function fetchPlayerGameLog(
   sportPath: string,
-  athleteId: string
+  athleteId: string,
+  season?: number
 ): Promise<ESPNGameLogEntry[]> {
-  const url = `${BASE}/${sportPath}/athletes/${athleteId}/gamelog`;
+  const url = `${BASE}/${sportPath}/athletes/${athleteId}/gamelog${season ? `?season=${season}` : ""}`;
   try {
-    console.info("[SportsPulse] fetchPlayerGameLog", { sportPath, athleteId, url });
+    console.info("[SportsPulse] fetchPlayerGameLog", { sportPath, athleteId, season, url });
     const res = await fetch(url, {
       next: { revalidate: 3600 },
       headers: { "User-Agent": "SportsPulse/1.0 personal" },

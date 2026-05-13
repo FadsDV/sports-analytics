@@ -16,6 +16,11 @@ import { formatKickoffFull, formatAFLKickoff } from "@/lib/utils";
 import { fetchSofascoreMatchData } from "@/lib/sports/sofascore";
 import { computeAFLMatchAnalytics } from "@/lib/sports/afl/analytics";
 import { generateAFLInsights, type AFLInsight } from "@/lib/sports/afl/insights";
+import { computeSoccerMatchAnalytics } from "@/lib/sports/soccer/analytics";
+import { generateSoccerInsights } from "@/lib/sports/soccer/insights";
+import { computeNBAMatchAnalytics, type NBASeasonStats } from "@/lib/sports/nba/analytics";
+import { fetchNBASeasonStats } from "@/lib/sports/nba/client";
+import { generateNBAInsights } from "@/lib/sports/nba/insights";
 import LiveScorePanel from "@/components/LiveScorePanel";
 import AFLTeamCard from "@/components/afl/AFLTeamCard";
 import GameDetailTabs, { HistoryVariants, H2HVariants } from "./GameDetailTabs";
@@ -78,10 +83,12 @@ export default async function GameDetailPage({
     }
   }
 
-  // Rosters, injuries, and sofascore fetched in a single Promise.all
+  // Rosters, injuries, sofascore, and NBA season stats fetched in a single Promise.all
   let homeSquad: ESPNPlayer[] = [], awaySquad: ESPNPlayer[] = [];
   let homeInjuries: ESPNInjury[] = [], awayInjuries: ESPNInjury[] = [];
   let sofascore = null;
+  let homeNBAStats: NBASeasonStats | null = null;
+  let awayNBAStats:  NBASeasonStats | null = null;
 
   const sofascoreSports = ["soccer","ucl","uel","laliga","bundesliga","aleague","basketball"];
   const needSofascore = sofascoreSports.includes(sport);
@@ -94,10 +101,16 @@ export default async function GameDetailPage({
       fetchTeamInjuries(sp, game.homeTeam.espnId),
       fetchTeamInjuries(sp, game.awayTeam.espnId),
       ...(needSofascore ? [fetchSofascoreMatchData(sport, game.homeTeam.name, game.awayTeam.name, game.kickoff)] : []),
+      ...(isBasketball ? [
+        fetchNBASeasonStats(game.homeTeam.espnId),
+        fetchNBASeasonStats(game.awayTeam.espnId),
+      ] : []),
     ];
     const res = await Promise.all(fetches);
     [homeSquad, awaySquad, homeInjuries, awayInjuries] = res;
-    if (needSofascore) sofascore = res[4] ?? null;
+    let nextIdx = 4;
+    if (needSofascore)  { sofascore    = res[nextIdx++] ?? null; }
+    if (isBasketball)   { homeNBAStats = res[nextIdx++] ?? null; awayNBAStats = res[nextIdx++] ?? null; }
   } else if (needSofascore) {
     sofascore = await fetchSofascoreMatchData(sport, game.homeTeam.name, game.awayTeam.name, game.kickoff);
   }
@@ -114,17 +127,56 @@ export default async function GameDetailPage({
       })
     : null;
 
+  const soccerAnalytics = isSoccer
+    ? computeSoccerMatchAnalytics({
+        homeHistory: homeHistories.all,
+        awayHistory: awayHistories.all,
+        kickoff: game.kickoff,
+        h2h: h2hVariants.all,
+        homeTeamName: game.homeTeam.name,
+        awayTeamName: game.awayTeam.name,
+      })
+    : null;
+
+  const nbaAnalytics = isBasketball
+    ? computeNBAMatchAnalytics({
+        homeHistory:     homeHistories.all,
+        awayHistory:     awayHistories.all,
+        homeInjuries,
+        awayInjuries,
+        kickoff:         game.kickoff,
+        h2h:             h2hVariants.all,
+        homeTeamName:    game.homeTeam.name,
+        awayTeamName:    game.awayTeam.name,
+        homeSeasonStats: homeNBAStats,
+        awaySeasonStats: awayNBAStats,
+      })
+    : null;
+
   const { homeTeam, awayTeam, score, status, liveMinute, weather, lineScores } = game;
 
   const probs    = isSoccer ? computeProbs(h2hVariants.all, homeTeam.name) : [];
-  const insights: AFLInsight[] = isAFL && aflAnalytics
+  const insights: any[] = isAFL && aflAnalytics
     ? generateAFLInsights({
         analytics:     aflAnalytics,
         homeShortName: homeTeam.shortName,
         awayShortName: awayTeam.shortName,
         weather:       game.weather ?? null,
       })
+    : isSoccer && soccerAnalytics
+    ? generateSoccerInsights({
+        analytics:     soccerAnalytics,
+        homeShortName: homeTeam.shortName,
+        awayShortName: awayTeam.shortName,
+      })
+    : isBasketball && nbaAnalytics
+    ? generateNBAInsights({
+        analytics:     nbaAnalytics,
+        homeShortName: homeTeam.shortName,
+        awayShortName: awayTeam.shortName,
+      })
     : generateInsights(game, h2hVariants.all, homeHistories.all, awayHistories.all, isSoccer, false);
+
 
   const LEAGUE: Record<string, { name: string; logo: string }> = {
     soccer:     { name: "Premier League",  logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/23.png" },
@@ -152,7 +204,7 @@ export default async function GameDetailPage({
   }
 
   return (
-    <div className={`${isAFL ? "max-w-7xl" : "max-w-5xl"} px-4 pt-4 pb-10 mx-auto`}>
+    <div className={`${isAFL || isBasketball ? "max-w-7xl" : "max-w-5xl"} px-4 pt-4 pb-10 mx-auto`}>
 
       {/* Back */}
       <Link href="/" className="inline-flex items-center gap-1 text-xs text-[#374151] hover:text-[#9CA3AF] mb-4 transition-colors">
@@ -262,6 +314,8 @@ export default async function GameDetailPage({
         awayHistories={awayHistories}
         h2hVariants={h2hVariants}
         aflAnalytics={aflAnalytics}
+        soccerAnalytics={soccerAnalytics}
+        nbaAnalytics={nbaAnalytics}
         sofascore={sofascore}
         insights={insights}
         isSoccer={isSoccer}
@@ -271,6 +325,7 @@ export default async function GameDetailPage({
         initialH2hFilter={h2hFilter as VenueFilter}
         initialHistoryFilter={historyFilter as VenueFilter}
       />
+
     </div>
   );
 }
