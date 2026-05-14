@@ -17,6 +17,7 @@ import { fetchSofascoreMatchData } from "@/lib/sports/sofascore";
 import { computeAFLMatchAnalytics } from "@/lib/sports/afl/analytics";
 import { generateAFLInsights, type AFLInsight } from "@/lib/sports/afl/insights";
 import LiveScorePanel from "@/components/LiveScorePanel";
+import AFLTeamCard from "@/components/afl/AFLTeamCard";
 import GameDetailTabs, { HistoryVariants, H2HVariants } from "./GameDetailTabs";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -212,36 +213,8 @@ export default async function GameDetailPage({
         {/* AFL analytics ribbon */}
         {isAFL && aflAnalytics && (
           <div className="px-5 pb-4 grid grid-cols-2 gap-2 border-t border-white/[0.04] pt-3">
-            {([
-              { t: homeTeam, an: aflAnalytics.home },
-              { t: awayTeam, an: aflAnalytics.away },
-            ] as const).map(({ t, an }) => (
-              <div key={t.name} className="bg-[#0d1827] rounded-lg px-3 py-2.5">
-                <div className="flex items-center gap-1.5 mb-2">
-                  {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                  <span className="text-[10px] text-[#9CA3AF] font-medium">{t.shortName}</span>
-                  <span className="ml-auto text-[10px] text-[#6B7280] tabular-nums">
-                    {an.record.wins}W {an.record.losses}L{an.record.draws > 0 ? ` ${an.record.draws}D` : ""}
-                  </span>
-                </div>
-                <div className="flex gap-1 mb-2">
-                  {an.form.map((r, i) => (
-                    <span key={i} className={`w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center ${
-                      r === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" : r === "L" ? "bg-[#EF4444]/20 text-[#EF4444]" : "bg-[#F59E0B]/20 text-[#F59E0B]"
-                    }`}>{r}</span>
-                  ))}
-                </div>
-                <div className="flex items-center gap-3 text-[10px] text-[#4B5563]">
-                  <span><span className="text-white">{an.avgScored}</span> avg</span>
-                  {an.daysRest != null && <span><span className="text-[#9CA3AF]">{an.daysRest}d</span> rest</span>}
-                  {an.streak.type && an.streak.count >= 2 && (
-                    <span className={`${an.streak.type === "W" ? "text-[#22C55E]" : "text-[#EF4444]"}`}>
-                      {an.streak.count}{an.streak.type}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+            <AFLTeamCard team={homeTeam} analytics={aflAnalytics.home} />
+            <AFLTeamCard team={awayTeam} analytics={aflAnalytics.away} />
           </div>
         )}
         {/* AFL predicted margin for upcoming */}

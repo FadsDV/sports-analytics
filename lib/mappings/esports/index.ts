@@ -111,3 +111,92 @@ export function getCanonicalTournamentId(name: string): string | undefined {
 export function generateInternalId(sport: 'cs2' | 'lol' | 'org' | 'region' | 'tournament', identifier: string): string {
   return `${sport}.${identifier.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
 }
+
+/**
+ * Converts a raw string (PandaScore slug, name, handle) to a canonical URL-safe
+ * lowercase identifier segment. Hyphens and spaces become underscores; all other
+ * non-alphanumeric characters are stripped.
+ *
+ * Examples:
+ *   "natus-vincere" → "natus_vincere"
+ *   "Team Liquid"   → "team_liquid"
+ *   "m0NESY"        → "m0nesy"
+ */
+export function normalizeEsportsSlug(raw: string): string {
+  return raw.toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, '');
+}
+
+/**
+ * Resolves a canonical team ID in the format `{gameType}.{short_name}`.
+ *
+ * Resolution order:
+ *   1. TEAM_MAPPINGS name lookup (human-curated, highest quality)
+ *   2. Normalized PandaScore slug  (stable, deterministic)
+ *   3. Numeric ID sentinel         (last resort)
+ *
+ * Both lib/sports/cs2/client.ts and lib/providers/esports/pandascore/normalization.ts
+ * must call this to guarantee identical IDs for the same team.
+ */
+export function resolveCanonicalTeamId(
+  team: { name?: string | null; slug?: string | null; id?: number | string | null },
+  gameType: 'cs2' | 'lol',
+): string {
+  if (team.name) {
+    const mapped = getCanonicalTeamId(team.name, gameType);
+    if (mapped) return mapped;
+  }
+  if (team.slug) return `${gameType}.${normalizeEsportsSlug(team.slug)}`;
+  return `${gameType}.team_${team.id ?? 'unknown'}`;
+}
+
+/**
+ * Resolves a canonical player ID in the format `{gameType}.{handle}`.
+ *
+ * Checks PLAYER_MAPPINGS by handle/name, then falls back to normalized slug or
+ * numeric sentinel. The `handle` field takes priority over `name` for the mapping
+ * lookup since PandaScore `name` is the in-game handle.
+ */
+export function resolveCanonicalPlayerId(
+  player: { name?: string | null; handle?: string | null; slug?: string | null; id?: number | string | null },
+  gameType: 'cs2' | 'lol',
+): string {
+  const handle = player.handle ?? player.name;
+  if (handle) {
+    const mapped = getCanonicalPlayerId(handle, gameType);
+    if (mapped) return mapped;
+  }
+  if (player.slug) return `${gameType}.${normalizeEsportsSlug(player.slug)}`;
+  const nameSlug = handle ? normalizeEsportsSlug(handle) : undefined;
+  if (nameSlug) return `${gameType}.${nameSlug}`;
+  return `${gameType}.player_${player.id ?? 'unknown'}`;
+}
+
+/**
+ * Resolves a canonical tournament ID in the format `tournament.{slug}`.
+ *
+ * Uses TOURNAMENT_MAPPINGS (partial-name match) first, then the normalized slug,
+ * then a numeric sentinel.
+ */
+export function resolveCanonicalTournamentId(
+  tournament: { name?: string | null; slug?: string | null; id?: number | string | null },
+): string {
+  if (tournament.name) {
+    const mapped = getCanonicalTournamentId(tournament.name);
+    if (mapped) return mapped;
+  }
+  if (tournament.slug) return `tournament.${normalizeEsportsSlug(tournament.slug)}`;
+  return `tournament.${tournament.id ?? 'unknown'}`;
+}
+
+/**
+ * Returns the canonical match ID: `{gameType}.match.{numericId}`.
+ *
+ * The gameType prefix lets analytics functions and caches partition by game
+ * without risk of numeric ID collision across providers.
+ */
+export function resolveCanonicalMatchId(
+  matchId: number | string,
+  gameType: 'cs2' | 'lol',
+): string {
+  return `${gameType}.match.${matchId}`;
+}

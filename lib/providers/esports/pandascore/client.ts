@@ -89,7 +89,7 @@ export class PandaScoreClient {
         }
 
         const data = await response.json();
-        esportsCache.set(cacheKey, data, ttl || this.defaultTtl);
+        esportsCache.set(cacheKey, data, this.providerId, ttl || this.defaultTtl);
         return data as T;
       } catch (err: any) {
         lastError = err;

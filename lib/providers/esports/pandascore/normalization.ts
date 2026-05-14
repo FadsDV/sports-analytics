@@ -6,12 +6,12 @@ import {
   EsportsMatchStatus,
   EsportsGame
 } from "@/lib/esports/types";
-import { 
-  getCanonicalTeamId, 
-  getCanonicalPlayerId, 
-  getCanonicalTournamentId,
+import {
   getCanonicalOrgId,
-  generateInternalId 
+  resolveCanonicalTeamId,
+  resolveCanonicalPlayerId,
+  resolveCanonicalTournamentId,
+  resolveCanonicalMatchId,
 } from "@/lib/mappings/esports";
 
 /**
@@ -32,8 +32,11 @@ export function normalizeStatus(psStatus: string): EsportsMatchStatus {
  * Normalizes a PandaScore player
  */
 export function normalizePlayer(psPlayer: any, gameType: "cs2" | "lol"): EsportsPlayer {
-  const canonicalId = getCanonicalPlayerId(psPlayer.name, gameType) || generateInternalId(gameType, psPlayer.name || psPlayer.id.toString());
-  
+  const canonicalId = resolveCanonicalPlayerId(
+    { name: psPlayer.name, slug: psPlayer.slug, id: psPlayer.id },
+    gameType,
+  );
+
   return {
     id: canonicalId,
     externalId: psPlayer.id,
@@ -60,7 +63,10 @@ export function normalizeTeam(psTeam: any, gameType: "cs2" | "lol"): EsportsTeam
     };
   }
 
-  const canonicalId = getCanonicalTeamId(psTeam.name, gameType) || generateInternalId(gameType, psTeam.acronym || psTeam.id.toString());
+  const canonicalId = resolveCanonicalTeamId(
+    { name: psTeam.name, slug: psTeam.slug, id: psTeam.id },
+    gameType,
+  );
   const orgId = getCanonicalOrgId(psTeam.name);
 
   return {
@@ -79,8 +85,12 @@ export function normalizeTeam(psTeam: any, gameType: "cs2" | "lol"): EsportsTeam
  * Normalizes a PandaScore tournament
  */
 export function normalizeTournament(psTournament: any): EsportsTournament {
-  const canonicalId = getCanonicalTournamentId(psTournament.name) || generateInternalId('tournament', psTournament.id.toString());
-  
+  const canonicalId = resolveCanonicalTournamentId({
+    name: psTournament.name,
+    slug: psTournament.slug,
+    id: psTournament.id,
+  });
+
   return {
     id: canonicalId,
     externalId: psTournament.id,
@@ -97,14 +107,19 @@ export function normalizeTournament(psTournament: any): EsportsTournament {
 /**
  * Normalizes an individual game within a match
  */
-export function normalizeGame(psGame: any): EsportsGame {
+export function normalizeGame(psGame: any, gameType: "cs2" | "lol"): EsportsGame {
   return {
     id: psGame.id,
     status: normalizeStatus(psGame.status),
     beginAt: psGame.begin_at,
     endAt: psGame.end_at,
     position: psGame.position,
-    winnerId: psGame.winner?.id ? psGame.winner.id.toString() : undefined,
+    winnerId: psGame.winner?.id
+      ? resolveCanonicalTeamId(
+          { name: psGame.winner.name, slug: psGame.winner.slug, id: psGame.winner.id },
+          gameType,
+        )
+      : undefined,
     complete: psGame.complete
   };
 }
@@ -125,7 +140,7 @@ export function normalizeMatch(psMatch: any, gameType: "cs2" | "lol"): EsportsMa
     : undefined;
 
   return {
-    id: `match.${psMatch.id}`,
+    id: resolveCanonicalMatchId(psMatch.id, gameType),
     externalId: psMatch.id,
     status: normalizeStatus(psMatch.status),
     scheduledAt: psMatch.scheduled_at,
@@ -144,6 +159,6 @@ export function normalizeMatch(psMatch: any, gameType: "cs2" | "lol"): EsportsMa
     matchType: psMatch.match_type || "best_of",
     gameType,
     liveUrl: psMatch.live?.url,
-    games: psMatch.games?.map(normalizeGame)
+    games: psMatch.games?.map((g: any) => normalizeGame(g, gameType))
   };
 }

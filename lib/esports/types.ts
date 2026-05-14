@@ -74,17 +74,19 @@ export interface CS2Map {
   completed: boolean;
 }
 
-// ─── Match ────────────────────────────────────────────────────────────────────
+// ─── Game (individual game within a match series) ─────────────────────────────
 
 export interface EsportsGame {
-  id:        number | string;
+  id:        number;
   status:    EsportsMatchStatus;
-  beginAt?:  string | null;
-  endAt?:    string | null;
-  position?: number;
+  beginAt?:  string;
+  endAt?:    string;
+  position:  number;
   winnerId?: string;
-  complete?: boolean;
+  complete:  boolean;
 }
+
+// ─── Match ────────────────────────────────────────────────────────────────────
 
 export interface EsportsMatch {
   id:             string;             // canonical e.g. "cs2.match.12345"
@@ -103,6 +105,13 @@ export interface EsportsMatch {
   matchType?:     "best_of" | "all_games_played";
   gameType:       "cs2" | "lol";
   liveUrl?:       string;
-  maps?:          CS2Map[];
   games?:         EsportsGame[];
+  maps?:          CS2Map[];
+}
+
+// ─── Normalization utility ────────────────────────────────────────────────────
+
+export interface EsportsNormalizationResult<T> {
+  data: T;
+  raw?: any;
 }
