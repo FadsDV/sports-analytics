@@ -154,7 +154,7 @@ export async function fetchTeamRoster(
     console.info("[SportsPulse] Roster fetch", { sportPath, teamId, url });
     if (!res.ok) return [];
     const data = await res.json();
-    const results = parseRoster(data);
+    const results = parseRoster(data, sportPath);
     console.info("[SportsPulse] Roster parsed", { sportPath, teamId, count: results.length });
     return results;
   } catch (err) {
@@ -163,7 +163,13 @@ export async function fetchTeamRoster(
   }
 }
 
-function parseRoster(data: any): ESPNPlayer[] {
+function espnHeadshotSport(sportPath: string): string {
+  if (sportPath.startsWith("basketball")) return "nba";
+  if (sportPath.startsWith("football"))   return "nfl";
+  return "soccer";
+}
+
+function parseRoster(data: any, sportPath = "soccer"): ESPNPlayer[] {
   const athletes: any[] = data.athletes ?? data.roster ?? [];
   const result: ESPNPlayer[] = [];
 
@@ -172,11 +178,11 @@ function parseRoster(data: any): ESPNPlayer[] {
     if (item.items && Array.isArray(item.items)) {
       const pos = item.position?.abbreviation ?? item.position ?? "??";
       for (const p of item.items) {
-        const player = parsePlayer(p, pos);
+        const player = parsePlayer(p, pos, sportPath);
         if (player) result.push(player);
       }
     } else {
-      const player = parsePlayer(item, item.position?.abbreviation);
+      const player = parsePlayer(item, item.position?.abbreviation, sportPath);
       if (player) result.push(player);
     }
   }
@@ -184,7 +190,7 @@ function parseRoster(data: any): ESPNPlayer[] {
   return result;
 }
 
-function parsePlayer(p: any, fallbackPos?: string): ESPNPlayer | null {
+function parsePlayer(p: any, fallbackPos?: string, sportPath = "soccer"): ESPNPlayer | null {
   const playerId = extractEspnEntityId(p);
   if (!playerId) {
     console.warn("[SportsPulse] parsePlayer missing id", {
@@ -203,11 +209,12 @@ function parsePlayer(p: any, fallbackPos?: string): ESPNPlayer | null {
       ? undefined // will use ESPN CDN pattern below
       : undefined);
 
-  // ESPN CDN headshot pattern (works for most sports)
+  // ESPN CDN headshot pattern — sport-specific path
+  const hsSport = espnHeadshotSport(sportPath);
   const hsUrl =
     headshot ??
     (playerId
-      ? `https://a.espncdn.com/i/headshots/soccer/players/full/${playerId}.png`
+      ? `https://a.espncdn.com/i/headshots/${hsSport}/players/full/${playerId}.png`
       : undefined);
 
   // Extract season stats if included
