@@ -113,8 +113,14 @@ export default function Sidebar() {
 
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-3 xl:px-5 py-4 border-b border-white/5">
-        <div className="w-8 h-8 rounded-lg bg-[#3B82F6] flex items-center justify-center shrink-0">
-          <span className="text-white text-sm font-black">D</span>
+        {/* DH monogram mark — readable at 32px */}
+        <div className="w-8 h-8 rounded-lg bg-[#3B82F6] flex items-center justify-center shrink-0 relative overflow-hidden">
+          <svg width="22" height="18" viewBox="0 0 22 18" fill="none" aria-hidden="true">
+            {/* D stroke */}
+            <path d="M2 2h4c3.5 0 5.5 1.8 5.5 5s-2 5-5.5 5H2V2z" stroke="white" strokeWidth="2" strokeLinejoin="round" fill="none"/>
+            {/* H stroke */}
+            <path d="M13 2v12M20 2v12M13 8h7" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
         </div>
         <span className="font-bold text-white text-base tracking-tight hidden xl:block">DegenHUB</span>
       </div>
