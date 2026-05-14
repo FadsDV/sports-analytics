@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { AFLPlayerAnalyticsResult } from "@/lib/sports/afl/players/types";
 import PlayerProfileContent from "./PlayerProfileContent";
+import { computeReliability, tierColors, tierLabel } from "@/utils/statAnalyzer";
 
 interface PlayerDrawerProps {
   data: AFLPlayerAnalyticsResult;
@@ -14,6 +15,108 @@ interface PlayerDrawerProps {
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts[parts.length - 1]?.[0] ?? "")).toUpperCase();
+}
+
+function BetChecker({ data }: { data: AFLPlayerAnalyticsResult }) {
+  const { last5Context, seasonAvg } = data;
+  if (!last5Context.length || !seasonAvg) return null;
+
+  const games = last5Context.map(g => ({
+    value: g.disposals ?? 0,
+    homeAway: g.homeAway,
+  }));
+
+  const dispAvg = Math.round(seasonAvg.disposals);
+  const goalAvg = seasonAvg.goals;
+  const dispRel = computeReliability(games, dispAvg);
+
+  const goalGames = last5Context.map(g => ({ value: g.goals ?? 0, homeAway: g.homeAway }));
+  const goalThreshold = goalAvg >= 1 ? Math.max(1, Math.round(goalAvg)) : 1;
+  const goalRel = computeReliability(goalGames, goalThreshold);
+
+  const trendIcon = (t: "up" | "flat" | "down") =>
+    t === "up" ? "↑" : t === "down" ? "↓" : "→";
+
+  const dc = tierColors(dispRel.tier);
+  const gc = tierColors(goalRel.tier);
+
+  return (
+    <div className="px-6 py-4 border-b border-white/5 bg-[#0d1421]">
+      <div className="text-[9px] font-black uppercase tracking-[0.15em] text-[#374151] mb-3">
+        Bet Checker · Last {dispRel.gamesUsed} Games
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {/* Disposals reliability */}
+        <div className={`rounded-xl p-3 border ${dc.border} ${dc.bg}`}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] text-[#6B7280] font-medium">Disposals ≥{dispAvg}</span>
+            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${dc.bg} ${dc.text}`}>
+              {tierLabel(dispRel.tier)}
+            </span>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className={`text-2xl font-black tabular-nums ${dc.text}`}>
+              {Math.round(dispRel.hitRate * 100)}%
+            </span>
+            <span className="text-[10px] text-[#6B7280]">hit rate</span>
+          </div>
+          <div className="flex items-center gap-2 mt-1.5 text-[9px] text-[#4B5563]">
+            <span>{dispRel.hitsInWindow}/{dispRel.gamesUsed} games</span>
+            <span>·</span>
+            <span className={dispRel.trend === "up" ? "text-[#22C55E]" : dispRel.trend === "down" ? "text-[#EF4444]" : "text-[#9CA3AF]"}>
+              {trendIcon(dispRel.trend)} trend
+            </span>
+            <span>·</span>
+            <span>avg {dispRel.avg.toFixed(1)}</span>
+          </div>
+          {Math.abs(dispRel.homeEdge) > 1.5 && (
+            <div className="mt-1.5 text-[9px] text-[#F59E0B]">
+              {dispRel.homeEdge > 0 ? "↑ Better at home" : "↑ Better away"}
+              {" "}(Δ{Math.abs(dispRel.homeEdge).toFixed(1)})
+            </div>
+          )}
+        </div>
+
+        {/* Goals reliability */}
+        <div className={`rounded-xl p-3 border ${gc.border} ${gc.bg}`}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] text-[#6B7280] font-medium">Goals ≥{goalThreshold}</span>
+            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${gc.bg} ${gc.text}`}>
+              {tierLabel(goalRel.tier)}
+            </span>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className={`text-2xl font-black tabular-nums ${gc.text}`}>
+              {Math.round(goalRel.hitRate * 100)}%
+            </span>
+            <span className="text-[10px] text-[#6B7280]">hit rate</span>
+          </div>
+          <div className="flex items-center gap-2 mt-1.5 text-[9px] text-[#4B5563]">
+            <span>{goalRel.hitsInWindow}/{goalRel.gamesUsed} games</span>
+            <span>·</span>
+            <span className={goalRel.trend === "up" ? "text-[#22C55E]" : goalRel.trend === "down" ? "text-[#EF4444]" : "text-[#9CA3AF]"}>
+              {trendIcon(goalRel.trend)} trend
+            </span>
+            <span>·</span>
+            <span>avg {goalRel.avg.toFixed(1)}</span>
+          </div>
+        </div>
+      </div>
+      {/* Confidence bar */}
+      <div className="mt-3">
+        <div className="flex justify-between text-[9px] text-[#374151] mb-1">
+          <span>Disposals confidence</span>
+          <span className={dc.text}>{Math.round(dispRel.confidence * 100)}%</span>
+        </div>
+        <div className="h-[3px] bg-white/5 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full transition-all ${
+            dispRel.tier === "strong" ? "bg-[#22C55E]" :
+            dispRel.tier === "moderate" ? "bg-[#F59E0B]" : "bg-[#EF4444]"
+          }`} style={{ width: `${Math.round(dispRel.confidence * 100)}%` }} />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function PlayerDrawer({ data, onClose, teamEspnId }: PlayerDrawerProps) {
@@ -111,6 +214,9 @@ export default function PlayerDrawer({ data, onClose, teamEspnId }: PlayerDrawer
             </button>
           </div>
         </div>
+
+        {/* Bet Checker */}
+        <BetChecker data={data} />
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-6 custom-scrollbar">

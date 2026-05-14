@@ -359,90 +359,30 @@ function AFLPreMatch({
       ══════════════════════════════════════════ */}
       <div className="space-y-3 md:col-span-2 lg:col-span-1">
 
-        {/* Weather */}
+        {/* Weather — hidden at 2xl+ where the page-level sticky panel takes over */}
         {weather && weather.condition !== "Indoor" && (
-          <Card title="Conditions">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">{WEATHER_ICONS[weather.condition] ?? "🌤"}</span>
-              <div className="flex-1 min-w-0">
-                <div className={`text-sm font-semibold ${
-                  weather.windKph > 40 || ["Storm","Rain"].includes(weather.condition) ? "text-[#F59E0B]" : "text-white"
-                }`}>{weather.condition}</div>
-                <div className="text-xs text-[#6B7280] mt-0.5">{weather.tempC}°C · {weather.windKph} km/h wind</div>
-              </div>
-              {weather.windKph > 40 && <Badge color="yellow">Windy</Badge>}
-              {["Storm","Rain"].includes(weather.condition) && <Badge color="yellow">Impact</Badge>}
-            </div>
-            {weather.windKph > 30 && (
-              <p className="mt-2.5 text-xs text-[#F59E0B] border-t border-white/[0.04] pt-2.5 leading-snug">
-                ⚠ Strong wind may reduce scoring and favour kicks into wind
-              </p>
-            )}
-          </Card>
-        )}
-
-        {/* Team News */}
-        {(ha?.injuryImpact || aa?.injuryImpact) && (
-          <Card title="Team News">
-            {([{ t: homeTeam, an: ha }, { t: awayTeam, an: aa }] as const).map(({ t, an }) => {
-              if (!an) return null;
-              const { out, doubtful } = an.injuryImpact;
-              const hasAny = out.length > 0 || doubtful.length > 0;
-              return (
-                <div key={t.name} className="mb-3 last:mb-0">
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                    <span className="text-xs font-semibold text-[#9CA3AF]">{t.shortName}</span>
-                  </div>
-                  {!hasAny && <p className="text-xs text-[#22C55E]">✓ No injuries reported</p>}
-                  {out.map((p, i) => (
-                    <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/[0.03] last:border-0">
-                      <PlayerAvatar
-                        src={p.headshot}
-                        name={p.playerName}
-                        size={22}
-                      />
-                      <span className="text-xs text-[#D1D5DB] truncate flex-1">{p.playerName}</span>
-                      <Badge color="red">Out</Badge>
-                    </div>
-                  ))}
-                  {doubtful.map((p, i) => (
-                    <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/[0.03] last:border-0">
-                      <PlayerAvatar
-                        src={p.headshot}
-                        name={p.playerName}
-                        size={22}
-                      />
-                      <span className="text-xs text-[#D1D5DB] truncate flex-1">{p.playerName}</span>
-                      <Badge color="yellow">Doubtful</Badge>
-                    </div>
-                  ))}
+          <div className="2xl:hidden">
+            <Card title="Conditions">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{WEATHER_ICONS[weather.condition] ?? "🌤"}</span>
+                <div className="flex-1 min-w-0">
+                  <div className={`text-sm font-semibold ${
+                    weather.windKph > 40 || ["Storm","Rain"].includes(weather.condition) ? "text-[#F59E0B]" : "text-white"
+                  }`}>{weather.condition}</div>
+                  <div className="text-xs text-[#6B7280] mt-0.5">{weather.tempC}°C · {weather.windKph} km/h wind</div>
                 </div>
-              );
-            })}
-          </Card>
-        )}
-
-        {/* Player Props Placeholder */}
-        <Card title="Player Props">
-          <div className="space-y-2">
-            {([
-              { label: "Disposals line", example: "O/U 25.5" },
-              { label: "Goal scorer",    example: "Anytime" },
-              { label: "Tackle line",    example: "O/U 5.5" },
-              { label: "Fantasy score",  example: "O/U 100" },
-            ]).map(item => (
-              <div key={item.label} className="flex items-center justify-between py-1.5 border-b border-white/[0.03] last:border-0">
-                <div>
-                  <div className="text-xs text-[#6B7280]">{item.label}</div>
-                  <div className="text-[10px] text-[#2D3748] mt-0.5">{item.example}</div>
-                </div>
-                <Badge color="gray">locked</Badge>
+                {weather.windKph > 40 && <Badge color="yellow">Windy</Badge>}
+                {["Storm","Rain"].includes(weather.condition) && <Badge color="yellow">Impact</Badge>}
               </div>
-            ))}
-            <p className="text-[10px] text-[#374151] text-center pt-1">Connect odds feed to unlock</p>
+              {weather.windKph > 30 && (
+                <p className="mt-2.5 text-xs text-[#F59E0B] border-t border-white/[0.04] pt-2.5 leading-snug">
+                  ⚠ Strong wind may reduce scoring and favour kicks into wind
+                </p>
+              )}
+            </Card>
           </div>
-        </Card>
+        )}
+
 
       </div>
     </div>
@@ -606,7 +546,7 @@ function AFLLive({
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.slice(0, 10).map((r, i) => (
+                          {rows.map((r, i) => (
                             <tr key={i} className="border-b border-white/[0.03] last:border-0 hover:bg-white/[0.02]">
                               <td className="py-1.5 pr-2">
                                 <div className="flex items-center gap-1.5">
@@ -667,15 +607,10 @@ function AFLLive({
           </Card>
         )}
 
-        {/* Momentum (placeholder) */}
-        <Card title="Live Momentum">
-          <div className="flex items-center justify-center h-14">
-            <div className="text-center">
-              <div className="text-xs text-[#374151]">Quarter-by-quarter momentum</div>
-              <div className="text-[10px] text-[#2D3748] mt-1">Coming soon</div>
-            </div>
-          </div>
-        </Card>
+        {/* Quarter-by-quarter sparkline */}
+        {game.lineScores && game.lineScores.home.length > 0 && (
+          <AFLQuarterSparkline game={game} />
+        )}
       </div>
 
       {/* ══════════════════════════════════════════
@@ -694,63 +629,23 @@ function AFLLive({
           </div>
         )}
 
-        {/* Weather (compact) */}
+        {/* Weather (compact) — hidden at 2xl+ where the page-level sticky panel takes over */}
         {weather && weather.condition !== "Indoor" && (
-          <Card title="Conditions">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">{WEATHER_ICONS[weather.condition] ?? "🌤"}</span>
-              <div>
-                <div className={`text-sm font-semibold ${
-                  weather.windKph > 40 || ["Storm","Rain"].includes(weather.condition) ? "text-[#F59E0B]" : "text-white"
-                }`}>{weather.condition}</div>
-                <div className="text-xs text-[#6B7280] mt-0.5">{weather.tempC}°C · {weather.windKph} km/h</div>
+          <div className="2xl:hidden">
+            <Card title="Conditions">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{WEATHER_ICONS[weather.condition] ?? "🌤"}</span>
+                <div>
+                  <div className={`text-sm font-semibold ${
+                    weather.windKph > 40 || ["Storm","Rain"].includes(weather.condition) ? "text-[#F59E0B]" : "text-white"
+                  }`}>{weather.condition}</div>
+                  <div className="text-xs text-[#6B7280] mt-0.5">{weather.tempC}°C · {weather.windKph} km/h</div>
+                </div>
               </div>
-            </div>
-          </Card>
+            </Card>
+          </div>
         )}
 
-        {/* Team News */}
-        {(ha?.injuryImpact || aa?.injuryImpact) && (
-          <Card title="Team News">
-            {([{ t: homeTeam, an: ha }, { t: awayTeam, an: aa }] as const).map(({ t, an }) => {
-              if (!an) return null;
-              const { out, doubtful } = an.injuryImpact;
-              return (
-                <div key={t.name} className="mb-2.5 last:mb-0">
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
-                    <span className="text-xs font-semibold text-[#6B7280]">{t.shortName}</span>
-                  </div>
-                  {out.length === 0 && doubtful.length === 0 && (
-                    <p className="text-xs text-[#22C55E]">✓ No changes</p>
-                  )}
-                  {out.map((p, i) => (
-                    <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/[0.03] last:border-0">
-                      <PlayerAvatar
-                        src={p.headshot}
-                        name={p.playerName}
-                        size={20}
-                      />
-                      <span className="text-xs text-[#D1D5DB] flex-1 truncate">{p.playerName}</span>
-                      <span className="text-[10px] font-semibold text-[#EF4444]">Out</span>
-                    </div>
-                  ))}
-                  {doubtful.map((p, i) => (
-                    <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/[0.03] last:border-0">
-                      <PlayerAvatar
-                        src={p.headshot}
-                        name={p.playerName}
-                        size={20}
-                      />
-                      <span className="text-xs text-[#D1D5DB] flex-1 truncate">{p.playerName}</span>
-                      <span className="text-[10px] font-semibold text-[#F59E0B]">Doubt</span>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </Card>
-        )}
 
         {/* Pre-game context (top insights) */}
         {insights.length > 0 && (
@@ -805,6 +700,100 @@ function AFLLive({
         </Card>
       </div>
     </div>
+  );
+}
+
+// ─── Quarter Sparkline ────────────────────────────────────────────────────────
+
+function AFLQuarterSparkline({ game }: { game: AFLDashboardProps["game"] }) {
+  const { lineScores, score, homeTeam, awayTeam } = game;
+  if (!lineScores || !score) return null;
+
+  const { home: hQ, away: aQ } = lineScores;
+  const periods = Math.max(hQ.length, aQ.length, 4);
+  const labels = Array.from({ length: periods }, (_, i) => `Q${i + 1}`);
+
+  let hR = 0, aR = 0;
+  const diffs: number[] = [0];
+  for (let i = 0; i < periods; i++) {
+    hR += hQ[i] ?? 0;
+    aR += aQ[i] ?? 0;
+    diffs.push(hR - aR);
+  }
+
+  const maxDiff = Math.max(...diffs.map(Math.abs), 1);
+  const W = 380, H = 56, LABEL_H = 14;
+  const chartH = H - LABEL_H;
+  const xStep = W / Math.max(diffs.length - 1, 1);
+  const yMid  = chartH / 2;
+  const pts   = diffs.map((d, i) => ({ x: i * xStep, y: yMid - (d / maxDiff) * (yMid - 5) }));
+  const linePath = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const areaPath =
+    `M${pts[0].x.toFixed(1)},${yMid} ` +
+    pts.map(p => `L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") +
+    ` L${pts[pts.length - 1].x.toFixed(1)},${yMid} Z`;
+
+  const currentDiff = (score.home ?? 0) - (score.away ?? 0);
+  const leadColor = currentDiff >= 0 ? "#60A5FA" : "#F87171";
+  const leadName  = currentDiff > 0 ? homeTeam.shortName : currentDiff < 0 ? awayTeam.shortName : null;
+
+  return (
+    <Card title="Quarter Momentum">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[9px] text-[#374151]">{homeTeam.shortName} ↑ · {awayTeam.shortName} ↓</span>
+        {leadName && (
+          <span style={{ color: leadColor }} className="text-[10px] font-bold">
+            {leadName} +{Math.abs(currentDiff)}
+          </span>
+        )}
+      </div>
+      <svg width={W} height={H} className="w-full" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        <defs>
+          <filter id="afl-glow">
+            <feGaussianBlur stdDeviation="1.5" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        <line x1="0" y1={yMid} x2={W} y2={yMid} stroke="white" strokeOpacity={0.1} strokeWidth={1} />
+        <path d={areaPath} fill={leadColor} fillOpacity={0.25} />
+        <path d={linePath} fill="none" stroke={leadColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" filter="url(#afl-glow)" />
+        {labels.map((label, i) => {
+          const x = (i + 1) * xStep;
+          const isLast = i === labels.length - 1;
+          return (
+            <g key={i}>
+              <line x1={x} y1={0} x2={x} y2={chartH} stroke="white" strokeOpacity={0.07} strokeWidth={1} strokeDasharray="2 2" />
+              <text x={x} y={H - 2} textAnchor={isLast ? "end" : "middle"} fill="#4B5563" fontSize={9} fontFamily="monospace">{label}</text>
+            </g>
+          );
+        })}
+        <text x={0} y={H - 2} textAnchor="start" fill="#374151" fontSize={9} fontFamily="monospace">Start</text>
+      </svg>
+      {/* Compact quarter grid */}
+      <div className="mt-2 grid gap-y-1" style={{ gridTemplateColumns: `auto repeat(${periods}, 1fr) auto` }}>
+        <div />
+        {labels.map(l => <div key={l} className="text-center text-[9px] text-[#374151]">{l}</div>)}
+        <div className="text-[9px] text-[#374151] text-right">TOT</div>
+        <div className="flex items-center gap-1">
+          {homeTeam.logoUrl && <img src={homeTeam.logoUrl} alt="" className="w-3 h-3 object-contain" />}
+          <span className="text-[10px] text-[#9CA3AF]">{homeTeam.shortName}</span>
+        </div>
+        {Array.from({ length: periods }, (_, i) => {
+          const v = hQ[i] ?? 0;
+          return <div key={i} className="text-center"><span className={`text-[10px] tabular-nums ${v > (aQ[i] ?? 0) && v > 0 ? "text-white font-bold" : "text-[#6B7280]"}`}>{v || "—"}</span></div>;
+        })}
+        <div className="text-right"><span className="text-sm font-black text-white tabular-nums">{score.home}</span></div>
+        <div className="flex items-center gap-1">
+          {awayTeam.logoUrl && <img src={awayTeam.logoUrl} alt="" className="w-3 h-3 object-contain" />}
+          <span className="text-[10px] text-[#9CA3AF]">{awayTeam.shortName}</span>
+        </div>
+        {Array.from({ length: periods }, (_, i) => {
+          const v = aQ[i] ?? 0;
+          return <div key={i} className="text-center"><span className={`text-[10px] tabular-nums ${v > (hQ[i] ?? 0) && v > 0 ? "text-white font-bold" : "text-[#6B7280]"}`}>{v || "—"}</span></div>;
+        })}
+        <div className="text-right"><span className="text-sm font-black text-[#9CA3AF] tabular-nums">{score.away}</span></div>
+      </div>
+    </Card>
   );
 }
 

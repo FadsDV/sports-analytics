@@ -265,12 +265,77 @@ function computeH2H(
 
 // ─── Predicted margin ─────────────────────────────────────────────────────────
 
-function computePredictedMargin(home: AFLTeamAnalytics, away: AFLTeamAnalytics): number | null {
+export interface LadderEntry {
+  teamName:   string;
+  rank:       number;   // 1 = top
+  pts:        number;   // ladder points (4 per win, 2 per draw)
+  percentage: number;   // points for / points against * 100
+  wins:       number;
+  losses:     number;
+  played:     number;
+}
+
+function formScore(form: ("W" | "L" | "D")[]): number {
+  // Weight recent games more heavily: last game = 5, second = 4 ... first = 1
+  const weights = [5, 4, 3, 2, 1];
+  let score = 0, total = 0;
+  form.slice(0, 5).forEach((r, i) => {
+    const w = weights[i] ?? 1;
+    score += w * (r === "W" ? 1 : r === "D" ? 0.5 : 0);
+    total += w;
+  });
+  return total > 0 ? score / total : 0.5; // 0..1, 0.5 = neutral
+}
+
+function computePredictedMargin(
+  home: AFLTeamAnalytics,
+  away: AFLTeamAnalytics,
+  homeLadder: LadderEntry | null,
+  awayLadder: LadderEntry | null,
+  h2hSummary: AFLH2HSummary,
+): number | null {
   if (home.avgScored === 0 && away.avgScored === 0) return null;
-  // Expected scores based on each team's attack vs opponent's defence
-  const homeExpected = (home.avgScored + (home.avgScored - away.avgConceded)) / 2;
-  const awayExpected = (away.avgScored + (away.avgScored - home.avgConceded)) / 2;
-  const raw = homeExpected - awayExpected + 5; // +5 home ground advantage
+
+  // ── 1. Attack vs defence (symmetric) ──────────────────────────────────────
+  // homeAttack: how much home scores vs how much away allows
+  const homeAttack  = (home.avgScored   - away.avgConceded);
+  const awayAttack  = (away.avgScored   - home.avgConceded);
+  const atkDefMargin = homeAttack - awayAttack; // positive = home favoured
+
+  // ── 2. Ladder quality (rank + percentage) ─────────────────────────────────
+  let ladderMargin = 0;
+  if (homeLadder && awayLadder) {
+    // Rank differential: each position ~1.5 pts; capped at ±15
+    const rankAdj = Math.min(15, Math.max(-15, (awayLadder.rank - homeLadder.rank) * 1.5));
+    // Percentage differential: 10% difference ≈ ~2 pts, capped at ±8
+    const pctAdj  = Math.min(8, Math.max(-8, (homeLadder.percentage - awayLadder.percentage) / 10 * 2));
+    ladderMargin = rankAdj + pctAdj;
+  }
+
+  // ── 3. Recent form (last 5 games, weighted) ────────────────────────────────
+  const homeFormScore = formScore(home.form);
+  const awayFormScore = formScore(away.form);
+  const formMargin = (homeFormScore - awayFormScore) * 12; // ±6 pts range
+
+  // ── 4. H2H adjustment (last 4 meetings, decayed) ──────────────────────────
+  let h2hMargin = 0;
+  const recent = h2hSummary.meetings.slice(0, 4);
+  if (recent.length >= 2) {
+    const homeWinRate = recent.filter(m => m.winner !== "Draw" && m.home === m.winner).length / recent.length;
+    h2hMargin = (homeWinRate - 0.5) * 8; // ±4 pts
+  }
+
+  // ── 5. Home ground advantage ───────────────────────────────────────────────
+  const homeAdv = 5;
+
+  // ── Weighted composite ─────────────────────────────────────────────────────
+  const raw =
+    atkDefMargin  * 0.35 +
+    ladderMargin  * 0.30 +
+    formMargin    * 0.25 +
+    h2hMargin     * 0.10 +
+    homeAdv;
+
   return Math.round(raw);
 }
 
@@ -286,16 +351,28 @@ export function computeAFLMatchAnalytics(params: {
   h2h:          H2HGame[];
   homeTeamName: string;
   awayTeamName: string;
+  ladder?:      LadderEntry[];
 }): AFLMatchAnalytics {
-  const { homeHistory, awayHistory, homeInjuries, awayInjuries, venue, kickoff, h2h, homeTeamName, awayTeamName } = params;
+  const { homeHistory, awayHistory, homeInjuries, awayInjuries, venue, kickoff, h2h, homeTeamName, awayTeamName, ladder = [] } = params;
 
   const home = computeTeamAnalytics(homeHistory, venue, kickoff, homeInjuries);
   const away = computeTeamAnalytics(awayHistory, venue, kickoff, awayInjuries);
+  const h2hSummary = computeH2H(h2h, homeTeamName, awayTeamName);
+
+  // Match ladder entries by team name (fuzzy: check if entry name is contained or vice versa)
+  const findLadder = (name: string): LadderEntry | null =>
+    ladder.find(e =>
+      e.teamName.toLowerCase().includes(name.toLowerCase().split(" ")[0]!) ||
+      name.toLowerCase().includes(e.teamName.toLowerCase().split(" ")[0]!)
+    ) ?? null;
+
+  const homeLadder = findLadder(homeTeamName);
+  const awayLadder = findLadder(awayTeamName);
 
   return {
     home,
     away,
-    predictedMargin: computePredictedMargin(home, away),
-    h2h: computeH2H(h2h, homeTeamName, awayTeamName),
+    predictedMargin: computePredictedMargin(home, away, homeLadder, awayLadder, h2hSummary),
+    h2h: h2hSummary,
   };
 }

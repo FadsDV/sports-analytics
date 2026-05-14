@@ -113,29 +113,36 @@ export default function Sidebar() {
     <aside className="fixed left-0 top-0 h-full w-[60px] xl:w-[200px] bg-[#0a1628] border-r border-white/5 z-40 flex flex-col">
 
       {/* Logo */}
-      <div className="flex items-center justify-center xl:justify-start px-1 xl:px-3 py-4 xl:py-5 border-b border-white/[0.07] shrink-0">
-        {/* Collapsed (60px sidebar): square icon crop */}
-        <div className="block xl:hidden relative w-[46px] h-[46px] shrink-0">
-          <Image
-            src="/logo.png"
-            alt="DegenHUB"
-            fill
-            sizes="46px"
-            className="object-contain"
-            priority
-          />
+      <div className="border-b border-white/[0.07] shrink-0">
+
+        {/* Collapsed sidebar — full 60px width, 40px tall (3:2 ratio) */}
+        <div className="flex xl:hidden items-center justify-center py-1">
+          <div className="relative w-[58px] h-[39px]">
+            <Image
+              src="/logo.png"
+              alt="DegenHUB"
+              fill
+              priority
+              sizes="58px"
+              className="object-contain"
+            />
+          </div>
         </div>
-        {/* Expanded (200px sidebar): horizontal lockup */}
-        <div className="hidden xl:block relative h-[60px] w-[172px] shrink-0">
-          <Image
-            src="/logo.png"
-            alt="DegenHUB"
-            fill
-            sizes="172px"
-            className="object-contain object-left"
-            priority
-          />
+
+        {/* Expanded sidebar — full 200px width, 133px tall (3:2 ratio) */}
+        <div className="hidden xl:block">
+          <div className="relative w-full h-[133px]">
+            <Image
+              src="/logo.png"
+              alt="DegenHUB"
+              fill
+              priority
+              sizes="200px"
+              className="object-contain"
+            />
+          </div>
         </div>
+
       </div>
 
       {/* Main nav — wrapped in Suspense for useSearchParams */}
