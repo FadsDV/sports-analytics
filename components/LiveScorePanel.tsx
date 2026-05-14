@@ -70,6 +70,23 @@ export default function LiveScorePanel({
     return () => clearInterval(id);
   }, [isLive]);
 
+  // Countdown to kickoff — ticks every second while upcoming
+  useEffect(() => {
+    if (!isUpcoming) return;
+    const tick = () => {
+      const diff = new Date(kickoff).getTime() - Date.now();
+      if (diff <= 0) { setCountdown("Starting soon"); return; }
+      const h = Math.floor(diff / 3_600_000);
+      const m = Math.floor((diff % 3_600_000) / 60_000);
+      const s = Math.floor((diff % 60_000) / 1_000);
+      if (h > 0) setCountdown(`${h}h ${String(m).padStart(2, "0")}m`);
+      else        setCountdown(`${m}:${String(s).padStart(2, "0")}`);
+    };
+    tick();
+    const id = setInterval(tick, 1_000);
+    return () => clearInterval(id);
+  }, [isUpcoming, kickoff]);
+
   const { homeScore, awayScore, status, period, displayClock, lineScores } = data;
 
   // ── Upcoming ───────────────────────────────────────────────────────────────
@@ -78,8 +95,13 @@ export default function LiveScorePanel({
       <div>
         <div className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280] mb-2">Pre-Match</div>
         <div className="text-3xl font-bold text-[#1e3a5f]">vs</div>
-        <div className="text-sm font-medium text-[#3B82F6] mt-2">
-          {isAFL ? formatAFLKickoff(kickoff, venue) : formatKickoffFull(kickoff)}
+        <div className="mt-2 space-y-0.5">
+          {countdown && (
+            <div className="text-2xl font-black tabular-nums text-[#3B82F6] tracking-tight">{countdown}</div>
+          )}
+          <div className="text-xs text-[#4B5563]">
+            {isAFL ? formatAFLKickoff(kickoff, venue) : formatKickoffFull(kickoff)}
+          </div>
         </div>
       </div>
     );

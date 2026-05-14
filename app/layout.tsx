@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
+import ThemeProvider from "@/components/ThemeProvider";
 
 export const metadata: Metadata = {
   title: "DegenHUB – Sports Analytics",
@@ -10,13 +11,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className="h-full dark" suppressHydrationWarning>
       <body className="h-full overflow-hidden">
-        <Sidebar />
-        <TopBar />
-        <main className="ml-[60px] xl:ml-[200px] mt-14 h-[calc(100vh-56px)] overflow-y-auto">
-          {children}
-        </main>
+        <ThemeProvider>
+          <Sidebar />
+          <TopBar />
+          <main className="ml-[60px] xl:ml-[200px] mt-14 h-[calc(100vh-56px)] overflow-y-auto">
+            {children}
+          </main>
+        </ThemeProvider>
       </body>
     </html>
   );
