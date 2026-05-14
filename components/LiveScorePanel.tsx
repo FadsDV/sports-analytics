@@ -27,6 +27,7 @@ export default function LiveScorePanel({
 }: LiveScorePanelProps) {
   const [data, setData]           = useState<LiveGameState>(initial);
   const [updatedSec, setUpdatedSec] = useState(0);
+  const [countdown, setCountdown]  = useState("");
   const fetchingRef               = useRef(false);
 
   const isLive     = data.status === "live";

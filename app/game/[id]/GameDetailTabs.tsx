@@ -746,136 +746,111 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
 
 // ─── NBA quarter flow ─────────────────────────────────────────────────────────
 
-function NBAQuarterFlow({ game }: { game: Game }) {
+function NBAQuarterCompact({ game }: { game: Game }) {
   const { lineScores, score, homeTeam, awayTeam, status } = game;
   if (!lineScores || !score) return null;
 
   const { home: hQ, away: aQ } = lineScores;
   const periods = Math.max(hQ.length, aQ.length, 4);
-  const labels  = Array.from({ length: periods }, (_, i) => i < 4 ? `Q${i+1}` : `OT${i-3}`);
+  const labels = Array.from({ length: periods }, (_, i) => i < 4 ? `Q${i + 1}` : `OT${i - 3}`);
 
-  // Running totals
-  let hRunning = 0, aRunning = 0;
-  const snapshots = labels.map((_, i) => {
-    hRunning += hQ[i] ?? 0;
-    aRunning += aQ[i] ?? 0;
-    return { h: hRunning, a: aRunning, diff: hRunning - aRunning };
-  });
+  // Differential per period for sparkline (0 = start, then one point per completed period)
+  let hR = 0, aR = 0;
+  const diffs: number[] = [0];
+  for (let i = 0; i < periods; i++) {
+    hR += hQ[i] ?? 0;
+    aR += aQ[i] ?? 0;
+    diffs.push(hR - aR);
+  }
 
-  const maxQ = Math.max(...hQ, ...aQ, 1);
-  const biggestLead = Math.max(...snapshots.map(s => Math.abs(s.diff)));
-  const leadChanges = snapshots.filter((s, i) => {
-    if (i === 0) return false;
-    const prev = snapshots[i - 1]!;
-    return (prev.diff > 0 && s.diff < 0) || (prev.diff < 0 && s.diff > 0) || (prev.diff !== 0 && s.diff === 0);
-  }).length;
+  const maxDiff = Math.max(...diffs.map(Math.abs), 1);
+  const W = 380, H = 56, LABEL_H = 14;
+  const chartH = H - LABEL_H;
+  const xStep = W / Math.max(diffs.length - 1, 1);
+  const yMid = chartH / 2;
+  const pts = diffs.map((d, i) => ({ x: i * xStep, y: yMid - (d / maxDiff) * (yMid - 5) }));
+  const linePath = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const areaPath =
+    `M${pts[0].x.toFixed(1)},${yMid} ` +
+    pts.map(p => `L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") +
+    ` L${pts[pts.length - 1].x.toFixed(1)},${yMid} Z`;
 
   const currentDiff = (score.home ?? 0) - (score.away ?? 0);
   const leadTeam = currentDiff > 0 ? homeTeam.shortName : currentDiff < 0 ? awayTeam.shortName : null;
+  const leadColor = currentDiff >= 0 ? "#60A5FA" : "#F87171";
 
   return (
     <div className="bg-[#111827] rounded-xl p-4 border border-white/[0.04]">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-[10px] font-semibold uppercase tracking-widest text-[#374151]">Quarter by Quarter</h3>
-        <div className="flex items-center gap-4 text-[10px]">
-          {leadTeam && status !== "upcoming" && (
-            <span className="text-[#3B82F6] font-bold">
-              {leadTeam} {Math.abs(currentDiff) > 0 ? `+${Math.abs(currentDiff)}` : "tied"}
-            </span>
-          )}
-          {biggestLead > 0 && <span className="text-[#374151]">Max lead: <span className="text-[#9CA3AF]">{biggestLead}</span></span>}
-          {leadChanges > 0 && <span className="text-[#374151]">Lead changes: <span className="text-[#9CA3AF]">{leadChanges}</span></span>}
-        </div>
-      </div>
+      <div className="flex items-start justify-between gap-6">
 
-      {/* Quarter score grid */}
-      <div className="grid mb-4" style={{ gridTemplateColumns: `auto repeat(${periods}, 1fr) auto` }}>
-        <div className="text-[9px] text-[#374151] py-1" />
-        {labels.map(l => (
-          <div key={l} className="text-[9px] text-[#374151] text-center py-1 font-medium uppercase">{l}</div>
-        ))}
-        <div className="text-[9px] text-[#374151] text-right py-1 font-bold uppercase pr-1">TOT</div>
+        {/* Quarter score grid */}
+        <div className="shrink-0">
+          <div className="flex items-center gap-4 mb-2">
+            <span className="text-[9px] font-semibold uppercase tracking-widest text-[#374151]">Quarter by Quarter</span>
+            {leadTeam && status !== "upcoming" && (
+              <span style={{ color: leadColor }} className="text-[10px] font-bold">
+                {leadTeam} {Math.abs(currentDiff) > 0 ? `+${Math.abs(currentDiff)}` : "tied"}
+              </span>
+            )}
+          </div>
+          <div className="grid gap-y-1.5 gap-x-3" style={{ gridTemplateColumns: `auto repeat(${periods}, 36px) auto` }}>
+            <div />
+            {labels.map(l => <div key={l} className="text-center text-[9px] text-[#374151] font-medium">{l}</div>)}
+            <div className="text-[9px] text-[#374151] text-right font-bold">TOT</div>
 
-        {/* Home row */}
-        <div className="flex items-center gap-1.5 py-2 pr-2">
-          {homeTeam.logoUrl && <img src={homeTeam.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-          <span className="text-[11px] text-[#9CA3AF] font-medium">{homeTeam.shortName}</span>
-        </div>
-        {labels.map((_, i) => {
-          const v = hQ[i] ?? 0;
-          const isMax = v === Math.max(hQ[i] ?? 0, aQ[i] ?? 0) && v > 0;
-          return (
-            <div key={i} className="text-center py-2">
-              <span className={`text-xs tabular-nums font-semibold ${isMax ? "text-white" : "text-[#6B7280]"}`}>{v || "-"}</span>
+            <div className="flex items-center gap-1 pr-2">
+              {homeTeam.logoUrl && <img src={homeTeam.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
+              <span className="text-[10px] text-[#9CA3AF] font-medium">{homeTeam.shortName}</span>
             </div>
-          );
-        })}
-        <div className="text-right py-2 pr-1">
-          <span className="text-sm font-black text-white tabular-nums">{score.home}</span>
-        </div>
+            {labels.map((_, i) => {
+              const v = hQ[i] ?? 0;
+              const won = v > (aQ[i] ?? 0) && v > 0;
+              return <div key={i} className="text-center"><span className={`text-[11px] tabular-nums font-semibold ${won ? "text-white" : "text-[#6B7280]"}`}>{v || "—"}</span></div>;
+            })}
+            <div className="text-right"><span className="text-sm font-black text-white tabular-nums">{score.home}</span></div>
 
-        {/* Away row */}
-        <div className="flex items-center gap-1.5 py-2 pr-2">
-          {awayTeam.logoUrl && <img src={awayTeam.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-          <span className="text-[11px] text-[#9CA3AF] font-medium">{awayTeam.shortName}</span>
-        </div>
-        {labels.map((_, i) => {
-          const v = aQ[i] ?? 0;
-          const isMax = v === Math.max(hQ[i] ?? 0, aQ[i] ?? 0) && v > 0;
-          return (
-            <div key={i} className="text-center py-2">
-              <span className={`text-xs tabular-nums font-semibold ${isMax ? "text-white" : "text-[#6B7280]"}`}>{v || "-"}</span>
+            <div className="flex items-center gap-1 pr-2">
+              {awayTeam.logoUrl && <img src={awayTeam.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
+              <span className="text-[10px] text-[#9CA3AF] font-medium">{awayTeam.shortName}</span>
             </div>
-          );
-        })}
-        <div className="text-right py-2 pr-1">
-          <span className="text-sm font-black text-[#9CA3AF] tabular-nums">{score.away}</span>
+            {labels.map((_, i) => {
+              const v = aQ[i] ?? 0;
+              const won = v > (hQ[i] ?? 0) && v > 0;
+              return <div key={i} className="text-center"><span className={`text-[11px] tabular-nums font-semibold ${won ? "text-white" : "text-[#6B7280]"}`}>{v || "—"}</span></div>;
+            })}
+            <div className="text-right"><span className="text-sm font-black text-[#9CA3AF] tabular-nums">{score.away}</span></div>
+          </div>
         </div>
-      </div>
 
-      {/* Quarter bars */}
-      <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${periods}, 1fr)` }}>
-        {labels.map((l, i) => {
-          const hv = hQ[i] ?? 0;
-          const av = aQ[i] ?? 0;
-          const hPct = Math.round((hv / maxQ) * 100);
-          const aPct = Math.round((av / maxQ) * 100);
-          const label = l;
-          return (
-            <div key={i} className="flex flex-col items-center gap-1">
-              <div className="w-full h-10 flex items-end gap-0.5">
-                <div className="flex-1 bg-[#3B82F6]/80 rounded-t" style={{ height: `${Math.max(hPct, 4)}%` }} title={`${homeTeam.shortName}: ${hv}`} />
-                <div className="flex-1 bg-[#9CA3AF]/40 rounded-t" style={{ height: `${Math.max(aPct, 4)}%` }} title={`${awayTeam.shortName}: ${av}`} />
-              </div>
-              <span className="text-[9px] text-[#374151]">{label}</span>
-            </div>
-          );
-        })}
-      </div>
+        {/* Sparkline differential chart */}
+        <div className="shrink-0 flex flex-col items-end">
+          <div className="text-[9px] text-[#374151] mb-1">{homeTeam.shortName} ↑ · {awayTeam.shortName} ↓</div>
+          <svg width={W} height={H}>
+            <defs>
+              <filter id="glow">
+                <feGaussianBlur stdDeviation="1.5" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+            </defs>
+            {/* chart area */}
+            <line x1="0" y1={yMid} x2={W} y2={yMid} stroke="white" strokeOpacity={0.12} strokeWidth={1} />
+            <path d={areaPath} fill={leadColor} fillOpacity={0.28} />
+            <path d={linePath} fill="none" stroke={leadColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" filter="url(#glow)" />
+            {/* period dividers + Q labels */}
+            {labels.map((label, i) => {
+              const x = (i + 1) * xStep;
+              const isLast = i === labels.length - 1;
+              return (
+                <g key={i}>
+                  <line x1={x} y1={0} x2={x} y2={chartH} stroke="white" strokeOpacity={0.08} strokeWidth={1} strokeDasharray="2 2" />
+                  <text x={x} y={H - 2} textAnchor={isLast ? "end" : "middle"} fill="#4B5563" fontSize={9} fontFamily="monospace">{label}</text>
+                </g>
+              );
+            })}
+            <text x={0} y={H - 2} textAnchor="start" fill="#374151" fontSize={9} fontFamily="monospace">Start</text>
+          </svg>
+        </div>
 
-      {/* Scoring run momentum */}
-      <div className="mt-3 pt-3 border-t border-white/[0.04]">
-        <div className="text-[9px] text-[#374151] mb-2 uppercase tracking-widest font-semibold">Score Progression</div>
-        <div className="relative h-6 bg-white/[0.03] rounded-full overflow-hidden">
-          {snapshots.map((s, i) => {
-            const x = ((i + 1) / snapshots.length) * 100;
-            const diff = s.diff;
-            const barH = Math.min(Math.abs(diff) / (biggestLead || 1) * 100, 100);
-            return (
-              <div
-                key={i}
-                className={`absolute bottom-0 w-[2px] rounded-t ${diff > 0 ? "bg-[#3B82F6]" : diff < 0 ? "bg-[#9CA3AF]" : "bg-white/20"}`}
-                style={{ left: `${x}%`, height: `${Math.max(barH, 8)}%` }}
-                title={`After ${labels[i]}: ${homeTeam.shortName} ${s.h > s.a ? "+" : ""}${s.diff}`}
-              />
-            );
-          })}
-          <div className="absolute inset-y-0 w-[1px] bg-white/10 left-1/2" />
-        </div>
-        <div className="flex justify-between text-[9px] text-[#374151] mt-1">
-          <span className="text-[#3B82F6]">{homeTeam.shortName} lead</span>
-          <span className="text-[#9CA3AF]">{awayTeam.shortName} lead</span>
-        </div>
       </div>
     </div>
   );
@@ -916,9 +891,6 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
 }) {
   const { homeTeam, awayTeam } = game;
   const isUpcoming = game.status === "upcoming";
-  const homePlayers = sofascore?.lineups?.home ?? [];
-  const awayPlayers = sofascore?.lineups?.away ?? [];
-  const hasPerformers = homePlayers.length > 0 || awayPlayers.length > 0;
   const homeStarters = homeSquad.slice(0, 5);
   const awayStarters = awaySquad.slice(0, 5);
   const allInjuries = [...homeInjuries, ...awayInjuries];
@@ -954,38 +926,31 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
 
   return (
     <div className="space-y-4">
-      {/* Quarter flow — live / finished */}
-      {!isUpcoming && game.lineScores && <NBAQuarterFlow game={game} />}
+      {/* Compact quarter grid + sparkline — live / finished */}
+      {!isUpcoming && game.lineScores && game.score && <NBAQuarterCompact game={game} />}
 
-      {/* Top performers — finished games */}
-      {!isUpcoming && hasPerformers && (
-        <Section title="Top Performers">
-          <div className="grid grid-cols-2 gap-4">
-            {[{ t: homeTeam, players: homePlayers }, { t: awayTeam, players: awayPlayers }].map(({ t, players }) => {
-              const sorted = [...players].sort((a, b) => (b.stats.points ?? 0) as number - ((a.stats.points ?? 0) as number)).slice(0, 5);
-              return (
-                <div key={t.name}>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                    <span className="text-xs font-medium text-[#6B7280]">{t.shortName}</span>
-                  </div>
-                  {sorted.map(p => (
-                    <div key={p.id} className="flex items-center py-1.5 border-b border-white/[0.04] last:border-0 gap-2">
-                      <span className="text-[13px] text-white flex-1 truncate">{p.shortName}</span>
-                      <span className="text-white font-bold text-xs tabular-nums">{p.stats.points ?? "—"}</span>
-                      <span className="text-[#6B7280] text-[10px]">PTS</span>
-                      <span className="text-[#9CA3AF] text-xs tabular-nums">{p.stats.rebounds ?? "—"}</span>
-                      <span className="text-[#374151] text-[10px]">REB</span>
-                      <span className="text-[#9CA3AF] text-xs tabular-nums">{p.stats.assists ?? "—"}</span>
-                      <span className="text-[#374151] text-[10px]">AST</span>
-                    </div>
-                  ))}
-                  {sorted.length === 0 && <p className="text-xs text-[#374151]">No data yet</p>}
-                </div>
-              );
-            })}
-          </div>
-        </Section>
+      {/* ESPN box score — live / finished */}
+      {!isUpcoming && game.boxScore && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <Section title={`${homeTeam.shortName} — Box Score`}>
+            <NBAPlayerList
+              rows={game.boxScore.home}
+              headers={game.boxScore.statHeaders}
+              teamId={homeTeam.espnId}
+              opponent={awayTeam.name}
+              matchContext="home"
+            />
+          </Section>
+          <Section title={`${awayTeam.shortName} — Box Score`}>
+            <NBAPlayerList
+              rows={game.boxScore.away}
+              headers={game.boxScore.statHeaders}
+              teamId={awayTeam.espnId}
+              opponent={homeTeam.name}
+              matchContext="away"
+            />
+          </Section>
+        </div>
       )}
 
       {/* Projected starters — upcoming games */}

@@ -122,8 +122,8 @@ interface SquiggleGame {
 }
 
 interface SquiggleStanding {
-  team:       string;
-  teamid:     number;
+  name:       string;
+  id:         number;
   wins:       number;
   losses:     number;
   draws:      number;
@@ -187,7 +187,7 @@ export function transformAFLGame(
 
   // Build teams from standings
   const makeTeam = (name: string, id: number, isHome: boolean): Team => {
-    const st = standings.find((s) => s.teamid === id);
+    const st = standings.find((s) => s.id === id);
     const form = deriveAFLForm(allGames, id);
     const splits = deriveAFLSplits(allGames, id);
     return {

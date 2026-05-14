@@ -260,6 +260,59 @@ export async function fetchESPNSummary(sport: ESPNSport, eventId: string, revali
   }
 }
 
+
+// ─── AFL player stat snapshot from a completed game ──────────────────────────
+
+export interface AFLGamePlayerStats {
+  name:    string;
+  teamId:  string;
+  side:    "home" | "away";
+  D: number; G: number; M: number; T: number; HO: number; K: number; H: number;
+}
+
+/** Fetches raw player stats from a completed AFL game's box score. Cached 24h. */
+export async function fetchAFLBoxScoreForPicks(eventId: string): Promise<AFLGamePlayerStats[]> {
+  const url = `${BASE}/${ESPN_PATHS.afl}/summary?event=${eventId}`;
+  try {
+    const res = await fetch(url, {
+      next: { revalidate: 86400 },
+      headers: { "User-Agent": "SportsPulse/1.0 personal" },
+    });
+    if (!res.ok) return [];
+    const raw = await res.json();
+    const sections: any[] = raw.boxscore?.players ?? [];
+    if (!sections.length) return [];
+
+    const STATS = ["D","G","B","T","M","FF","FA","CP","UP","K","H","HO"] as const;
+    const results: AFLGamePlayerStats[] = [];
+
+    sections.slice(0, 2).forEach((section: any, sectionIdx: number) => {
+      const side = sectionIdx === 0 ? "home" : "away";
+      const teamId = String(section.team?.id ?? "");
+      const statGroup = (section.statistics ?? [])[0];
+      if (!statGroup) return;
+      const labels: string[] = statGroup.labels ?? [];
+      const idxMap: Record<string, number> = {};
+      STATS.forEach(s => { const i = labels.indexOf(s); if (i >= 0) idxMap[s] = i; });
+
+      (statGroup.athletes ?? []).forEach((a: any) => {
+        if (a.active === false) return;
+        const name = a.athlete?.displayName;
+        if (!name) return;
+        const getN = (s: string) => Number(a.stats?.[idxMap[s]] ?? 0) || 0;
+        results.push({
+          name, teamId, side,
+          D: getN("D"), G: getN("G"), M: getN("M"), T: getN("T"),
+          HO: getN("HO"), K: getN("K"), H: getN("H"),
+        });
+      });
+    });
+    return results;
+  } catch {
+    return [];
+  }
+}
+
 function parseSummary(raw: any, sport: ESPNSport, fantasyMap: Map<string, number> | null = null): ESPNSummary {
   const result: ESPNSummary = {};
 
@@ -474,7 +527,7 @@ function parseBasketballBoxScore(teamSections: any[]): BoxScore | undefined {
         (group.name ?? group.displayName ?? "").toLowerCase().includes("starter");
 
       for (const athleteRow of group.athletes ?? []) {
-        if (athleteRow.didNotPlay || athleteRow.active === false) continue;
+        if (athleteRow.didNotPlay) continue;
         const athlete = athleteRow.athlete;
         if (!athlete) continue;
 

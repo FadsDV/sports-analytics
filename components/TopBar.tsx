@@ -9,7 +9,7 @@ export default function TopBar({ title }: { title?: string }) {
   useEffect(() => {
     const update = () => {
       const now = new Date();
-      setTime(now.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: false }));
+      setTime(now.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true }));
       setDate(now.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" }));
     };
     update();
