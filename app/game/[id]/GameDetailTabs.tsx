@@ -1294,6 +1294,16 @@ export default function GameDetailTabs({
                   opponent={awayTeam.name}
                   matchContext="home"
                 />
+              ) : isBasketball ? (
+                <SquadList
+                  players={homeSquad}
+                  injuries={homeInjuries}
+                  sport={game.sport}
+                  gameId={game.id}
+                  teamId={homeTeam.espnId}
+                  opponent={awayTeam.name}
+                  matchContext="home"
+                />
               ) : sofascore?.lineups ? (
                 <SofascoreList players={sofascore.lineups.home} sport={sport} />
               ) : (
@@ -1321,6 +1331,16 @@ export default function GameDetailTabs({
                 <NBAPlayerList
                   rows={boxScore.away}
                   headers={boxScore.statHeaders}
+                  teamId={awayTeam.espnId}
+                  opponent={homeTeam.name}
+                  matchContext="away"
+                />
+              ) : isBasketball ? (
+                <SquadList
+                  players={awaySquad}
+                  injuries={awayInjuries}
+                  sport={game.sport}
+                  gameId={game.id}
                   teamId={awayTeam.espnId}
                   opponent={homeTeam.name}
                   matchContext="away"

@@ -258,7 +258,7 @@ export default function SquadList({
           {loading && (
             <>
               <div className="fixed inset-0 bg-black/80 z-[60] backdrop-blur-sm" />
-              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center">
+              <div className={`fixed inset-y-0 right-0 z-[70] w-full ${isNBA ? "max-w-[80vw] min-w-[320px]" : "max-w-xl"} bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center`}>
                 <div className="text-center">
                   <div className="w-10 h-10 border-2 border-[#3B82F6] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                   <p className="text-xs font-bold text-[#6B7280] uppercase tracking-widest">Loading Intel: {selectedPlayer.displayName}</p>
@@ -269,7 +269,7 @@ export default function SquadList({
           {error && !loading && (
             <>
               <div className="fixed inset-0 bg-black/80 z-[60]" onClick={handleClose} />
-              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center">
+              <div className={`fixed inset-y-0 right-0 z-[70] w-full ${isNBA ? "max-w-[80vw] min-w-[320px]" : "max-w-xl"} bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center`}>
                 <div className="text-center px-10">
                   <p className="text-[#EF4444] font-bold mb-4 uppercase tracking-tight">{error}</p>
                   <button onClick={handleClose} className="text-xs font-black text-[#6B7280] hover:text-white underline uppercase tracking-widest">Close</button>
