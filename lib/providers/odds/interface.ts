@@ -17,7 +17,7 @@ export interface OddsProvider {
    * @param sport The sport to fetch odds for
    * @param markets Optional list of markets to fetch (e.g., ['h2h', 'spreads'])
    */
-  getOdds(sport: Sport, markets?: string[]): Promise<OddsEvent[]>;
+  getOdds(sport: Sport, markets?: string[], cacheTTL?: number): Promise<OddsEvent[]>;
 
   /**
    * Health check or verification that the provider is configured correctly (e.g., API key exists)

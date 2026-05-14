@@ -9,15 +9,15 @@ interface AFLTeamCardProps {
 
 export default function AFLTeamCard({ team, analytics: an }: AFLTeamCardProps) {
   return (
-    <div className="bg-[#0d1827] rounded-lg px-3 py-2.5">
+    <div className="bg-surface2 rounded-lg px-3 py-2.5">
 
       {/* Header row */}
       <div className="flex items-center gap-1.5 mb-2">
         {team.logoUrl && (
           <img src={team.logoUrl} alt="" className="w-4 h-4 object-contain" />
         )}
-        <span className="text-[10px] text-[#9CA3AF] font-medium">{team.shortName}</span>
-        <span className="ml-auto text-[10px] text-[#6B7280] tabular-nums">
+        <span className="text-[10px] text-text-1 font-medium">{team.shortName}</span>
+        <span className="ml-auto text-[10px] text-text-2 tabular-nums">
           {an.record.wins}W {an.record.losses}L
           {an.record.draws > 0 ? ` ${an.record.draws}D` : ""}
         </span>
@@ -42,9 +42,9 @@ export default function AFLTeamCard({ team, analytics: an }: AFLTeamCardProps) {
       </div>
 
       {/* Stats row: avg score · rest · streak */}
-      <div className="flex items-center gap-3 text-[10px] text-[#4B5563]">
+      <div className="flex items-center gap-3 text-[10px] text-text-2">
         <span>
-          <span className="text-white">{an.avgScored}</span> avg
+          <span className="text-text-1">{an.avgScored}</span> avg
         </span>
 
         {an.daysRest != null && (
@@ -71,35 +71,36 @@ export default function AFLTeamCard({ team, analytics: an }: AFLTeamCardProps) {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function FormSparkline({ games }: { games: AFLRecentGame[] }) {
-  // Show oldest → newest left to right; use teamScore as the value
-  const scores = [...games].reverse().map(g => g.teamScore);
-  const margins = [...games].reverse().map(g => g.margin);
-  const min = Math.min(...scores);
-  const max = Math.max(...scores);
-  const range = Math.max(max - min, 1);
-  const W = 200, H = 28, pad = 3;
+  const ordered = [...games].reverse();
+  const scores  = ordered.map(g => g.teamScore);
+  const margins = ordered.map(g => g.margin);
+  const min     = Math.min(...scores);
+  const max     = Math.max(...scores);
+  const range   = Math.max(max - min, 1);
+  const W = 200, H = 30, pad = 3;
   const xStep = (W - pad * 2) / Math.max(scores.length - 1, 1);
   const pts = scores.map((s, i) => ({
-    x: pad + i * xStep,
-    y: H - pad - ((s - min) / range) * (H - pad * 2),
+    x:   pad + i * xStep,
+    y:   H - pad - ((s - min) / range) * (H - pad * 2),
     win: margins[i] >= 0,
   }));
   const line = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 
   return (
-    <div className="mt-2 pt-2 border-t border-white/[0.04]">
+    <div className="mt-2 pt-2 border-t border-border">
+      <div className="text-[8px] uppercase tracking-widest text-text-2 mb-1 opacity-60">Score margin — last {games.length}</div>
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full overflow-visible">
-        <path d={line} fill="none" stroke="#3B82F6" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.6} />
+        <path d={line} fill="none" stroke="var(--text-2)" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.5} />
         {pts.map((p, i) => (
           <circle key={i} cx={p.x} cy={p.y} r={2.5}
             fill={p.win ? "#22C55E" : "#EF4444"}
-            stroke="#0d1827" strokeWidth={1}
+            stroke="var(--bg)" strokeWidth={1}
           />
         ))}
       </svg>
-      <div className="flex justify-between text-[8px] text-[#374151] mt-0.5 px-0.5">
-        {[...games].reverse().map((g, i) => (
-          <span key={i} className={g.margin >= 0 ? "text-[#22C55E]/60" : "text-[#EF4444]/60"}>
+      <div className="flex justify-between text-[8px] mt-0.5 px-0.5">
+        {ordered.map((g, i) => (
+          <span key={i} className={g.margin >= 0 ? "text-[#22C55E]/70" : "text-[#EF4444]/70"}>
             {g.margin >= 0 ? "+" : ""}{g.margin}
           </span>
         ))}
@@ -110,14 +111,14 @@ function FormSparkline({ games }: { games: AFLRecentGame[] }) {
 
 function RestIndicator({ days }: { days: number }) {
   const color =
-    days <= 6  ? "text-[#EF4444]"   // short turnaround
-    : days <= 8 ? "text-[#F59E0B]"  // normal
-    : "text-[#22C55E]";              // well-rested
+    days <= 6  ? "text-[#EF4444]"
+    : days <= 8 ? "text-[#F59E0B]"
+    : "text-[#22C55E]";
 
   return (
     <span>
       <span className={color}>{days}d</span>
-      <span className="text-[#4B5563]"> rest</span>
+      <span className="text-text-2"> rest</span>
     </span>
   );
 }
@@ -125,11 +126,11 @@ function RestIndicator({ days }: { days: number }) {
 function VenueSplit({ record }: { record: { wins: number; losses: number } }) {
   const total = record.wins + record.losses;
   const pct   = Math.round((record.wins / total) * 100);
-  const color = pct >= 60 ? "text-[#22C55E]" : pct >= 40 ? "text-[#9CA3AF]" : "text-[#EF4444]";
+  const color = pct >= 60 ? "text-[#22C55E]" : pct >= 40 ? "text-text-2" : "text-[#EF4444]";
   return (
     <span>
       <span className={color}>{record.wins}-{record.losses}</span>
-      <span className="text-[#4B5563]"> venue</span>
+      <span className="text-text-2"> venue</span>
     </span>
   );
 }

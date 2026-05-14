@@ -23,7 +23,7 @@ export class TheOddsApiProvider implements OddsProvider {
     return !!this.apiKey;
   }
 
-  async getOdds(sport: Sport, markets: string[] = ["h2h"]): Promise<OddsEvent[]> {
+  async getOdds(sport: Sport, markets: string[] = ["h2h"], cacheTTL?: number): Promise<OddsEvent[]> {
     if (!this.isEnabled()) return [];
 
     const providerSport = this.mapSport(sport);
@@ -47,8 +47,8 @@ export class TheOddsApiProvider implements OddsProvider {
 
       const data = await response.json();
       const normalized = this.normalize(data, sport);
-      
-      oddsCache.set(cacheKey, normalized);
+
+      oddsCache.set(cacheKey, normalized, cacheTTL);
       return normalized;
     } catch (error) {
       console.error("[TheOddsApiProvider] Error fetching odds:", error);

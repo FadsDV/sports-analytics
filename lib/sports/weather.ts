@@ -1,11 +1,16 @@
 /**
- * Open-Meteo weather API — completely free, no API key required.
- * https://open-meteo.com
+ * Weather API layer.
+ *
+ * - Australian AFL venues/cities → Bureau of Meteorology (BOM) public API
+ *   https://api.weather.bom.gov.au/v1
+ * - All other sports → Open-Meteo (free, no API key)
+ *   https://open-meteo.com
  */
 
 import { Weather } from "@/lib/types";
 
-// WMO weather codes → human-readable condition
+// ─── WMO weather code → condition (Open-Meteo) ───────────────────────────────
+
 function wmoCondition(code: number): string {
   if (code === 0)           return "Clear";
   if (code <= 3)            return "Partly Cloudy";
@@ -19,8 +24,47 @@ function wmoCondition(code: number): string {
   return "Cloudy";
 }
 
+// ─── BOM icon_descriptor → condition ─────────────────────────────────────────
+
+function bomCondition(icon: string): string {
+  switch (icon) {
+    case "sunny":
+    case "clear":
+      return "Clear";
+    case "mostly_sunny":
+    case "partly_cloudy":
+    case "mostly_cloudy_chance_shower":
+      return "Partly Cloudy";
+    case "cloudy":
+    case "overcast":
+    case "mostly_cloudy":
+      return "Cloudy";
+    case "shower":
+    case "rain":
+    case "heavy_shower":
+    case "light_shower":
+      return "Rain";
+    case "drizzle":
+    case "light_rain":
+      return "Drizzle";
+    case "thunderstorm":
+    case "storm":
+      return "Storm";
+    case "wind":
+      return "Windy";
+    case "fog":
+    case "haze":
+    case "frost":
+      return "Foggy";
+    default:
+      return "Partly Cloudy";
+  }
+}
+
+// ─── Coordinate lookup map ────────────────────────────────────────────────────
 // City/venue string → [latitude, longitude]
 // Covers all major sports cities used by ESPN + Squiggle venues.
+
 const COORDS: Record<string, [number, number]> = {
   // AFL named venues (matched before city names due to longer keys)
   "Optus Stadium":    [-31.951,  115.889],
@@ -123,6 +167,32 @@ const COORDS: Record<string, [number, number]> = {
   "Orchard Park":     [ 42.77,  -78.79],
 };
 
+// ─── Australian city/venue detection ─────────────────────────────────────────
+
+// All keys in COORDS that belong to Australian AFL venues or cities
+// (first 29 entries up to and including "Alice Springs")
+const AUSTRALIAN_KEYS = new Set([
+  "Optus Stadium", "MCG", "Marvel Stadium", "Adelaide Oval", "Gabba", "SCG",
+  "GIANTS Stadium", "Engie Stadium", "GMHBA Stadium", "UTAS Stadium",
+  "Manuka Oval", "Blundstone Arena", "TIO Stadium", "Traeger Park",
+  "Cazaly's Stadium", "Mars Stadium", "Victoria Park", "Docklands",
+  "Melbourne", "Geelong", "Sydney", "Brisbane", "Perth", "Adelaide",
+  "Gold Coast", "Canberra", "Darwin", "Hobart", "Alice Springs",
+]);
+
+export function isAustralianCity(city: string): boolean {
+  if (!city) return false;
+  const lower = city.toLowerCase();
+  // Try longest key first so venues beat city names
+  const sorted = Array.from(AUSTRALIAN_KEYS).sort((a, b) => b.length - a.length);
+  for (const key of sorted) {
+    if (lower.includes(key.toLowerCase())) return true;
+  }
+  return false;
+}
+
+// ─── Coordinate lookup ────────────────────────────────────────────────────────
+
 function findCoords(city: string): [number, number] | null {
   if (!city) return null;
   const lower = city.toLowerCase();
@@ -134,18 +204,145 @@ function findCoords(city: string): [number, number] | null {
   return null;
 }
 
-export async function fetchWeather(city: string, isIndoor = false): Promise<Weather> {
-  // Indoor venues (NBA arenas, etc.) don't need real weather
-  if (isIndoor) {
-    return { condition: "Indoor", tempC: 21, windKph: 0, humidity: 45 };
+// ─── BOM API ──────────────────────────────────────────────────────────────────
+
+const BOM_BASE = "https://api.weather.bom.gov.au/v1";
+
+async function bomGeohash(cityOrVenue: string): Promise<string | null> {
+  try {
+    const query = encodeURIComponent(cityOrVenue);
+    const res = await fetch(`${BOM_BASE}/locations?search=${query}`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const first = json?.data?.[0];
+    return first?.geohash ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWeatherBOM(cityOrVenue: string, gameTime?: Date): Promise<Weather> {
+  const geohash = await bomGeohash(cityOrVenue);
+  if (!geohash) throw new Error("BOM: geohash not found");
+
+  const now = new Date();
+  const useForecast = gameTime != null && gameTime.getTime() - now.getTime() > 60 * 60 * 1000; // > 1h future
+
+  if (useForecast) {
+    // Fetch 3-hourly forecast and find the slot closest to kickoff
+    const res = await fetch(`${BOM_BASE}/locations/${geohash}/forecasts/3-hourly`, {
+      next: { revalidate: 1800 },
+    });
+    if (!res.ok) throw new Error("BOM forecast failed");
+    const json = await res.json();
+    const slots: Array<{
+      time: string;
+      temp: number;
+      wind: { speed_kilometre: number };
+      icon_descriptor: string;
+      humidity: number;
+    }> = json?.data ?? [];
+
+    if (!slots.length) throw new Error("BOM: no forecast slots");
+
+    // Find the slot with the smallest time delta to kickoff
+    const target = gameTime.getTime();
+    let best = slots[0]!;
+    let bestDelta = Math.abs(new Date(best.time).getTime() - target);
+    for (const slot of slots) {
+      const delta = Math.abs(new Date(slot.time).getTime() - target);
+      if (delta < bestDelta) { bestDelta = delta; best = slot; }
+    }
+
+    return {
+      condition: bomCondition(best.icon_descriptor),
+      tempC:     Math.round(best.temp ?? 20),
+      windKph:   Math.round(best.wind?.speed_kilometre ?? 10),
+      humidity:  Math.round(best.humidity ?? 60),
+    };
   }
 
+  // Current / recent — use observations for temp/wind/humidity, 3-hourly for condition
+  const [obsRes, fcstRes] = await Promise.all([
+    fetch(`${BOM_BASE}/locations/${geohash}/observations`, { next: { revalidate: 900 } }),
+    fetch(`${BOM_BASE}/locations/${geohash}/forecasts/3-hourly`, { next: { revalidate: 1800 } }),
+  ]);
+
+  if (!obsRes.ok) throw new Error("BOM observations failed");
+  const obsJson = await obsRes.json();
+  const obs = obsJson?.data ?? {};
+
+  // Condition from the first forecast slot (closest to now)
+  let condition = "Partly Cloudy";
+  if (fcstRes.ok) {
+    const fcstJson = await fcstRes.json();
+    const firstSlot = fcstJson?.data?.[0];
+    if (firstSlot?.icon_descriptor) {
+      condition = bomCondition(firstSlot.icon_descriptor);
+    }
+  }
+
+  return {
+    condition,
+    tempC:   Math.round(obs.temp         ?? 20),
+    windKph: Math.round(obs.wind?.speed_kilometre ?? 10),
+    humidity: Math.round(obs.humidity    ?? 60),
+  };
+}
+
+// ─── Open-Meteo fallback ──────────────────────────────────────────────────────
+
+async function fetchWeatherOpenMeteo(city: string, gameTime?: Date): Promise<Weather> {
   const coords = findCoords(city);
   if (!coords) {
     return { condition: "Clear", tempC: 20, windKph: 10, humidity: 60 };
   }
 
   const [lat, lon] = coords;
+
+  // If gameTime is more than 1h in the future, use hourly forecast
+  const now = new Date();
+  const useForecast = gameTime != null && gameTime.getTime() - now.getTime() > 60 * 60 * 1000;
+
+  if (useForecast) {
+    const url =
+      `https://api.open-meteo.com/v1/forecast` +
+      `?latitude=${lat}&longitude=${lon}` +
+      `&hourly=temperature_2m,wind_speed_10m,relative_humidity_2m,weather_code` +
+      `&wind_speed_unit=kmh&temperature_unit=celsius&forecast_days=7`;
+
+    try {
+      const res = await fetch(url, { next: { revalidate: 3600 } });
+      if (!res.ok) throw new Error("open-meteo hourly failed");
+      const data = await res.json();
+      const times: string[] = data.hourly?.time ?? [];
+      const temps: number[] = data.hourly?.temperature_2m ?? [];
+      const winds: number[] = data.hourly?.wind_speed_10m ?? [];
+      const hums:  number[] = data.hourly?.relative_humidity_2m ?? [];
+      const codes: number[] = data.hourly?.weather_code ?? [];
+
+      const target = gameTime.getTime();
+      let bestIdx = 0;
+      let bestDelta = Infinity;
+      for (let i = 0; i < times.length; i++) {
+        const delta = Math.abs(new Date(times[i]!).getTime() - target);
+        if (delta < bestDelta) { bestDelta = delta; bestIdx = i; }
+      }
+
+      return {
+        condition: wmoCondition(codes[bestIdx] ?? 0),
+        tempC:     Math.round(temps[bestIdx] ?? 20),
+        windKph:   Math.round(winds[bestIdx] ?? 10),
+        humidity:  Math.round(hums[bestIdx]  ?? 60),
+      };
+    } catch {
+      return { condition: "Clear", tempC: 20, windKph: 10, humidity: 60 };
+    }
+  }
+
+  // Current conditions
   const url =
     `https://api.open-meteo.com/v1/forecast` +
     `?latitude=${lat}&longitude=${lon}` +
@@ -166,4 +363,28 @@ export async function fetchWeather(city: string, isIndoor = false): Promise<Weat
   } catch {
     return { condition: "Clear", tempC: 20, windKph: 10, humidity: 60 };
   }
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+export async function fetchWeather(
+  city: string,
+  isIndoor = false,
+  gameTime?: Date,
+): Promise<Weather> {
+  // Indoor venues (NBA arenas, etc.) don't need real weather
+  if (isIndoor) {
+    return { condition: "Indoor", tempC: 21, windKph: 0, humidity: 45 };
+  }
+
+  // Route Australian AFL venues/cities to BOM, fall back to Open-Meteo on failure
+  if (isAustralianCity(city)) {
+    try {
+      return await fetchWeatherBOM(city, gameTime);
+    } catch {
+      // BOM failed — fall through to Open-Meteo
+    }
+  }
+
+  return fetchWeatherOpenMeteo(city, gameTime);
 }

@@ -30,21 +30,42 @@ export async function GET(
   }
 
   try {
-    // Extract markets from query params if provided
+    // Extract markets + kickoff from query params
     const { searchParams } = new URL(request.url);
     const marketsParam = searchParams.get("markets");
     const markets = marketsParam ? marketsParam.split(",") : ["h2h"];
+    const kickoffParam = searchParams.get("kickoff");
 
-    console.log(`[OddsAPI] Fetching ${markets.join(",")} odds for ${sportToFetch}...`);
+    // Determine cache TTL based on time-to-game:
+    //   > 12 h  → refresh every 12 hours (save credits)
+    //   ≤ 12 h  → refresh every 1 hour (stay fresh pre-game)
+    //   unknown → 1 hour default
+    const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+    const ONE_HOUR_S   = 3_600;
+    const TWELVE_HR_S  = 43_200;
+    let cacheTTL = ONE_HOUR_S;
+    if (kickoffParam) {
+      const msToGame = new Date(kickoffParam).getTime() - Date.now();
+      cacheTTL = msToGame > TWELVE_HOURS ? TWELVE_HR_S : ONE_HOUR_S;
+    }
 
-    const results = await oddsManager.getOdds(sportToFetch as Sport, markets);
+    console.log(`[OddsAPI] Fetching ${markets.join(",")} odds for ${sportToFetch} (TTL ${cacheTTL}s)...`);
 
-    return NextResponse.json({
-      sport: params.sport,
-      timestamp: new Date().toISOString(),
-      results,
-      count: results.reduce((acc, curr) => acc + curr.count, 0)
-    });
+    const results = await oddsManager.getOdds(sportToFetch as Sport, markets, cacheTTL);
+
+    return NextResponse.json(
+      {
+        sport: params.sport,
+        timestamp: new Date().toISOString(),
+        results,
+        count: results.reduce((acc, curr) => acc + curr.count, 0),
+      },
+      {
+        headers: {
+          "Cache-Control": `public, s-maxage=${cacheTTL}, stale-while-revalidate=60`,
+        },
+      },
+    );
   } catch (error) {
     console.error(`[OddsAPI] Error fetching odds for ${params.sport}:`, error);
     

@@ -17,13 +17,13 @@ class OddsManager {
   /**
    * Get odds from all enabled providers and aggregate them
    */
-  async getOdds(sport: Sport, markets?: string[]): Promise<NormalizedOddsResponse[]> {
+  async getOdds(sport: Sport, markets?: string[], cacheTTL?: number): Promise<NormalizedOddsResponse[]> {
     const enabledProviders = this.providers.filter(p => p.isEnabled());
-    
+
     const results = await Promise.all(
       enabledProviders.map(async (provider) => {
         try {
-          const events = await provider.getOdds(sport, markets);
+          const events = await provider.getOdds(sport, markets, cacheTTL);
           return {
             provider: provider.name,
             events,
