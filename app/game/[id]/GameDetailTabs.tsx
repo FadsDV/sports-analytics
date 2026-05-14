@@ -73,8 +73,8 @@ export interface GameDetailTabsProps {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-[#111827] rounded-xl p-4 border border-white/[0.04]">
-      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-[#374151] mb-3">{title}</h3>
+    <div className="bg-surface rounded-xl p-4 border border-border">
+      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-text-2 mb-3">{title}</h3>
       {children}
     </div>
   );
@@ -91,16 +91,16 @@ function H2HPanel({ h2h, homeTeam, awayTeam, compact }: {
     <div>
       <div className="flex items-center gap-3 mb-4">
         <div className="flex-1 text-center">
-          <div className="text-2xl font-black text-[#3B82F6]">{homeWins}</div>
-          <div className="text-[10px] text-[#374151]">{homeTeam.split(" ").pop()} Wins</div>
+          <div className="text-2xl font-black text-primary">{homeWins}</div>
+          <div className="text-[10px] text-text-2">{homeTeam.split(" ").pop()} Wins</div>
         </div>
         <div className="flex-1 text-center">
           <div className="text-2xl font-black text-[#F59E0B]">{draws}</div>
-          <div className="text-[10px] text-[#374151]">Draws</div>
+          <div className="text-[10px] text-text-2">Draws</div>
         </div>
         <div className="flex-1 text-center">
-          <div className="text-2xl font-black text-[#9CA3AF]">{awayWins}</div>
-          <div className="text-[10px] text-[#374151]">{awayTeam.split(" ").pop()} Wins</div>
+          <div className="text-2xl font-black text-text-2">{awayWins}</div>
+          <div className="text-[10px] text-text-2">{awayTeam.split(" ").pop()} Wins</div>
         </div>
       </div>
       {(compact ? h2h.slice(0, 4) : h2h).map((g, i) => {
@@ -108,14 +108,14 @@ function H2HPanel({ h2h, homeTeam, awayTeam, compact }: {
         const isAwayWin = g.winner === awayTeam;
         return (
           <Link key={i} href={g.gameId ? `/game/${g.gameId}` : "#"}
-            className="flex items-center gap-2 py-1.5 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.03] rounded px-1 text-xs group">
-            <span className="text-[#374151] w-16 shrink-0">{g.date}</span>
-            <span className={`flex-1 truncate text-right ${isHomeWin ? "text-white font-medium" : "text-[#9CA3AF]"}`}>{g.homeTeam}</span>
-            <span className="font-bold text-white tabular-nums w-12 text-center shrink-0">{g.score}</span>
-            <span className={`flex-1 truncate ${isAwayWin ? "text-white font-medium" : "text-[#9CA3AF]"}`}>{g.awayTeam}</span>
+            className="flex items-center gap-2 py-1.5 border-b border-border last:border-0 hover:bg-surface2 rounded px-1 text-xs group">
+            <span className="text-text-2 w-16 shrink-0">{g.date}</span>
+            <span className={`flex-1 truncate text-right ${isHomeWin ? "text-white font-medium" : "text-text-2"}`}>{g.homeTeam}</span>
+            <span className="font-bold text-text-1 tabular-nums w-12 text-center shrink-0">{g.score}</span>
+            <span className={`flex-1 truncate ${isAwayWin ? "text-white font-medium" : "text-text-2"}`}>{g.awayTeam}</span>
             <span className={`text-[10px] px-1.5 py-px rounded font-bold shrink-0 ${
-              isHomeWin ? "bg-[#3B82F6]/20 text-[#3B82F6]" :
-              isAwayWin ? "bg-white/10 text-[#9CA3AF]" : "bg-[#F59E0B]/20 text-[#F59E0B]"
+              isHomeWin ? "bg-primary/20 text-primary" :
+              isAwayWin ? "bg-white/10 text-text-2" : "bg-[#F59E0B]/20 text-[#F59E0B]"
             }`}>{isHomeWin ? "H" : isAwayWin ? "A" : "D"}</span>
           </Link>
         );
@@ -140,15 +140,15 @@ function ComparisonBars({ homeTeam, awayTeam, stats, compact }: {
           <div key={k}>
             <div className="flex items-center justify-between text-xs mb-1">
               <span className="text-white font-medium tabular-nums w-12">{stats.home[k] ?? "—"}</span>
-              <span className="text-[#374151] uppercase text-[10px] tracking-wider flex-1 text-center">{k}</span>
-              <span className="text-[#9CA3AF] tabular-nums w-12 text-right">{stats.away[k] ?? "—"}</span>
+              <span className="text-text-2 uppercase text-[10px] tracking-wider flex-1 text-center">{k}</span>
+              <span className="text-text-2 tabular-nums w-12 text-right">{stats.away[k] ?? "—"}</span>
             </div>
             <div className="flex gap-1 h-[3px]">
-              <div className="flex-1 bg-white/5 rounded-full overflow-hidden flex justify-end">
-                <div className="h-full bg-[#3B82F6] rounded-full" style={{ width: `${(hv/max)*100}%` }} />
+              <div className="flex-1 bg-surface2 rounded-full overflow-hidden flex justify-end">
+                <div className="h-full bg-primary rounded-full" style={{ width: `${(hv/max)*100}%` }} />
               </div>
-              <div className="flex-1 bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-[#9CA3AF] rounded-full" style={{ width: `${(av/max)*100}%` }} />
+              <div className="flex-1 bg-surface2 rounded-full overflow-hidden">
+                <div className="h-full bg-text-2/40 rounded-full" style={{ width: `${(av/max)*100}%` }} />
               </div>
             </div>
           </div>
@@ -168,21 +168,21 @@ function CompactBoxScore({ boxScore, homeTeam, awayTeam }: {
         <div key={t.name}>
           <div className="flex items-center gap-1.5 mb-2">
             {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-            <span className="text-xs text-[#9CA3AF]">{t.shortName}</span>
+            <span className="text-xs text-text-2">{t.shortName}</span>
           </div>
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-white/5">
-                <th className="text-left py-1 text-[#374151]">Player</th>
-                {headers.map(h => <th key={h} className="text-right py-1 px-1 text-[#374151]">{h}</th>)}
+                <th className="text-left py-1 text-text-2">Player</th>
+                {headers.map(h => <th key={h} className="text-right py-1 px-1 text-text-2">{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {rows.slice(0, 8).map((r, i) => (
-                <tr key={i} className="border-b border-white/[0.03] last:border-0">
-                  <td className="py-1 text-[#E5E7EB] truncate max-w-[100px]">{r.player}</td>
+                <tr key={i} className="border-b border-border last:border-0">
+                  <td className="py-1 text-text-1 truncate max-w-[100px]">{r.player}</td>
                   {headers.map(h => (
-                    <td key={h} className="py-1 px-1 text-right text-[#9CA3AF] tabular-nums">
+                    <td key={h} className="py-1 px-1 text-right text-text-2 tabular-nums">
                       {r.stats[h] ?? "—"}
                     </td>
                   ))}
@@ -215,7 +215,7 @@ function AFLPlayerList({
   const [error, setError] = useState<string | null>(null);
 
   const showHeaders = headers.slice(0, 7);
-  if (!rows.length) return <p className="text-xs text-[#374151]">No data available.</p>;
+  if (!rows.length) return <p className="text-xs text-text-2">No data available.</p>;
 
   async function handlePlayerClick(row: BoxScoreRow) {
     if (!row.playerId) return;
@@ -254,15 +254,15 @@ function AFLPlayerList({
       <table className="w-full text-xs min-w-[360px]">
         <thead>
           <tr className="border-b border-white/5">
-            <th className="text-left py-1.5 pr-2 text-[#374151]">Player</th>
-            {showHeaders.map(h => <th key={h} className="text-right py-1.5 px-1 text-[#374151]">{h}</th>)}
+            <th className="text-left py-1.5 pr-2 text-text-2">Player</th>
+            {showHeaders.map(h => <th key={h} className="text-right py-1.5 px-1 text-text-2">{h}</th>)}
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
             <tr 
               key={i} 
-              className={`border-b border-white/[0.03] last:border-0 hover:bg-white/[0.03] transition-colors ${r.playerId ? "cursor-pointer" : ""}`}
+              className={`border-b border-border last:border-0 hover:bg-surface2 transition-colors ${r.playerId ? "cursor-pointer" : ""}`}
               onClick={() => handlePlayerClick(r)}
             >
               <td className="py-1.5 pr-2">
@@ -272,15 +272,15 @@ function AFLPlayerList({
                     name={r.player}
                     size={20}
                   />
-                  <span className="text-white truncate max-w-[120px] font-medium group-hover:text-[#3B82F6]">{r.player}</span>
-                  {r.playerId && <span className="text-[9px] text-[#374151]">INTEL</span>}
+                  <span className="text-text-1 truncate max-w-[120px] font-medium group-hover:text-primary">{r.player}</span>
+                  {r.playerId && <span className="text-[9px] text-text-2">INTEL</span>}
                 </div>
               </td>
               {showHeaders.map(h => {
                 const v = r.stats[h];
                 const hi = h === "D" && Number(v) >= 25;
                 return (
-                  <td key={h} className={`py-1.5 px-1 text-right tabular-nums ${hi ? "text-[#3B82F6] font-bold" : "text-[#9CA3AF]"}`}>
+                  <td key={h} className={`py-1.5 px-1 text-right tabular-nums ${hi ? "text-primary font-bold" : "text-text-2"}`}>
                     {v ?? "—"}
                   </td>
                 );
@@ -296,10 +296,10 @@ function AFLPlayerList({
           {loading && (
             <>
               <div className="fixed inset-0 bg-black/80 z-[60] backdrop-blur-sm" />
-              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center">
+              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-bg border-l border-primary/20 flex items-center justify-center">
                 <div className="text-center">
-                  <div className="w-10 h-10 border-2 border-[#3B82F6] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                  <p className="text-xs font-bold text-[#6B7280] uppercase tracking-widest">Loading Intel: {selectedPlayer.name}</p>
+                  <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                  <p className="text-xs font-bold text-text-2 uppercase tracking-widest">Loading Intel: {selectedPlayer.name}</p>
                 </div>
               </div>
             </>
@@ -307,10 +307,10 @@ function AFLPlayerList({
           {error && !loading && (
             <>
               <div className="fixed inset-0 bg-black/80 z-[60]" onClick={handleClose} />
-              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center">
+              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-bg border-l border-primary/20 flex items-center justify-center">
                 <div className="text-center px-10">
                   <p className="text-[#EF4444] font-bold mb-4 uppercase tracking-tight">{error}</p>
-                  <button onClick={handleClose} className="text-xs font-black text-[#6B7280] hover:text-white underline uppercase tracking-widest">Close</button>
+                  <button onClick={handleClose} className="text-xs font-black text-text-2 hover:text-text-1 underline uppercase tracking-widest">Close</button>
                 </div>
               </div>
             </>
@@ -346,7 +346,7 @@ function NBAPlayerList({
   const displayHeaders = PREFERRED.filter(h => headers.includes(h))
     .concat(headers.filter(h => !PREFERRED.includes(h))).slice(0, 10);
 
-  if (!rows.length) return <p className="text-xs text-[#374151]">No data available.</p>;
+  if (!rows.length) return <p className="text-xs text-text-2">No data available.</p>;
 
   const starters = rows.filter(r => r.starter !== false && rows.some(x => x.starter));
   const bench    = rows.filter(r => r.starter === false);
@@ -385,9 +385,9 @@ function NBAPlayerList({
       <table className="w-full text-xs min-w-[520px]">
         <thead>
           <tr className="border-b border-white/5">
-            <th className="text-left py-2 pr-2 text-[#374151] sticky left-0 bg-[#111827]">Player</th>
+            <th className="text-left py-2 pr-2 text-text-2 sticky left-0 bg-surface">Player</th>
             {displayHeaders.map(h => (
-              <th key={h} className="text-right py-2 px-1.5 text-[#374151] whitespace-nowrap font-medium">{h}</th>
+              <th key={h} className="text-right py-2 px-1.5 text-text-2 whitespace-nowrap font-medium">{h}</th>
             ))}
           </tr>
         </thead>
@@ -397,25 +397,25 @@ function NBAPlayerList({
               {label && (
                 <tr key={`grp-${label}`}>
                   <td colSpan={displayHeaders.length + 1} className="pt-3 pb-1 px-0">
-                    <span className="text-[9px] font-black uppercase tracking-[0.15em] text-[#374151]">{label}</span>
+                    <span className="text-[9px] font-black uppercase tracking-[0.15em] text-text-2">{label}</span>
                   </td>
                 </tr>
               )}
               {groupRows.map((r, i) => (
                 <tr
                   key={`${label}-${i}`}
-                  className={`border-b border-white/[0.03] last:border-0 hover:bg-white/[0.03] transition-colors ${r.playerId && teamId ? "cursor-pointer" : ""}`}
+                  className={`border-b border-border last:border-0 hover:bg-surface2 transition-colors ${r.playerId && teamId ? "cursor-pointer" : ""}`}
                   onClick={() => handlePlayerClick(r)}
                 >
-                  <td className="py-2 pr-2 sticky left-0 bg-[#111827]">
+                  <td className="py-2 pr-2 sticky left-0 bg-surface">
                     <div className="flex items-center gap-1.5">
                       <PlayerAvatar src={r.headshot} name={r.player} size={22} />
                       <div className="min-w-0">
-                        <span className="text-white truncate max-w-[110px] font-medium block text-[11px] leading-tight">{r.player}</span>
-                        {r.position && <span className="text-[9px] text-[#374151] leading-tight">{r.position}</span>}
+                        <span className="text-text-1 truncate max-w-[110px] font-medium block text-[11px] leading-tight">{r.player}</span>
+                        {r.position && <span className="text-[9px] text-text-2 leading-tight">{r.position}</span>}
                       </div>
                       {r.playerId && teamId && (
-                        <span className="text-[8px] text-[#1e3a5f] ml-1 shrink-0">INTEL</span>
+                        <span className="text-[8px] text-text-1 ml-1 shrink-0">INTEL</span>
                       )}
                     </div>
                   </td>
@@ -424,10 +424,10 @@ function NBAPlayerList({
                     const hi = (h === "PTS" && Number(v) >= 25) || (h === "REB" && Number(v) >= 12) || (h === "AST" && Number(v) >= 10);
                     return (
                       <td key={h} className={`py-2 px-1.5 text-right tabular-nums text-[11px] ${
-                        hi ? "text-[#3B82F6] font-bold" :
+                        hi ? "text-primary font-bold" :
                         h === "+/-" && Number(v) > 0 ? "text-[#22C55E]" :
                         h === "+/-" && Number(v) < 0 ? "text-[#EF4444]" :
-                        "text-[#9CA3AF]"
+                        "text-text-2"
                       }`}>
                         {v == null ? "—" : h === "+/-" && Number(v) > 0 ? `+${v}` : v}
                       </td>
@@ -445,10 +445,10 @@ function NBAPlayerList({
           {loading && (
             <>
               <div className="fixed inset-0 bg-black/80 z-[60] backdrop-blur-sm" />
-              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-[80vw] min-w-[320px] bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center">
+              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-[80vw] min-w-[320px] bg-bg border-l border-primary/20 flex items-center justify-center">
                 <div className="text-center">
-                  <div className="w-10 h-10 border-2 border-[#3B82F6] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                  <p className="text-xs font-bold text-[#6B7280] uppercase tracking-widest">Loading Intel: {selectedPlayer.name}</p>
+                  <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                  <p className="text-xs font-bold text-text-2 uppercase tracking-widest">Loading Intel: {selectedPlayer.name}</p>
                 </div>
               </div>
             </>
@@ -456,10 +456,10 @@ function NBAPlayerList({
           {error && !loading && (
             <>
               <div className="fixed inset-0 bg-black/80 z-[60]" onClick={handleClose} />
-              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-[80vw] min-w-[320px] bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center">
+              <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-[80vw] min-w-[320px] bg-bg border-l border-primary/20 flex items-center justify-center">
                 <div className="text-center px-10">
                   <p className="text-[#EF4444] font-bold mb-4">{error}</p>
-                  <button onClick={handleClose} className="text-xs font-black text-[#6B7280] hover:text-white underline uppercase tracking-widest">Close</button>
+                  <button onClick={handleClose} className="text-xs font-black text-text-2 hover:text-text-1 underline uppercase tracking-widest">Close</button>
                 </div>
               </div>
             </>
@@ -484,25 +484,25 @@ function SofascoreList({ players, sport }: { players: any[]; sport: string }) {
     secondsPlayed:"MIN",points:"PTS",rebounds:"REB",assists:"AST",steals:"STL",blocks:"BLK",
   };
   const starters = players.filter(p => p.starter);
-  if (!starters.length) return <p className="text-xs text-[#374151]">No lineup data.</p>;
+  if (!starters.length) return <p className="text-xs text-text-2">No lineup data.</p>;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs min-w-[360px]">
         <thead>
           <tr className="border-b border-white/5">
-            <th className="text-left py-1.5 text-[#374151]">Player</th>
-            {keys.map(k => <th key={k} className="text-right py-1.5 px-1 text-[#374151]">{labels[k]??k}</th>)}
+            <th className="text-left py-1.5 text-text-2">Player</th>
+            {keys.map(k => <th key={k} className="text-right py-1.5 px-1 text-text-2">{labels[k]??k}</th>)}
           </tr>
         </thead>
         <tbody>
           {starters.map(p => {
             const mins = isNBA && p.stats.secondsPlayed != null ? Math.round(p.stats.secondsPlayed/60) : p.stats.minutesPlayed;
             return (
-              <tr key={p.id} className="border-b border-white/[0.03] last:border-0 hover:bg-white/[0.03]">
+              <tr key={p.id} className="border-b border-border last:border-0 hover:bg-surface2">
                 <td className="py-1.5">
                   <div className="flex items-center gap-1">
-                    <span className="text-[#374151] font-mono text-[10px] w-3">{p.jerseyNumber}</span>
-                    <span className="text-white truncate max-w-[90px]">{p.shortName}</span>
+                    <span className="text-text-2 font-mono text-[10px] w-3">{p.jerseyNumber}</span>
+                    <span className="text-text-1 truncate max-w-[90px]">{p.shortName}</span>
                     {p.rating != null && (
                       <span className={`text-[9px] px-1 py-px rounded font-bold ${
                         p.rating>=7.5?"text-[#22C55E]":p.rating>=6.5?"text-[#F59E0B]":"text-[#EF4444]"
@@ -513,7 +513,7 @@ function SofascoreList({ players, sport }: { players: any[]; sport: string }) {
                 {keys.map(k => {
                   const v = (k==="minutesPlayed"||k==="secondsPlayed") ? mins : p.stats[k];
                   return (
-                    <td key={k} className="py-1.5 px-1 text-right text-[#9CA3AF] tabular-nums">
+                    <td key={k} className="py-1.5 px-1 text-right text-text-2 tabular-nums">
                       {v!=null ? (k==="fieldGoalPct"?`${Math.round(v as number)}%`:v) : "—"}
                     </td>
                   );
@@ -531,13 +531,13 @@ function MatchIncidents({ incidents, homeTeam, awayTeam }: {
   incidents: SofascoreIncident[]; homeTeam: string; awayTeam: string;
 }) {
   const filtered = incidents.filter(i => i.type === "goal" || i.type === "card" || i.type === "substitution");
-  if (!filtered.length) return <p className="text-xs text-[#374151]">No events recorded.</p>;
+  if (!filtered.length) return <p className="text-xs text-text-2">No events recorded.</p>;
   return (
     <div>
       {filtered.map((inc, idx) => {
         const isHome = inc.isHome;
         const min = `${inc.minute}${inc.addedTime ? `+${inc.addedTime}` : ""}′`;
-        let icon = "·"; let cls = "text-[#374151]"; let label = "";
+        let icon = "·"; let cls = "text-text-2"; let label = "";
         if (inc.type === "goal") {
           icon = "⚽"; cls = "text-[#22C55E]";
           label = inc.playerName ?? "?";
@@ -549,16 +549,16 @@ function MatchIncidents({ incidents, homeTeam, awayTeam }: {
           cls  = inc.incidentClass === "yellow" ? "text-[#F59E0B]" : "text-[#EF4444]";
           label = inc.playerName ?? "?";
         } else {
-          icon = "↕"; cls = "text-[#3B82F6]";
+          icon = "↕"; cls = "text-primary";
           label = `${inc.playerInName ?? "?"} ↑ / ${inc.playerOutName ?? "?"} ↓`;
         }
         return (
-          <div key={idx} className={`flex items-center gap-2 py-1.5 border-b border-white/[0.04] last:border-0 text-xs ${isHome ? "" : "flex-row-reverse"}`}>
-            <span className="text-[#374151] w-8 shrink-0 text-center">{min}</span>
+          <div key={idx} className={`flex items-center gap-2 py-1.5 border-b border-border last:border-0 text-xs ${isHome ? "" : "flex-row-reverse"}`}>
+            <span className="text-text-2 w-8 shrink-0 text-center">{min}</span>
             <span className={`shrink-0 ${cls}`}>{icon}</span>
             <div className={`flex-1 ${isHome ? "text-left" : "text-right"}`}>
-              <span className="text-[#E5E7EB]">{label}</span>
-              <span className="text-[#374151] ml-1">· {isHome ? homeTeam : awayTeam}</span>
+              <span className="text-text-1">{label}</span>
+              <span className="text-text-2 ml-1">· {isHome ? homeTeam : awayTeam}</span>
             </div>
           </div>
         );
@@ -602,16 +602,16 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
                     <div key={t.name}>
                       <div className="flex items-center gap-1.5 mb-2">
                         {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                        <span className="text-xs font-medium text-[#9CA3AF]">{t.shortName}</span>
+                        <span className="text-xs font-medium text-text-2">{t.shortName}</span>
                       </div>
                       {starters.map((p, i) => (
-                        <div key={i} className="flex items-center gap-2 py-1 border-b border-white/[0.04] last:border-0 text-xs">
-                          <span className="text-[#374151] w-5 text-center font-mono">{p.jersey || i+1}</span>
-                          <span className="text-[#E5E7EB] flex-1 truncate">{p.displayName}</span>
-                          <span className="text-[#4B5563] text-[10px]">{p.position}</span>
+                        <div key={i} className="flex items-center gap-2 py-1 border-b border-border last:border-0 text-xs">
+                          <span className="text-text-2 w-5 text-center font-mono">{p.jersey || i+1}</span>
+                          <span className="text-text-1 flex-1 truncate">{p.displayName}</span>
+                          <span className="text-text-2 text-[10px]">{p.position}</span>
                         </div>
                       ))}
-                      {starters.length === 0 && <p className="text-xs text-[#374151]">Not announced yet</p>}
+                      {starters.length === 0 && <p className="text-xs text-text-2">Not announced yet</p>}
                     </div>
                   );
                 })}
@@ -625,11 +625,11 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
                 <div key={t.name}>
                   <div className="flex items-center gap-2 mb-2">
                     {t.logoUrl && <img src={t.logoUrl} alt="" className="w-5 h-5 object-contain" />}
-                    <span className="text-sm font-medium text-white truncate">{t.name}</span>
-                    <span className="text-xs text-[#374151]">{role}</span>
+                    <span className="text-sm font-medium text-text-1 truncate">{t.name}</span>
+                    <span className="text-xs text-text-2">{role}</span>
                   </div>
                   <FormPills form={t.form} />
-                  <div className="text-xs text-[#374151] mt-1.5">
+                  <div className="text-xs text-text-2 mt-1.5">
                     {t.record.wins}W {t.record.losses}L{t.record.draws != null ? ` ${t.record.draws}D` : ""}
                   </div>
                 </div>
@@ -648,7 +648,7 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
               {(["all","home","away"] as VenueFilter[]).map(f => (
                 <button key={f} onClick={() => onHistoryFilterChange(f)}
                   className={`text-xs px-2 py-1 rounded transition-all ${
-                    historyFilter === f ? "text-[#3B82F6]" : "text-[#374151] hover:text-[#9CA3AF]"
+                    historyFilter === f ? "text-primary" : "text-text-2 hover:text-text-2"
                   }`}>
                   {f === "all" ? "All" : f === "home" ? "Home" : "Away"}
                 </button>
@@ -657,17 +657,17 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
             <div className="grid grid-cols-2 gap-3">
               {[{ t: homeTeam, h: homeHistory }, { t: awayTeam, h: awayHistory }].map(({ t, h }) => (
                 <div key={t.name}>
-                  <div className="text-[10px] uppercase tracking-widest text-[#374151] mb-1.5">{t.shortName}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-text-2 mb-1.5">{t.shortName}</div>
                   {h.slice(0, 6).map(g => (
                     <Link key={g.gameId} href={`/game/${g.gameId}`}
-                      className="flex items-center justify-between py-1.5 border-b border-white/[0.04] hover:bg-white/[0.03] px-1 rounded text-xs group">
-                      <span className="text-[#9CA3AF] truncate max-w-[45%]">{g.opponent}</span>
+                      className="flex items-center justify-between py-1.5 border-b border-border hover:bg-surface2 px-1 rounded text-xs group">
+                      <span className="text-text-2 truncate max-w-[45%]">{g.opponent}</span>
                       <span className={`font-semibold ${g.result==="W"?"text-[#22C55E]":g.result==="L"?"text-[#EF4444]":"text-[#F59E0B]"}`}>
                         {g.score ?? "—"}
                       </span>
                     </Link>
                   ))}
-                  {h.length === 0 && <p className="text-xs text-[#374151]">No data</p>}
+                  {h.length === 0 && <p className="text-xs text-text-2">No data</p>}
                 </div>
               ))}
             </div>
@@ -680,8 +680,8 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
               <ul className="space-y-2">
                 {insights.map((ins, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm">
-                    <span className="text-[#3B82F6] shrink-0 text-xs mt-0.5">{ins.icon}</span>
-                    <span className="text-[#E5E7EB] leading-snug">{ins.text}</span>
+                    <span className="text-primary shrink-0 text-xs mt-0.5">{ins.icon}</span>
+                    <span className="text-text-1 leading-snug">{ins.text}</span>
                   </li>
                 ))}
               </ul>
@@ -694,8 +694,8 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
             ) : (
               <div className="space-y-1">
                 {[...homeInjured, ...awayInjured].slice(0, 6).map((p, i) => (
-                  <div key={i} className="flex items-center justify-between py-1 border-b border-white/[0.04] last:border-0 text-xs">
-                    <span className="text-[#E5E7EB]">{p.name}</span>
+                  <div key={i} className="flex items-center justify-between py-1 border-b border-border last:border-0 text-xs">
+                    <span className="text-text-1">{p.name}</span>
                     <span className="text-[#F59E0B] shrink-0 text-[10px] ml-2">{p.position}</span>
                   </div>
                 ))}
@@ -713,13 +713,13 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
               return (
                 <div key={label} className="mb-3 last:mb-0">
                   <div className="flex justify-between text-xs mb-1">
-                    <span className="text-[#9CA3AF]">{label}</span>
+                    <span className="text-text-2">{label}</span>
                     <span className="text-white font-medium">{pct}%</span>
                   </div>
-                  <div className="h-[2px] bg-white/5 rounded-full">
-                    <div className="h-full bg-[#3B82F6] rounded-full" style={{ width: `${pct}%` }} />
+                  <div className="h-[2px] bg-surface2 rounded-full">
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
                   </div>
-                  <div className="text-[10px] text-[#374151] mt-0.5">{split.wins}W {split.losses}L{split.draws ? ` ${split.draws}D` : ""}</div>
+                  <div className="text-[10px] text-text-2 mt-0.5">{split.wins}W {split.losses}L{split.draws ? ` ${split.draws}D` : ""}</div>
                 </div>
               );
             })}
@@ -730,10 +730,10 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-xl">{WEATHER_ICON[weather.condition] ?? "🌤"}</span>
                 <div>
-                  <span className={weather.windKph > 40 || ["Storm","Rain"].includes(weather.condition) ? "text-[#F59E0B]" : "text-white"}>
+                  <span className={weather.windKph > 40 || ["Storm","Rain"].includes(weather.condition) ? "text-[#F59E0B]" : "text-text-1"}>
                     {weather.condition}
                   </span>
-                  <div className="text-xs text-[#374151]">{weather.tempC}°C · {weather.windKph}km/h</div>
+                  <div className="text-xs text-text-2">{weather.tempC}°C · {weather.windKph}km/h</div>
                 </div>
               </div>
             </Section>
@@ -780,13 +780,13 @@ function NBAQuarterCompact({ game }: { game: Game }) {
   const leadColor = currentDiff >= 0 ? "#60A5FA" : "#F87171";
 
   return (
-    <div className="bg-[#111827] rounded-xl p-4 border border-white/[0.04]">
+    <div className="bg-surface rounded-xl p-4 border border-border">
       <div className="flex items-start justify-between gap-6">
 
         {/* Quarter score grid */}
         <div className="shrink-0">
           <div className="flex items-center gap-4 mb-2">
-            <span className="text-[9px] font-semibold uppercase tracking-widest text-[#374151]">Quarter by Quarter</span>
+            <span className="text-[9px] font-semibold uppercase tracking-widest text-text-2">Quarter by Quarter</span>
             {leadTeam && status !== "upcoming" && (
               <span style={{ color: leadColor }} className="text-[10px] font-bold">
                 {leadTeam} {Math.abs(currentDiff) > 0 ? `+${Math.abs(currentDiff)}` : "tied"}
@@ -795,36 +795,36 @@ function NBAQuarterCompact({ game }: { game: Game }) {
           </div>
           <div className="grid gap-y-1.5 gap-x-3" style={{ gridTemplateColumns: `auto repeat(${periods}, 36px) auto` }}>
             <div />
-            {labels.map(l => <div key={l} className="text-center text-[9px] text-[#374151] font-medium">{l}</div>)}
-            <div className="text-[9px] text-[#374151] text-right font-bold">TOT</div>
+            {labels.map(l => <div key={l} className="text-center text-[9px] text-text-2 font-medium">{l}</div>)}
+            <div className="text-[9px] text-text-2 text-right font-bold">TOT</div>
 
             <div className="flex items-center gap-1 pr-2">
               {homeTeam.logoUrl && <img src={homeTeam.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
-              <span className="text-[10px] text-[#9CA3AF] font-medium">{homeTeam.shortName}</span>
+              <span className="text-[10px] text-text-2 font-medium">{homeTeam.shortName}</span>
             </div>
             {labels.map((_, i) => {
               const v = hQ[i] ?? 0;
               const won = v > (aQ[i] ?? 0) && v > 0;
-              return <div key={i} className="text-center"><span className={`text-[11px] tabular-nums font-semibold ${won ? "text-white" : "text-[#6B7280]"}`}>{v || "—"}</span></div>;
+              return <div key={i} className="text-center"><span className={`text-[11px] tabular-nums font-semibold ${won ? "text-text-1" : "text-text-2"}`}>{v || "—"}</span></div>;
             })}
-            <div className="text-right"><span className="text-sm font-black text-white tabular-nums">{score.home}</span></div>
+            <div className="text-right"><span className="text-sm font-black text-text-1 tabular-nums">{score.home}</span></div>
 
             <div className="flex items-center gap-1 pr-2">
               {awayTeam.logoUrl && <img src={awayTeam.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
-              <span className="text-[10px] text-[#9CA3AF] font-medium">{awayTeam.shortName}</span>
+              <span className="text-[10px] text-text-2 font-medium">{awayTeam.shortName}</span>
             </div>
             {labels.map((_, i) => {
               const v = aQ[i] ?? 0;
               const won = v > (hQ[i] ?? 0) && v > 0;
-              return <div key={i} className="text-center"><span className={`text-[11px] tabular-nums font-semibold ${won ? "text-white" : "text-[#6B7280]"}`}>{v || "—"}</span></div>;
+              return <div key={i} className="text-center"><span className={`text-[11px] tabular-nums font-semibold ${won ? "text-text-1" : "text-text-2"}`}>{v || "—"}</span></div>;
             })}
-            <div className="text-right"><span className="text-sm font-black text-[#9CA3AF] tabular-nums">{score.away}</span></div>
+            <div className="text-right"><span className="text-sm font-black text-text-2 tabular-nums">{score.away}</span></div>
           </div>
         </div>
 
         {/* Sparkline differential chart */}
         <div className="shrink-0 flex flex-col items-end">
-          <div className="text-[9px] text-[#374151] mb-1">{homeTeam.shortName} ↑ · {awayTeam.shortName} ↓</div>
+          <div className="text-[9px] text-text-2 mb-1">{homeTeam.shortName} ↑ · {awayTeam.shortName} ↓</div>
           <svg width={W} height={H}>
             <defs>
               <filter id="glow">
@@ -843,11 +843,11 @@ function NBAQuarterCompact({ game }: { game: Game }) {
               return (
                 <g key={i}>
                   <line x1={x} y1={0} x2={x} y2={chartH} stroke="white" strokeOpacity={0.08} strokeWidth={1} strokeDasharray="2 2" />
-                  <text x={x} y={H - 2} textAnchor={isLast ? "end" : "middle"} fill="#4B5563" fontSize={9} fontFamily="monospace">{label}</text>
+                  <text x={x} y={H - 2} textAnchor={isLast ? "end" : "middle"} fill="var(--text-2)" fontSize={9} fontFamily="monospace">{label}</text>
                 </g>
               );
             })}
-            <text x={0} y={H - 2} textAnchor="start" fill="#374151" fontSize={9} fontFamily="monospace">Start</text>
+            <text x={0} y={H - 2} textAnchor="start" fill="var(--text-2)" fontSize={9} fontFamily="monospace">Start</text>
           </svg>
         </div>
 
@@ -961,13 +961,13 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
               <div key={t.name}>
                 <div className="flex items-center gap-1.5 mb-2">
                   {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                  <span className="text-xs font-medium text-[#6B7280]">{t.shortName}</span>
+                  <span className="text-xs font-medium text-text-2">{t.shortName}</span>
                 </div>
                 {squad.map((p, i) => (
-                  <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/[0.04] last:border-0 text-xs">
-                    <span className="text-[#374151] w-5 text-center font-mono text-[10px]">{p.jersey || i+1}</span>
-                    <span className="text-[#E5E7EB] flex-1 truncate">{p.displayName}</span>
-                    <span className="text-[#4B5563] text-[10px]">{p.position}</span>
+                  <div key={i} className="flex items-center gap-2 py-1.5 border-b border-border last:border-0 text-xs">
+                    <span className="text-text-2 w-5 text-center font-mono text-[10px]">{p.jersey || i+1}</span>
+                    <span className="text-text-1 flex-1 truncate">{p.displayName}</span>
+                    <span className="text-text-2 text-[10px]">{p.position}</span>
                   </div>
                 ))}
               </div>
@@ -990,8 +990,8 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
                 <div key={t.name}>
                   <div className="flex items-center gap-1.5 mb-2">
                     {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                    <span className="text-xs font-semibold text-white">{t.shortName}</span>
-                    <span className="text-[9px] text-[#6B7280] ml-1">{role}</span>
+                    <span className="text-xs font-semibold text-text-1">{t.shortName}</span>
+                    <span className="text-[9px] text-text-2 ml-1">{role}</span>
                     {wStreak >= 3 && (
                       <span className="ml-auto text-[9px] font-bold px-1 py-px rounded bg-[#22C55E]/10 text-[#22C55E]">{wStreak}W</span>
                     )}
@@ -1012,9 +1012,9 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
                     avgOpp > 0 ? ["Avg Allowed", `${avgOpp} pts`] : null,
                     homePlayed > 0 ? [role === "Home" ? "Home Record" : "Away Record", `${homeWins}W ${homePlayed - homeWins}L`] : null,
                   ].filter((x): x is [string, string] => x !== null).map(([label, value]) => (
-                    <div key={label} className="flex items-center justify-between py-1 border-b border-white/[0.03] last:border-0 text-xs">
-                      <span className="text-[#4B5563]">{label}</span>
-                      <span className="text-[#D1D5DB] font-medium tabular-nums">{value}</span>
+                    <div key={label} className="flex items-center justify-between py-1 border-b border-border last:border-0 text-xs">
+                      <span className="text-text-2">{label}</span>
+                      <span className="text-text-1 font-medium tabular-nums">{value}</span>
                     </div>
                   ))}
                 </div>
@@ -1035,17 +1035,17 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
               <div className="grid grid-cols-2 gap-3">
                 {[{ t: homeTeam, h: homeHistory }, { t: awayTeam, h: awayHistory }].map(({ t, h }) => (
                   <div key={t.name}>
-                    <div className="text-[10px] uppercase tracking-widest text-[#374151] mb-1.5">{t.shortName}</div>
+                    <div className="text-[10px] uppercase tracking-widest text-text-2 mb-1.5">{t.shortName}</div>
                     {h.slice(0, 6).map(g => (
                       <Link key={g.gameId} href={`/game/${g.gameId}`}
-                        className="flex items-center justify-between py-1.5 border-b border-white/[0.04] hover:bg-white/[0.03] px-1 rounded text-xs group">
-                        <span className="text-[#9CA3AF] truncate max-w-[45%]">{g.opponent.split(" ").pop()}</span>
+                        className="flex items-center justify-between py-1.5 border-b border-border hover:bg-surface2 px-1 rounded text-xs group">
+                        <span className="text-text-2 truncate max-w-[45%]">{g.opponent.split(" ").pop()}</span>
                         <span className={`font-semibold tabular-nums ${g.result === "W" ? "text-[#22C55E]" : g.result === "L" ? "text-[#EF4444]" : "text-[#F59E0B]"}`}>
                           {g.score ?? "—"}
                         </span>
                       </Link>
                     ))}
-                    {h.length === 0 && <p className="text-xs text-[#374151]">No data</p>}
+                    {h.length === 0 && <p className="text-xs text-text-2">No data</p>}
                   </div>
                 ))}
               </div>
@@ -1065,18 +1065,18 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
                     <div key={t.name} className="space-y-2">
                       <div className="flex items-center gap-1.5">
                         {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                        <span className="text-[10px] text-[#9CA3AF]">{t.shortName} {label}</span>
+                        <span className="text-[10px] text-text-2">{t.shortName} {label}</span>
                       </div>
                       <div className="flex justify-between text-[10px] mb-0.5">
-                        <span className="text-[#4B5563]">{wins}W {played - wins}L</span>
-                        <span className="text-[#D1D5DB] tabular-nums font-medium">{pct}%</span>
+                        <span className="text-text-2">{wins}W {played - wins}L</span>
+                        <span className="text-text-1 tabular-nums font-medium">{pct}%</span>
                       </div>
-                      <div className="h-[2px] bg-white/5 rounded-full">
+                      <div className="h-[2px] bg-surface2 rounded-full">
                         <div className={`h-full rounded-full ${pct >= 50 ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} style={{ width: `${pct}%` }} />
                       </div>
                       {ap > 0 && (
-                        <div className="text-[10px] text-[#4B5563]">
-                          avg <span className="text-white">{ap}</span> pts scored · <span className="text-[#9CA3AF]">{ao}</span> allowed
+                        <div className="text-[10px] text-text-2">
+                          avg <span className="text-text-1">{ap}</span> pts scored · <span className="text-text-2">{ao}</span> allowed
                         </div>
                       )}
                     </div>
@@ -1094,16 +1094,16 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
             <Section title="Scoring Indicators">
               <div className="space-y-2">
                 <div className="flex justify-between text-xs mb-2">
-                  <span className="text-[#6B7280]">H2H Avg Total</span>
+                  <span className="text-text-2">H2H Avg Total</span>
                   <span className="text-white font-bold tabular-nums">{h2hAvgTotal}</span>
                 </div>
                 {h2hOver220 !== null && (
                   <div>
                     <div className="flex justify-between text-[10px] mb-1">
-                      <span className="text-[#4B5563]">Over 220 pts</span>
+                      <span className="text-text-2">Over 220 pts</span>
                       <span className={`font-bold ${h2hOver220 >= 60 ? "text-[#22C55E]" : h2hOver220 >= 40 ? "text-[#F59E0B]" : "text-[#EF4444]"}`}>{h2hOver220}%</span>
                     </div>
-                    <div className="h-[2px] bg-white/5 rounded-full">
+                    <div className="h-[2px] bg-surface2 rounded-full">
                       <div className={`h-full rounded-full ${h2hOver220 >= 60 ? "bg-[#22C55E]" : h2hOver220 >= 40 ? "bg-[#F59E0B]" : "bg-[#EF4444]"}`} style={{ width: `${h2hOver220}%` }} />
                     </div>
                   </div>
@@ -1111,16 +1111,16 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
                 {h2hOver200 !== null && (
                   <div>
                     <div className="flex justify-between text-[10px] mb-1">
-                      <span className="text-[#4B5563]">Over 200 pts</span>
+                      <span className="text-text-2">Over 200 pts</span>
                       <span className={`font-bold ${h2hOver200 >= 60 ? "text-[#22C55E]" : h2hOver200 >= 40 ? "bg-[#F59E0B]" : "text-[#EF4444]"}`}>{h2hOver200}%</span>
                     </div>
-                    <div className="h-[2px] bg-white/5 rounded-full">
+                    <div className="h-[2px] bg-surface2 rounded-full">
                       <div className={`h-full rounded-full ${h2hOver200 >= 60 ? "bg-[#22C55E]" : h2hOver200 >= 40 ? "bg-[#F59E0B]" : "bg-[#EF4444]"}`} style={{ width: `${h2hOver200}%` }} />
                     </div>
                   </div>
                 )}
                 {homeAvgPts > 0 && awayAvgPts > 0 && (
-                  <div className="pt-2 border-t border-white/[0.04] text-[10px] text-[#4B5563]">
+                  <div className="pt-2 border-t border-border text-[10px] text-text-2">
                     Projected combined: <span className="text-white font-bold">{Math.round(homeAvgPts + awayAvgPts)}</span>
                   </div>
                 )}
@@ -1140,15 +1140,15 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
                   <div key={key} className="mb-2 last:mb-0">
                     <div className="flex items-center justify-between text-[10px] mb-0.5">
                       <span className="text-white font-medium tabular-nums w-8">{hv || "—"}</span>
-                      <span className="text-[#374151] uppercase text-[9px] tracking-wide flex-1 text-center">{key}</span>
-                      <span className="text-[#9CA3AF] tabular-nums w-8 text-right">{av || "—"}</span>
+                      <span className="text-text-2 uppercase text-[9px] tracking-wide flex-1 text-center">{key}</span>
+                      <span className="text-text-2 tabular-nums w-8 text-right">{av || "—"}</span>
                     </div>
                     <div className="flex gap-0.5 h-[2px]">
-                      <div className="flex-1 bg-white/5 rounded-full overflow-hidden flex justify-end">
-                        <div className="h-full bg-[#3B82F6] rounded-full" style={{ width: `${(hv / max) * 100}%` }} />
+                      <div className="flex-1 bg-surface2 rounded-full overflow-hidden flex justify-end">
+                        <div className="h-full bg-primary rounded-full" style={{ width: `${(hv / max) * 100}%` }} />
                       </div>
-                      <div className="flex-1 bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full bg-[#9CA3AF] rounded-full" style={{ width: `${(av / max) * 100}%` }} />
+                      <div className="flex-1 bg-surface2 rounded-full overflow-hidden">
+                        <div className="h-full bg-text-2/40 rounded-full" style={{ width: `${(av / max) * 100}%` }} />
                       </div>
                     </div>
                   </div>
@@ -1170,12 +1170,12 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
               <div className="space-y-3">
                 {[{ t: homeTeam, inj: homeInjuries }, { t: awayTeam, inj: awayInjuries }].map(({ t, inj }) => (
                   <div key={t.name}>
-                    <div className="text-[10px] text-[#4B5563] uppercase tracking-widest mb-1.5">{t.shortName}</div>
+                    <div className="text-[10px] text-text-2 uppercase tracking-widest mb-1.5">{t.shortName}</div>
                     {inj.length === 0
                       ? <p className="text-xs text-[#22C55E]">✓ None reported</p>
                       : inj.slice(0, 4).map((p, i) => (
-                        <div key={i} className="flex items-center justify-between py-1 border-b border-white/[0.04] last:border-0 text-xs">
-                          <span className="text-[#D1D5DB] truncate">{p.playerName}</span>
+                        <div key={i} className="flex items-center justify-between py-1 border-b border-border last:border-0 text-xs">
+                          <span className="text-text-1 truncate">{p.playerName}</span>
                           <span className="text-[#F59E0B] shrink-0 text-[10px] ml-2">{p.status}</span>
                         </div>
                       ))}
@@ -1191,8 +1191,8 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
               <ul className="space-y-2">
                 {insights.slice(0, 5).map((ins, i) => (
                   <li key={i} className="flex items-start gap-1.5 text-xs">
-                    <span className="text-[#3B82F6] shrink-0">{ins.icon}</span>
-                    <span className="text-[#E5E7EB] leading-snug">{ins.text}</span>
+                    <span className="text-primary shrink-0">{ins.icon}</span>
+                    <span className="text-text-1 leading-snug">{ins.text}</span>
                   </li>
                 ))}
               </ul>
@@ -1232,16 +1232,16 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
               <div key={t.name}>
                 <div className="flex items-center gap-1.5 mb-2">
                   {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                  <span className="text-xs font-medium text-[#6B7280]">{t.shortName}</span>
+                  <span className="text-xs font-medium text-text-2">{t.shortName}</span>
                 </div>
                 {rows.map((row, i) => (
-                  <div key={i} className="flex items-center py-1.5 border-b border-white/[0.04] last:border-0 text-xs gap-2">
-                    <span className="text-white flex-1 truncate">{row.player}</span>
-                    <div className="flex items-center gap-2 text-[#9CA3AF] shrink-0">
+                  <div key={i} className="flex items-center py-1.5 border-b border-border last:border-0 text-xs gap-2">
+                    <span className="text-text-1 flex-1 truncate">{row.player}</span>
+                    <div className="flex items-center gap-2 text-text-2 shrink-0">
                       {KEY_STATS.filter(k => row.stats[k] != null).map(k => (
                         <span key={k} className="tabular-nums">
-                          <span className="text-[#374151] text-[9px]">{k} </span>
-                          <span className={k==="D"&&Number(row.stats[k])>=25?"text-[#3B82F6] font-bold":""}>{row.stats[k]}</span>
+                          <span className="text-text-2 text-[9px]">{k} </span>
+                          <span className={k==="D"&&Number(row.stats[k])>=25?"text-primary font-bold":""}>{row.stats[k]}</span>
                         </span>
                       ))}
                     </div>
@@ -1257,6 +1257,7 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
         <div className="lg:col-span-3 space-y-4">
           {(ha || aa) && (
             <Section title="Match Intelligence">
+
               <div className="grid grid-cols-2 gap-x-6 gap-y-0">
                 {([{ t: homeTeam, an: ha, role:"Home" }, { t: awayTeam, an: aa, role:"Away" }] as const).map(({ t, an, role }) => {
                   if (!an) return <div key={t.name} />;
@@ -1264,8 +1265,8 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
                     <div key={t.name}>
                       <div className="flex items-center gap-1.5 mb-2">
                         {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                        <span className="text-xs font-semibold text-white">{t.shortName}</span>
-                        <span className="text-[9px] text-[#6B7280] ml-1">{role}</span>
+                        <span className="text-xs font-semibold text-text-1">{t.shortName}</span>
+                        <span className="text-[9px] text-text-2 ml-1">{role}</span>
                         {an.streak.type && an.streak.count >= 2 && (
                           <span className={`ml-auto text-[9px] font-bold px-1 py-px rounded ${an.streak.type==="W"?"bg-[#22C55E]/10 text-[#22C55E]":"bg-[#EF4444]/10 text-[#EF4444]"}`}>
                             {an.streak.count}{an.streak.type}
@@ -1286,9 +1287,9 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
                         ...(an.venueRecord?[["At Venue",`${an.venueRecord.wins}W ${an.venueRecord.losses}L`]]:[]),
                         ...(an.daysRest!=null?[["Days Rest",`${an.daysRest}d`]]:[]),
                       ].map(([label,value]) => (
-                        <div key={label} className="flex items-center justify-between py-1 border-b border-white/[0.03] last:border-0 text-xs">
-                          <span className="text-[#4B5563]">{label}</span>
-                          <span className="text-[#D1D5DB] font-medium tabular-nums">{value}</span>
+                        <div key={label} className="flex items-center justify-between py-1 border-b border-border last:border-0 text-xs">
+                          <span className="text-text-2">{label}</span>
+                          <span className="text-text-1 font-medium tabular-nums">{value}</span>
                         </div>
                       ))}
                     </div>
@@ -1308,16 +1309,16 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
                   return (
                     <>
                       <div className="flex-1 text-center">
-                        <div className="text-xl font-black text-[#3B82F6]">{hw}</div>
-                        <div className="text-[9px] text-[#374151]">{homeTeam.shortName}</div>
+                        <div className="text-xl font-black text-primary">{hw}</div>
+                        <div className="text-[9px] text-text-2">{homeTeam.shortName}</div>
                       </div>
                       <div className="flex-1 text-center">
                         <div className="text-xl font-black text-[#F59E0B]">{dr}</div>
-                        <div className="text-[9px] text-[#374151]">Draws</div>
+                        <div className="text-[9px] text-text-2">Draws</div>
                       </div>
                       <div className="flex-1 text-center">
-                        <div className="text-xl font-black text-[#9CA3AF]">{aw}</div>
-                        <div className="text-[9px] text-[#374151]">{awayTeam.shortName}</div>
+                        <div className="text-xl font-black text-text-2">{aw}</div>
+                        <div className="text-[9px] text-text-2">{awayTeam.shortName}</div>
                       </div>
                     </>
                   );
@@ -1328,12 +1329,12 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
                 const isAW = g.winner===awayTeam.name;
                 return (
                   <Link key={g.gameId||i} href={g.gameId?`/game/${g.gameId}`:"#"}
-                    className="flex items-center gap-1.5 py-1.5 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.03] rounded px-0.5 text-xs">
-                    <span className="text-[#374151] w-16 shrink-0 text-[10px]">{g.date}</span>
-                    <span className={`flex-1 truncate text-right text-[10px] ${isHW?"text-white font-medium":"text-[#6B7280]"}`}>{g.homeTeam}</span>
-                    <span className="font-bold text-white tabular-nums w-12 text-center shrink-0">{g.score}</span>
-                    <span className={`flex-1 truncate text-[10px] ${isAW?"text-white font-medium":"text-[#6B7280]"}`}>{g.awayTeam}</span>
-                    <span className={`text-[9px] px-1 py-px rounded font-bold shrink-0 ${isHW?"bg-[#3B82F6]/20 text-[#3B82F6]":isAW?"bg-white/10 text-[#9CA3AF]":"bg-[#F59E0B]/20 text-[#F59E0B]"}`}>
+                    className="flex items-center gap-1.5 py-1.5 border-b border-border last:border-0 hover:bg-surface2 rounded px-0.5 text-xs">
+                    <span className="text-text-2 w-16 shrink-0 text-[10px]">{g.date}</span>
+                    <span className={`flex-1 truncate text-right text-[10px] ${isHW?"text-white font-medium":"text-text-2"}`}>{g.homeTeam}</span>
+                    <span className="font-bold text-text-1 tabular-nums w-12 text-center shrink-0">{g.score}</span>
+                    <span className={`flex-1 truncate text-[10px] ${isAW?"text-white font-medium":"text-text-2"}`}>{g.awayTeam}</span>
+                    <span className={`text-[9px] px-1 py-px rounded font-bold shrink-0 ${isHW?"bg-primary/20 text-primary":isAW?"bg-white/10 text-text-2":"bg-[#F59E0B]/20 text-[#F59E0B]"}`}>
                       {isHW?"H":isAW?"A":"D"}
                     </span>
                   </Link>
@@ -1351,16 +1352,16 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
                     <div key={t.name}>
                       <div className="flex items-center gap-1.5 mb-2">
                         {t.logoUrl&&<img src={t.logoUrl} alt="" className="w-4 h-4 object-contain"/>}
-                        <span className="text-xs font-medium text-[#6B7280]">{t.shortName}</span>
+                        <span className="text-xs font-medium text-text-2">{t.shortName}</span>
                       </div>
                       {an.last5.map((g,i)=>(
                         <Link key={g.gameId||i} href={g.gameId?`/game/${g.gameId}`:"#"}
-                          className="flex items-center gap-1.5 py-1.5 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.03] rounded px-0.5 text-xs">
+                          className="flex items-center gap-1.5 py-1.5 border-b border-border last:border-0 hover:bg-surface2 rounded px-0.5 text-xs">
                           <span className={`w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center shrink-0 ${g.result==="W"?"bg-[#22C55E]/20 text-[#22C55E]":g.result==="L"?"bg-[#EF4444]/20 text-[#EF4444]":"bg-[#F59E0B]/20 text-[#F59E0B]"}`}>{g.result}</span>
-                          <span className="text-[#9CA3AF] w-7 text-[10px] text-center shrink-0">{g.oppAbbr}</span>
-                          <span className="text-[#D1D5DB] tabular-nums text-[10px] shrink-0">{g.teamScore}–{g.oppScore}</span>
+                          <span className="text-text-2 w-7 text-[10px] text-center shrink-0">{g.oppAbbr}</span>
+                          <span className="text-text-1 tabular-nums text-[10px] shrink-0">{g.teamScore}–{g.oppScore}</span>
                           <span className={`tabular-nums text-[9px] shrink-0 ${g.margin>0?"text-[#22C55E]":"text-[#EF4444]"}`}>{g.margin>0?`+${g.margin}`:g.margin}</span>
-                          <span className="text-[#4B5563] text-[9px] shrink-0">{g.homeAway}</span>
+                          <span className="text-text-2 text-[9px] shrink-0">{g.homeAway}</span>
                         </Link>
                       ))}
                     </div>
@@ -1377,7 +1378,7 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
                   <div key={t.name} className="space-y-2">
                     <div className="flex items-center gap-1.5">
                       {t.logoUrl&&<img src={t.logoUrl} alt="" className="w-4 h-4 object-contain"/>}
-                      <span className="text-[10px] text-[#9CA3AF]">{t.shortName}</span>
+                      <span className="text-[10px] text-text-2">{t.shortName}</span>
                     </div>
                     {[
                       {label:"At Home",rec:an.homeRecord},
@@ -1388,10 +1389,10 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
                       return (
                         <div key={label}>
                           <div className="flex justify-between text-[10px] mb-0.5">
-                            <span className="text-[#4B5563]">{label}</span>
-                            <span className="text-[#D1D5DB] tabular-nums">{rec.wins}W {rec.losses}L</span>
+                            <span className="text-text-2">{label}</span>
+                            <span className="text-text-1 tabular-nums">{rec.wins}W {rec.losses}L</span>
                           </div>
-                          <div className="h-[2px] bg-white/5 rounded-full">
+                          <div className="h-[2px] bg-surface2 rounded-full">
                             <div className={`h-full rounded-full ${pct>=50?"bg-[#22C55E]":"bg-[#EF4444]"}`} style={{width:`${pct}%`}}/>
                           </div>
                         </div>
@@ -1410,10 +1411,10 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
               <div className="flex items-center gap-3">
                 <span className="text-2xl">{WEATHER_ICON[weather.condition]??"🌤"}</span>
                 <div>
-                  <div className={`text-sm font-medium ${weather.windKph>40||["Storm","Rain"].includes(weather.condition)?"text-[#F59E0B]":"text-white"}`}>
+                  <div className={`text-sm font-medium ${weather.windKph>40||["Storm","Rain"].includes(weather.condition)?"text-[#F59E0B]":"text-text-1"}`}>
                     {weather.condition}
                   </div>
-                  <div className="text-xs text-[#6B7280]">{weather.tempC}°C · {weather.windKph} km/h wind</div>
+                  <div className="text-xs text-text-2">{weather.tempC}°C · {weather.windKph} km/h wind</div>
                 </div>
               </div>
             </Section>
@@ -1430,15 +1431,15 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
                     <div key={t.name}>
                       <div className="flex items-center gap-1.5 mb-2">
                         {t.logoUrl&&<img src={t.logoUrl} alt="" className="w-4 h-4 object-contain"/>}
-                        <span className="text-[10px] font-medium text-[#9CA3AF]">{t.shortName}</span>
+                        <span className="text-[10px] font-medium text-text-2">{t.shortName}</span>
                       </div>
                       {!hasAny&&<p className="text-[10px] text-[#22C55E]">✓ None</p>}
                       {out.length>0&&(
                         <div className="mb-1.5">
                           <div className="text-[9px] text-[#EF4444] uppercase tracking-widest mb-0.5">Out</div>
                           {out.map((p,i)=>(
-                            <div key={i} className="text-[10px] text-[#D1D5DB] truncate py-0.5 border-b border-white/[0.03]">
-                              {p.playerName}{p.note?<span className="text-[#4B5563] ml-1">·{p.note.slice(0,12)}</span>:null}
+                            <div key={i} className="text-[10px] text-text-1 truncate py-0.5 border-b border-border">
+                              {p.playerName}{p.note?<span className="text-text-2 ml-1">·{p.note.slice(0,12)}</span>:null}
                             </div>
                           ))}
                         </div>
@@ -1447,7 +1448,7 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
                         <div>
                           <div className="text-[9px] text-[#F59E0B] uppercase tracking-widest mb-0.5">Doubtful</div>
                           {doubtful.map((p,i)=>(
-                            <div key={i} className="text-[10px] text-[#D1D5DB] truncate py-0.5 border-b border-white/[0.03]">{p.playerName}</div>
+                            <div key={i} className="text-[10px] text-text-1 truncate py-0.5 border-b border-border">{p.playerName}</div>
                           ))}
                         </div>
                       )}
@@ -1471,15 +1472,15 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
                   <div key={key} className="mb-2 last:mb-0">
                     <div className="flex items-center justify-between text-[10px] mb-0.5">
                       <span className="text-white font-medium tabular-nums w-8">{hv}</span>
-                      <span className="text-[#374151] uppercase text-[9px] tracking-wide flex-1 text-center">{key}</span>
-                      <span className="text-[#9CA3AF] tabular-nums w-8 text-right">{av}</span>
+                      <span className="text-text-2 uppercase text-[9px] tracking-wide flex-1 text-center">{key}</span>
+                      <span className="text-text-2 tabular-nums w-8 text-right">{av}</span>
                     </div>
                     <div className="flex gap-0.5 h-[2px]">
-                      <div className="flex-1 bg-white/5 rounded-full overflow-hidden flex justify-end">
-                        <div className="h-full bg-[#3B82F6] rounded-full" style={{width:`${(hv/max)*100}%`}}/>
+                      <div className="flex-1 bg-surface2 rounded-full overflow-hidden flex justify-end">
+                        <div className="h-full bg-primary rounded-full" style={{width:`${(hv/max)*100}%`}}/>
                       </div>
-                      <div className="flex-1 bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full bg-[#9CA3AF] rounded-full" style={{width:`${(av/max)*100}%`}}/>
+                      <div className="flex-1 bg-surface2 rounded-full overflow-hidden">
+                        <div className="h-full bg-text-2/40 rounded-full" style={{width:`${(av/max)*100}%`}}/>
                       </div>
                     </div>
                   </div>
@@ -1493,12 +1494,58 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
               <ul className="space-y-1.5">
                 {insights.slice(0,5).map((ins,i)=>(
                   <li key={i} className="flex items-start gap-1.5 text-xs">
-                    <span className="text-[#3B82F6] shrink-0">{ins.icon}</span>
-                    <span className="text-[#E5E7EB] leading-snug">{ins.text}</span>
+                    <span className="text-primary shrink-0">{ins.icon}</span>
+                    <span className="text-text-1 leading-snug">{ins.text}</span>
                   </li>
                 ))}
               </ul>
             </Section>
+          )}
+        </div>
+
+        {/* ── Right column: Model Pick ─────────────────────────────── */}
+        <div className="lg:col-span-2 space-y-4">
+          {analytics?.predictedMargin != null && analytics.predictedMargin !== 0 && game.status === "upcoming" && (
+            <div className="bg-surface rounded-xl p-4 border border-border">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-text-2">Model Pick</div>
+                {/* Info tooltip */}
+                <div className="relative group">
+                  <div className="w-4 h-4 rounded-full border border-border flex items-center justify-center cursor-default hover:border-primary transition-colors">
+                    <span className="text-[9px] font-bold text-text-2 group-hover:text-primary leading-none">?</span>
+                  </div>
+                  <div className="absolute right-0 top-5 z-50 w-52 bg-surface2 border border-border rounded-xl p-3 shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150">
+                    <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2">How it&apos;s calculated</div>
+                    {([
+                      { label: "Attack vs Defence", pct: "35%", desc: "Avg scored vs opponent's avg conceded" },
+                      { label: "Ladder standing",   pct: "30%", desc: "AFL rank + season percentage" },
+                      { label: "Recent form",       pct: "25%", desc: "Last 5 games, newer games weighted higher" },
+                      { label: "Head-to-head",      pct: "10%", desc: "Last 4 H2H meetings" },
+                    ]).map(({ label, pct, desc }) => (
+                      <div key={label} className="mb-2 last:mb-0">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-semibold text-text-1">{label}</span>
+                          <span className="text-[9px] font-bold text-primary">{pct}</span>
+                        </div>
+                        <p className="text-[9px] text-text-2 leading-snug mt-0.5">{desc}</p>
+                      </div>
+                    ))}
+                    <div className="mt-2 pt-2 border-t border-border text-[9px] text-text-2">
+                      +5 pts home ground advantage applied
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="text-center py-2">
+                <div className="text-xs text-primary font-bold mb-1">
+                  {analytics.predictedMargin >= 0 ? game.homeTeam.shortName : game.awayTeam.shortName}
+                </div>
+                <div className="text-3xl font-black text-text-1 tabular-nums">
+                  +{Math.abs(analytics.predictedMargin)} pts
+                </div>
+                <div className="text-[9px] text-text-2 mt-1">ladder · form · attack/defence · H2H</div>
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -1519,8 +1566,8 @@ function GenericOverview({ game, insights, homeHistory, awayHistory }: {
             <div key={t.name}>
               <div className="flex items-center gap-2 mb-2">
                 {t.logoUrl && <img src={t.logoUrl} alt="" className="w-5 h-5 object-contain" />}
-                <span className="text-sm text-white">{t.name}</span>
-                <span className="text-xs text-[#374151]">{role}</span>
+                <span className="text-sm text-text-1">{t.name}</span>
+                <span className="text-xs text-text-2">{role}</span>
               </div>
               <FormPills form={t.form} />
             </div>
@@ -1532,8 +1579,8 @@ function GenericOverview({ game, insights, homeHistory, awayHistory }: {
           <ul className="space-y-2">
             {insights.map((ins, i) => (
               <li key={i} className="flex items-start gap-2 text-sm">
-                <span className="text-[#3B82F6] shrink-0">{ins.icon}</span>
-                <span className="text-[#E5E7EB]">{ins.text}</span>
+                <span className="text-primary shrink-0">{ins.icon}</span>
+                <span className="text-text-1">{ins.text}</span>
               </li>
             ))}
           </ul>
@@ -1568,7 +1615,7 @@ export default function GameDetailTabs({
   return (
     <>
       {/* Tab bar — visually continues the hero card */}
-      <div className="bg-[#111827] rounded-b-2xl overflow-hidden mb-4">
+      <div className="bg-surface rounded-b-2xl overflow-hidden mb-4">
         <div className="flex border-t border-white/5">
           {TABS.map(t => (
             <button
@@ -1576,8 +1623,8 @@ export default function GameDetailTabs({
               onClick={() => setTab(t.key)}
               className={`flex-1 py-3 text-center text-sm font-medium relative transition-colors ${
                 tab === t.key
-                  ? "text-white after:absolute after:bottom-0 after:left-4 after:right-4 after:h-[2px] after:bg-[#3B82F6] after:rounded-full"
-                  : "text-[#9CA3AF] hover:text-white"
+                  ? "text-text-1 after:absolute after:bottom-0 after:left-4 after:right-4 after:h-[2px] after:bg-primary after:rounded-full"
+                  : "text-text-2 hover:text-text-1"
               }`}
             >
               {t.label}
@@ -1728,7 +1775,7 @@ export default function GameDetailTabs({
             </Section>
           ) : (
             <Section title="Box Score">
-              <p className="text-sm text-[#374151]">No data available yet.</p>
+              <p className="text-sm text-text-2">No data available yet.</p>
             </Section>
           )}
         </div>
@@ -1741,7 +1788,7 @@ export default function GameDetailTabs({
             {(["all","home","away"] as VenueFilter[]).map(f => (
               <button key={f} onClick={() => setH2hFilter(f)}
                 className={`text-xs px-2.5 py-1 rounded-lg transition-all ${
-                  h2hFilter === f ? "text-[#3B82F6] bg-[#3B82F6]/10" : "text-[#9CA3AF] hover:text-white"
+                  h2hFilter === f ? "text-primary bg-primary/10" : "text-text-2 hover:text-text-1"
                 }`}>
                 {f === "all" ? "All" : f === "home" ? "Home" : "Away"}
               </button>
@@ -1749,7 +1796,7 @@ export default function GameDetailTabs({
           </div>
           {currentH2H.length > 0
             ? <H2HPanel h2h={currentH2H} homeTeam={homeTeam.name} awayTeam={awayTeam.name} />
-            : <p className="text-sm text-[#374151]">No head-to-head data.</p>}
+            : <p className="text-sm text-text-2">No head-to-head data.</p>}
         </Section>
       )}
     </>

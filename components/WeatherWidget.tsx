@@ -21,8 +21,8 @@ export default function WeatherWidget({ weather }: { weather: Weather }) {
   const isIndoor = weather.condition === "Indoor";
 
   return (
-    <div className="bg-[#111827] border border-white/5 rounded-xl p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-widest text-[#9CA3AF] mb-3">Match Weather</h3>
+    <div className="bg-surface border border-white/5 rounded-xl p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-widest text-text-2 mb-3">Match Weather</h3>
       <div className="flex items-center gap-3">
         <span className="text-2xl leading-none">{emoji}</span>
         <div>
@@ -30,7 +30,7 @@ export default function WeatherWidget({ weather }: { weather: Weather }) {
             {weather.condition}
           </div>
           {!isIndoor && (
-            <div className="text-xs text-[#9CA3AF] mt-0.5">
+            <div className="text-xs text-text-2 mt-0.5">
               {weather.tempC}°C · {weather.windKph} km/h · {weather.humidity}% humidity
             </div>
           )}

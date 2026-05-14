@@ -93,13 +93,13 @@ export default function LiveScorePanel({
   if (status === "upcoming") {
     return (
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280] mb-2">Pre-Match</div>
-        <div className="text-3xl font-bold text-[#1e3a5f]">vs</div>
+        <div className="text-[10px] font-bold uppercase tracking-widest text-text-2 mb-2">Pre-Match</div>
+        <div className="text-3xl font-bold text-text-1">vs</div>
         <div className="mt-2 space-y-0.5">
           {countdown && (
-            <div className="text-2xl font-black tabular-nums text-[#3B82F6] tracking-tight">{countdown}</div>
+            <div className="text-2xl font-black tabular-nums text-primary tracking-tight">{countdown}</div>
           )}
-          <div className="text-xs text-[#4B5563]">
+          <div className="text-xs text-text-2">
             {isAFL ? formatAFLKickoff(kickoff, venue) : formatKickoffFull(kickoff)}
           </div>
         </div>
@@ -111,7 +111,7 @@ export default function LiveScorePanel({
   return (
     <div>
       {/* Main score */}
-      <div className="text-5xl sm:text-6xl font-black text-white tabular-nums tracking-tight">
+      <div className="text-5xl sm:text-6xl font-black text-text-1 tabular-nums tracking-tight">
         {homeScore ?? 0}
         <span className="text-[#1e293b] mx-2 font-light">–</span>
         {awayScore ?? 0}
@@ -126,15 +126,15 @@ export default function LiveScorePanel({
           >
             <span />
             {lineScores.home.map((_, i) => (
-              <span key={i} className="text-center text-[#4B5563] font-medium">Q{i + 1}</span>
+              <span key={i} className="text-center text-text-2 font-medium">Q{i + 1}</span>
             ))}
-            <span className="text-right text-[#9CA3AF] pr-1 font-medium">{homeShortName}</span>
+            <span className="text-right text-text-2 pr-1 font-medium">{homeShortName}</span>
             {lineScores.home.map((q, i) => (
-              <span key={i} className="text-center text-[#E5E7EB] font-semibold">{q}</span>
+              <span key={i} className="text-center text-text-1 font-semibold">{q}</span>
             ))}
-            <span className="text-right text-[#9CA3AF] pr-1 font-medium">{awayShortName}</span>
+            <span className="text-right text-text-2 pr-1 font-medium">{awayShortName}</span>
             {lineScores.away.map((q, i) => (
-              <span key={i} className="text-center text-[#E5E7EB] font-semibold">{q}</span>
+              <span key={i} className="text-center text-text-1 font-semibold">{q}</span>
             ))}
           </div>
         </div>
@@ -150,7 +150,7 @@ export default function LiveScorePanel({
               {displayClock ? ` · ${displayClock}` : ""}
             </span>
           </div>
-          <span className="text-xs text-[#6B7280] mt-0.5">
+          <span className="text-xs text-text-2 mt-0.5">
             Updated {updatedSec}s ago
           </span>
         </div>
