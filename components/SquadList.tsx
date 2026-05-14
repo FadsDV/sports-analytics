@@ -7,6 +7,8 @@ import { Sport } from "@/lib/types";
 import PlayerDrawer from "./afl/PlayerDrawer";
 import PlayerAvatar from "./afl/PlayerAvatar";
 import { AFLPlayerAnalyticsResult } from "@/lib/sports/afl/players/types";
+import NBAPlayerDrawer from "./nba/NBAPlayerDrawer";
+import type { NBAPlayerAnalyticsResult } from "@/lib/sports/nba/players/types";
 
 // ─── Injury badge colours ───────────────────────────────────────────────────
 
@@ -93,30 +95,36 @@ export default function SquadList({
   matchContext?: "home" | "away";
 }) {
   const [selectedPlayer, setSelectedPlayer] = useState<ESPNPlayer | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [drawerData, setDrawerData] = useState<AFLPlayerAnalyticsResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading]               = useState(false);
+  const [aflDrawerData, setAflDrawerData]   = useState<AFLPlayerAnalyticsResult | null>(null);
+  const [nbaDrawerData, setNbaDrawerData]   = useState<NBAPlayerAnalyticsResult | null>(null);
+  const [error, setError]                   = useState<string | null>(null);
 
   const isAFL = sport === "afl";
+  const isNBA = sport === "basketball";
 
   async function handlePlayerClick(player: ESPNPlayer) {
-    if (!isAFL) return;
-    
+    if (!isAFL && !isNBA) return;
+    if (isNBA && !teamId) return;   // can't query without a team context
+
     setSelectedPlayer(player);
     setLoading(true);
-    setDrawerData(null);
+    setAflDrawerData(null);
+    setNbaDrawerData(null);
     setError(null);
 
     try {
-      const url = `/api/afl/player/${player.id}?homeAway=${matchContext}&opponent=${encodeURIComponent(opponent || "")}&teamId=${encodeURIComponent(teamId || "")}&name=${encodeURIComponent(player.displayName)}&position=${encodeURIComponent(player.position)}&jersey=${encodeURIComponent(player.jersey ?? "")}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        setError("Could not load player data.");
-        setLoading(false);
-        return;
+      if (isAFL) {
+        const url = `/api/afl/player/${player.id}?homeAway=${matchContext}&opponent=${encodeURIComponent(opponent || "")}&teamId=${encodeURIComponent(teamId || "")}&name=${encodeURIComponent(player.displayName)}&position=${encodeURIComponent(player.position)}&jersey=${encodeURIComponent(player.jersey ?? "")}`;
+        const res = await fetch(url);
+        if (!res.ok) { setError("Could not load player data."); return; }
+        setAflDrawerData(await res.json());
+      } else {
+        const url = `/api/nba/player/${player.id}?teamId=${encodeURIComponent(teamId!)}&homeAway=${matchContext}&opponent=${encodeURIComponent(opponent || "")}&name=${encodeURIComponent(player.displayName)}&position=${encodeURIComponent(player.position)}&jersey=${encodeURIComponent(player.jersey ?? "")}`;
+        const res = await fetch(url);
+        if (!res.ok) { setError("Could not load player data."); return; }
+        setNbaDrawerData(await res.json());
       }
-      const data: AFLPlayerAnalyticsResult = await res.json();
-      setDrawerData(data);
     } catch {
       setError("Failed to fetch player analytics.");
     } finally {
@@ -126,7 +134,8 @@ export default function SquadList({
 
   function handleClose() {
     setSelectedPlayer(null);
-    setDrawerData(null);
+    setAflDrawerData(null);
+    setNbaDrawerData(null);
     setError(null);
     setLoading(false);
   }
@@ -179,7 +188,14 @@ export default function SquadList({
                 const badgeCls = injury?.status ? (INJURY_COLORS[injury.status] ?? INJURY_COLORS.Questionable) : null;
                 const keyStat = firstKeyStat(player.seasonStats);
 
-                if (isAFL) {
+                // AFL and NBA: clickable button opening drawer
+                if (isAFL || (isNBA && teamId)) {
+                  const nbaStats = isNBA ? [
+                    player.seasonStats["PTS"] != null && `${player.seasonStats["PTS"]} PTS`,
+                    player.seasonStats["REB"] != null && `${player.seasonStats["REB"]} REB`,
+                    player.seasonStats["AST"] != null && `${player.seasonStats["AST"]} AST`,
+                  ].filter(Boolean).join(" · ") : null;
+
                   return (
                     <button
                       key={player.id}
@@ -195,9 +211,11 @@ export default function SquadList({
                           </span>
                           {badgeCls && injury?.status && <span className={`text-[10px] font-semibold px-1.5 py-px rounded border shrink-0 ${badgeCls}`}>{injury.status}</span>}
                         </div>
+                        {nbaStats && <div className="text-[10px] text-[#4B5563] mt-0.5">{nbaStats}</div>}
                       </div>
                       <div className="shrink-0 text-right">
                         <div className="text-xs font-semibold text-gray-500">{player.position}</div>
+                        <div className="text-[9px] text-[#374151] mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">INTEL</div>
                       </div>
                     </button>
                   );
@@ -234,8 +252,8 @@ export default function SquadList({
         ))}
       </div>
 
-      {/* Drawer */}
-      {selectedPlayer && isAFL && (
+      {/* Drawer — AFL and NBA */}
+      {selectedPlayer && (isAFL || isNBA) && (
         <>
           {loading && (
             <>
@@ -254,13 +272,16 @@ export default function SquadList({
               <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-[#0B0F1A] border-l border-[#3B82F6]/20 flex items-center justify-center">
                 <div className="text-center px-10">
                   <p className="text-[#EF4444] font-bold mb-4 uppercase tracking-tight">{error}</p>
-                  <button onClick={handleClose} className="text-xs font-black text-[#6B7280] hover:text-white underline uppercase tracking-widest">Close Link</button>
+                  <button onClick={handleClose} className="text-xs font-black text-[#6B7280] hover:text-white underline uppercase tracking-widest">Close</button>
                 </div>
               </div>
             </>
           )}
-          {drawerData && !loading && (
-            <PlayerDrawer data={drawerData} onClose={handleClose} />
+          {aflDrawerData && !loading && (
+            <PlayerDrawer data={aflDrawerData} onClose={handleClose} />
+          )}
+          {nbaDrawerData && !loading && (
+            <NBAPlayerDrawer data={nbaDrawerData} onClose={handleClose} />
           )}
         </>
       )}

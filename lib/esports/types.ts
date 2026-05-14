@@ -76,6 +76,16 @@ export interface CS2Map {
 
 // ─── Match ────────────────────────────────────────────────────────────────────
 
+export interface EsportsGame {
+  id:        number | string;
+  status:    EsportsMatchStatus;
+  beginAt?:  string | null;
+  endAt?:    string | null;
+  position?: number;
+  winnerId?: string;
+  complete?: boolean;
+}
+
 export interface EsportsMatch {
   id:             string;             // canonical e.g. "cs2.match.12345"
   externalId:     number | string;
@@ -94,4 +104,5 @@ export interface EsportsMatch {
   gameType:       "cs2" | "lol";
   liveUrl?:       string;
   maps?:          CS2Map[];
+  games?:         EsportsGame[];
 }
