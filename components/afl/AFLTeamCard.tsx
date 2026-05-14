@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
-import type { AFLTeamAnalytics } from "@/lib/sports/afl/analytics";
+import type { AFLTeamAnalytics, AFLRecentGame } from "@/lib/sports/afl/analytics";
 import type { Team } from "@/lib/types";
 
 interface AFLTeamCardProps {
@@ -61,11 +61,52 @@ export default function AFLTeamCard({ team, analytics: an }: AFLTeamCardProps) {
           <VenueSplit record={an.venueRecord} />
         )}
       </div>
+
+      {/* Form sparkline — last 5 game margins */}
+      {an.last5.length >= 3 && <FormSparkline games={an.last5} />}
     </div>
   );
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+function FormSparkline({ games }: { games: AFLRecentGame[] }) {
+  // Show oldest → newest left to right; use teamScore as the value
+  const scores = [...games].reverse().map(g => g.teamScore);
+  const margins = [...games].reverse().map(g => g.margin);
+  const min = Math.min(...scores);
+  const max = Math.max(...scores);
+  const range = Math.max(max - min, 1);
+  const W = 200, H = 28, pad = 3;
+  const xStep = (W - pad * 2) / Math.max(scores.length - 1, 1);
+  const pts = scores.map((s, i) => ({
+    x: pad + i * xStep,
+    y: H - pad - ((s - min) / range) * (H - pad * 2),
+    win: margins[i] >= 0,
+  }));
+  const line = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+
+  return (
+    <div className="mt-2 pt-2 border-t border-white/[0.04]">
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full overflow-visible">
+        <path d={line} fill="none" stroke="#3B82F6" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.6} />
+        {pts.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r={2.5}
+            fill={p.win ? "#22C55E" : "#EF4444"}
+            stroke="#0d1827" strokeWidth={1}
+          />
+        ))}
+      </svg>
+      <div className="flex justify-between text-[8px] text-[#374151] mt-0.5 px-0.5">
+        {[...games].reverse().map((g, i) => (
+          <span key={i} className={g.margin >= 0 ? "text-[#22C55E]/60" : "text-[#EF4444]/60"}>
+            {g.margin >= 0 ? "+" : ""}{g.margin}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function RestIndicator({ days }: { days: number }) {
   const color =
