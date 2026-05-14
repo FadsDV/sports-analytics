@@ -331,10 +331,10 @@ function NBAPlayerList({
   opponent,
   matchContext,
 }: {
-  rows:         BoxScoreRow[];
-  headers:      string[];
-  teamId?:      string;
-  opponent?:    string;
+  rows:          BoxScoreRow[];
+  headers:       string[];
+  teamId?:       string;
+  opponent?:     string;
   matchContext?: "home" | "away";
 }) {
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; name: string } | null>(null);
@@ -342,12 +342,18 @@ function NBAPlayerList({
   const [drawerData, setDrawerData]         = useState<NBAPlayerAnalyticsResult | null>(null);
   const [error, setError]                   = useState<string | null>(null);
 
-  // NBA key stat columns to highlight in the table
-  const showHeaders = ["PTS", "REB", "AST", "STL", "BLK", "TO", "FG", "3PT", "+/-"]
-    .filter(h => headers.includes(h));
-  const displayHeaders = showHeaders.length > 0 ? showHeaders : headers.slice(0, 8);
+  const PREFERRED = ["MIN", "PTS", "REB", "AST", "STL", "BLK", "TO", "FG", "3PT", "+/-"];
+  const displayHeaders = PREFERRED.filter(h => headers.includes(h))
+    .concat(headers.filter(h => !PREFERRED.includes(h))).slice(0, 10);
 
   if (!rows.length) return <p className="text-xs text-[#374151]">No data available.</p>;
+
+  const starters = rows.filter(r => r.starter !== false && rows.some(x => x.starter));
+  const bench    = rows.filter(r => r.starter === false);
+  const hasGroups = starters.length > 0 && bench.length > 0;
+  const groups = hasGroups
+    ? [{ label: "STARTERS", rows: starters }, { label: "BENCH", rows: bench }]
+    : [{ label: "", rows }];
 
   async function handlePlayerClick(row: BoxScoreRow) {
     if (!row.playerId || !teamId) return;
@@ -376,41 +382,60 @@ function NBAPlayerList({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-xs min-w-[360px]">
+      <table className="w-full text-xs min-w-[520px]">
         <thead>
           <tr className="border-b border-white/5">
-            <th className="text-left py-1.5 pr-2 text-[#374151]">Player</th>
+            <th className="text-left py-2 pr-2 text-[#374151] sticky left-0 bg-[#111827]">Player</th>
             {displayHeaders.map(h => (
-              <th key={h} className="text-right py-1.5 px-1 text-[#374151]">{h}</th>
+              <th key={h} className="text-right py-2 px-1.5 text-[#374151] whitespace-nowrap font-medium">{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr
-              key={i}
-              className={`border-b border-white/[0.03] last:border-0 hover:bg-white/[0.03] transition-colors ${r.playerId && teamId ? "cursor-pointer" : ""}`}
-              onClick={() => handlePlayerClick(r)}
-            >
-              <td className="py-1.5 pr-2">
-                <div className="flex items-center gap-1.5">
-                  <PlayerAvatar src={r.headshot} name={r.player} size={20} />
-                  <span className="text-white truncate max-w-[120px] font-medium">{r.player}</span>
-                  {r.playerId && teamId && (
-                    <span className="text-[9px] text-[#374151]">INTEL</span>
-                  )}
-                </div>
-              </td>
-              {displayHeaders.map(h => {
-                const v  = r.stats[h];
-                const hi = h === "PTS" && Number(v) >= 30;
-                return (
-                  <td key={h} className={`py-1.5 px-1 text-right tabular-nums ${hi ? "text-[#3B82F6] font-bold" : "text-[#9CA3AF]"}`}>
-                    {v ?? "—"}
+          {groups.map(({ label, rows: groupRows }) => (
+            <>
+              {label && (
+                <tr key={`grp-${label}`}>
+                  <td colSpan={displayHeaders.length + 1} className="pt-3 pb-1 px-0">
+                    <span className="text-[9px] font-black uppercase tracking-[0.15em] text-[#374151]">{label}</span>
                   </td>
-                );
-              })}
-            </tr>
+                </tr>
+              )}
+              {groupRows.map((r, i) => (
+                <tr
+                  key={`${label}-${i}`}
+                  className={`border-b border-white/[0.03] last:border-0 hover:bg-white/[0.03] transition-colors ${r.playerId && teamId ? "cursor-pointer" : ""}`}
+                  onClick={() => handlePlayerClick(r)}
+                >
+                  <td className="py-2 pr-2 sticky left-0 bg-[#111827]">
+                    <div className="flex items-center gap-1.5">
+                      <PlayerAvatar src={r.headshot} name={r.player} size={22} />
+                      <div className="min-w-0">
+                        <span className="text-white truncate max-w-[110px] font-medium block text-[11px] leading-tight">{r.player}</span>
+                        {r.position && <span className="text-[9px] text-[#374151] leading-tight">{r.position}</span>}
+                      </div>
+                      {r.playerId && teamId && (
+                        <span className="text-[8px] text-[#1e3a5f] ml-1 shrink-0">INTEL</span>
+                      )}
+                    </div>
+                  </td>
+                  {displayHeaders.map(h => {
+                    const v  = r.stats[h];
+                    const hi = (h === "PTS" && Number(v) >= 25) || (h === "REB" && Number(v) >= 12) || (h === "AST" && Number(v) >= 10);
+                    return (
+                      <td key={h} className={`py-2 px-1.5 text-right tabular-nums text-[11px] ${
+                        hi ? "text-[#3B82F6] font-bold" :
+                        h === "+/-" && Number(v) > 0 ? "text-[#22C55E]" :
+                        h === "+/-" && Number(v) < 0 ? "text-[#EF4444]" :
+                        "text-[#9CA3AF]"
+                      }`}>
+                        {v == null ? "—" : h === "+/-" && Number(v) > 0 ? `+${v}` : v}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </>
           ))}
         </tbody>
       </table>
@@ -719,6 +744,143 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
   );
 }
 
+// ─── NBA quarter flow ─────────────────────────────────────────────────────────
+
+function NBAQuarterFlow({ game }: { game: Game }) {
+  const { lineScores, score, homeTeam, awayTeam, status } = game;
+  if (!lineScores || !score) return null;
+
+  const { home: hQ, away: aQ } = lineScores;
+  const periods = Math.max(hQ.length, aQ.length, 4);
+  const labels  = Array.from({ length: periods }, (_, i) => i < 4 ? `Q${i+1}` : `OT${i-3}`);
+
+  // Running totals
+  let hRunning = 0, aRunning = 0;
+  const snapshots = labels.map((_, i) => {
+    hRunning += hQ[i] ?? 0;
+    aRunning += aQ[i] ?? 0;
+    return { h: hRunning, a: aRunning, diff: hRunning - aRunning };
+  });
+
+  const maxQ = Math.max(...hQ, ...aQ, 1);
+  const biggestLead = Math.max(...snapshots.map(s => Math.abs(s.diff)));
+  const leadChanges = snapshots.filter((s, i) => {
+    if (i === 0) return false;
+    const prev = snapshots[i - 1]!;
+    return (prev.diff > 0 && s.diff < 0) || (prev.diff < 0 && s.diff > 0) || (prev.diff !== 0 && s.diff === 0);
+  }).length;
+
+  const currentDiff = (score.home ?? 0) - (score.away ?? 0);
+  const leadTeam = currentDiff > 0 ? homeTeam.shortName : currentDiff < 0 ? awayTeam.shortName : null;
+
+  return (
+    <div className="bg-[#111827] rounded-xl p-4 border border-white/[0.04]">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-[10px] font-semibold uppercase tracking-widest text-[#374151]">Quarter by Quarter</h3>
+        <div className="flex items-center gap-4 text-[10px]">
+          {leadTeam && status !== "upcoming" && (
+            <span className="text-[#3B82F6] font-bold">
+              {leadTeam} {Math.abs(currentDiff) > 0 ? `+${Math.abs(currentDiff)}` : "tied"}
+            </span>
+          )}
+          {biggestLead > 0 && <span className="text-[#374151]">Max lead: <span className="text-[#9CA3AF]">{biggestLead}</span></span>}
+          {leadChanges > 0 && <span className="text-[#374151]">Lead changes: <span className="text-[#9CA3AF]">{leadChanges}</span></span>}
+        </div>
+      </div>
+
+      {/* Quarter score grid */}
+      <div className="grid mb-4" style={{ gridTemplateColumns: `auto repeat(${periods}, 1fr) auto` }}>
+        <div className="text-[9px] text-[#374151] py-1" />
+        {labels.map(l => (
+          <div key={l} className="text-[9px] text-[#374151] text-center py-1 font-medium uppercase">{l}</div>
+        ))}
+        <div className="text-[9px] text-[#374151] text-right py-1 font-bold uppercase pr-1">TOT</div>
+
+        {/* Home row */}
+        <div className="flex items-center gap-1.5 py-2 pr-2">
+          {homeTeam.logoUrl && <img src={homeTeam.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+          <span className="text-[11px] text-[#9CA3AF] font-medium">{homeTeam.shortName}</span>
+        </div>
+        {labels.map((_, i) => {
+          const v = hQ[i] ?? 0;
+          const isMax = v === Math.max(hQ[i] ?? 0, aQ[i] ?? 0) && v > 0;
+          return (
+            <div key={i} className="text-center py-2">
+              <span className={`text-xs tabular-nums font-semibold ${isMax ? "text-white" : "text-[#6B7280]"}`}>{v || "-"}</span>
+            </div>
+          );
+        })}
+        <div className="text-right py-2 pr-1">
+          <span className="text-sm font-black text-white tabular-nums">{score.home}</span>
+        </div>
+
+        {/* Away row */}
+        <div className="flex items-center gap-1.5 py-2 pr-2">
+          {awayTeam.logoUrl && <img src={awayTeam.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+          <span className="text-[11px] text-[#9CA3AF] font-medium">{awayTeam.shortName}</span>
+        </div>
+        {labels.map((_, i) => {
+          const v = aQ[i] ?? 0;
+          const isMax = v === Math.max(hQ[i] ?? 0, aQ[i] ?? 0) && v > 0;
+          return (
+            <div key={i} className="text-center py-2">
+              <span className={`text-xs tabular-nums font-semibold ${isMax ? "text-white" : "text-[#6B7280]"}`}>{v || "-"}</span>
+            </div>
+          );
+        })}
+        <div className="text-right py-2 pr-1">
+          <span className="text-sm font-black text-[#9CA3AF] tabular-nums">{score.away}</span>
+        </div>
+      </div>
+
+      {/* Quarter bars */}
+      <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${periods}, 1fr)` }}>
+        {labels.map((l, i) => {
+          const hv = hQ[i] ?? 0;
+          const av = aQ[i] ?? 0;
+          const hPct = Math.round((hv / maxQ) * 100);
+          const aPct = Math.round((av / maxQ) * 100);
+          const label = l;
+          return (
+            <div key={i} className="flex flex-col items-center gap-1">
+              <div className="w-full h-10 flex items-end gap-0.5">
+                <div className="flex-1 bg-[#3B82F6]/80 rounded-t" style={{ height: `${Math.max(hPct, 4)}%` }} title={`${homeTeam.shortName}: ${hv}`} />
+                <div className="flex-1 bg-[#9CA3AF]/40 rounded-t" style={{ height: `${Math.max(aPct, 4)}%` }} title={`${awayTeam.shortName}: ${av}`} />
+              </div>
+              <span className="text-[9px] text-[#374151]">{label}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Scoring run momentum */}
+      <div className="mt-3 pt-3 border-t border-white/[0.04]">
+        <div className="text-[9px] text-[#374151] mb-2 uppercase tracking-widest font-semibold">Score Progression</div>
+        <div className="relative h-6 bg-white/[0.03] rounded-full overflow-hidden">
+          {snapshots.map((s, i) => {
+            const x = ((i + 1) / snapshots.length) * 100;
+            const diff = s.diff;
+            const barH = Math.min(Math.abs(diff) / (biggestLead || 1) * 100, 100);
+            return (
+              <div
+                key={i}
+                className={`absolute bottom-0 w-[2px] rounded-t ${diff > 0 ? "bg-[#3B82F6]" : diff < 0 ? "bg-[#9CA3AF]" : "bg-white/20"}`}
+                style={{ left: `${x}%`, height: `${Math.max(barH, 8)}%` }}
+                title={`After ${labels[i]}: ${homeTeam.shortName} ${s.h > s.a ? "+" : ""}${s.diff}`}
+              />
+            );
+          })}
+          <div className="absolute inset-y-0 w-[1px] bg-white/10 left-1/2" />
+        </div>
+        <div className="flex justify-between text-[9px] text-[#374151] mt-1">
+          <span className="text-[#3B82F6]">{homeTeam.shortName} lead</span>
+          <span className="text-[#9CA3AF]">{awayTeam.shortName} lead</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── NBA analytics helpers ────────────────────────────────────────────────────
 
 function nbaStreak(form: string[], result: string): number {
@@ -792,6 +954,9 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
 
   return (
     <div className="space-y-4">
+      {/* Quarter flow — live / finished */}
+      {!isUpcoming && game.lineScores && <NBAQuarterFlow game={game} />}
+
       {/* Top performers — finished games */}
       {!isUpcoming && hasPerformers && (
         <Section title="Top Performers">

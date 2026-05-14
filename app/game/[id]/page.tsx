@@ -151,7 +151,7 @@ export default async function GameDetailPage({
   }
 
   return (
-    <div className={`${isAFL ? "max-w-7xl" : "max-w-5xl"} px-4 pt-4 pb-10 mx-auto`}>
+    <div className={`${isAFL || isBasketball ? "max-w-7xl" : "max-w-5xl"} px-4 pt-4 pb-10 mx-auto`}>
 
       {/* Back */}
       <Link href="/" className="inline-flex items-center gap-1 text-xs text-[#374151] hover:text-[#9CA3AF] mb-4 transition-colors">

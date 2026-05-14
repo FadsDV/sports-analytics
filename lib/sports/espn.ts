@@ -460,7 +460,8 @@ function parseBoxScore(bsPlayers: any[], sport: ESPNSport, fantasyMap: Map<strin
 }
 
 function parseBasketballBoxScore(teamSections: any[]): BoxScore | undefined {
-  const desiredHeaders = ["MIN", "PTS", "REB", "AST"];
+  const NBA_STAT_KEYS = ["MIN", "FG", "3PT", "FT", "OREB", "DREB", "REB", "AST", "STL", "BLK", "TO", "PF", "+/-", "PTS"];
+  const DISPLAY_HEADERS = ["MIN", "PTS", "REB", "AST", "STL", "BLK", "TO", "FG", "3PT", "+/-"];
   if (!Array.isArray(teamSections) || teamSections.length === 0) return undefined;
 
   function extractTeamRows(teamSection: any): BoxScore["home"] {
@@ -469,51 +470,57 @@ function parseBasketballBoxScore(teamSections: any[]): BoxScore | undefined {
 
     for (const group of statGroups) {
       const headers: string[] = group.names ?? group.labels ?? [];
+      const groupIsStarters =
+        (group.name ?? group.displayName ?? "").toLowerCase().includes("starter");
+
       for (const athleteRow of group.athletes ?? []) {
-        const athleteName = athleteRow.athlete?.displayName;
-        if (!athleteName || athleteRow.didNotPlay || athleteRow.active === false) {
-          continue;
+        if (athleteRow.didNotPlay || athleteRow.active === false) continue;
+        const athlete = athleteRow.athlete;
+        if (!athlete) continue;
+
+        const name: string = athlete.displayName ?? "Unknown";
+        const playerId: string | undefined = athlete.id ? String(athlete.id) : undefined;
+        const headshot: string | undefined =
+          athlete.headshot?.href ??
+          athlete.headshot?.url ??
+          (playerId ? `https://a.espncdn.com/i/headshots/nba/players/full/${playerId}.png` : undefined);
+
+        if (!athleteMap.has(name)) {
+          athleteMap.set(name, {
+            player: name,
+            playerId,
+            position: athlete.position?.abbreviation ?? undefined,
+            jersey: athlete.jersey ?? undefined,
+            headshot,
+            starter: athleteRow.starter ?? groupIsStarters,
+            stats: {},
+          });
         }
 
-        const current = athleteMap.get(athleteName) ?? {
-          player: athleteName,
-          stats: Object.fromEntries(desiredHeaders.map((header) => [header, null])),
-        };
-
-        headers.forEach((header, index) => {
-          if (!desiredHeaders.includes(header)) return;
-          const statValue = athleteRow.stats?.[index] ?? null;
-          current.stats[header] = statValue;
+        const row = athleteMap.get(name)!;
+        headers.forEach((h, i) => {
+          if (NBA_STAT_KEYS.includes(h) && row.stats[h] == null) {
+            row.stats[h] = athleteRow.stats?.[i] ?? null;
+          }
         });
-
-        athleteMap.set(athleteName, current);
       }
     }
 
     return Array.from(athleteMap.values())
-      .filter((row) => desiredHeaders.some((header) => row.stats[header] != null))
+      .filter(r => r.stats.MIN != null || r.stats.PTS != null)
       .sort((a, b) => {
-        const aPts = Number(a.stats.PTS);
-        const bPts = Number(b.stats.PTS);
-        const safeAPts = Number.isFinite(aPts) ? aPts : -1;
-        const safeBPts = Number.isFinite(bPts) ? bPts : -1;
-        return safeBPts - safeAPts;
+        if (a.starter && !b.starter) return -1;
+        if (!a.starter && b.starter) return 1;
+        return Number(b.stats.PTS ?? 0) - Number(a.stats.PTS ?? 0);
       });
   }
 
-  const sectionsWithRows = teamSections
-    .map((section) => extractTeamRows(section))
-    .filter((rows) => rows.length > 0);
-
-  const home = sectionsWithRows[0] ?? [];
-  const away = sectionsWithRows[1] ?? [];
+  const sections = teamSections.slice(0, 2).map(s => extractTeamRows(s));
+  const home = sections[0] ?? [];
+  const away = sections[1] ?? [];
   if (!home.length && !away.length) return undefined;
 
-  return {
-    statHeaders: desiredHeaders,
-    home,
-    away,
-  };
+  return { statHeaders: DISPLAY_HEADERS, home, away };
 }
 
 function parseAFLBoxScore(teamSections: any[], fantasyMap: Map<string, number> | null = null): BoxScore | undefined {

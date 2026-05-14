@@ -87,10 +87,11 @@ export interface Game {
 
 export interface BoxScoreRow {
   player: string;
-  playerId?: string;   // Added for intelligence lookups
-  position?: string;   // Added for role context
-  jersey?: string;     // Added for identification
-  headshot?: string;   // Added for AFL Fantasy images
+  playerId?: string;
+  position?: string;
+  jersey?: string;
+  headshot?: string;
+  starter?: boolean;
   stats: Record<string, string | number | null>;
 }
 
