@@ -120,7 +120,7 @@ export default function SquadList({
         if (!res.ok) { setError("Could not load player data."); return; }
         setAflDrawerData(await res.json());
       } else {
-        const url = `/api/nba/player/${player.id}?teamId=${encodeURIComponent(teamId!)}&homeAway=${matchContext}&opponent=${encodeURIComponent(opponent || "")}&name=${encodeURIComponent(player.displayName)}&position=${encodeURIComponent(player.position)}&jersey=${encodeURIComponent(player.jersey ?? "")}`;
+        const url = `/api/nba/player/${player.id}?teamId=${encodeURIComponent(teamId!)}&homeAway=${matchContext}&opponent=${encodeURIComponent(opponent || "")}&name=${encodeURIComponent(player.displayName)}&position=${encodeURIComponent(player.position)}&jersey=${encodeURIComponent(player.jersey ?? "")}&headshot=${encodeURIComponent(player.headshot ?? "")}`;
         const res = await fetch(url);
         if (!res.ok) { setError("Could not load player data."); return; }
         setNbaDrawerData(await res.json());

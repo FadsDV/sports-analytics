@@ -356,7 +356,7 @@ function NBAPlayerList({
     setDrawerData(null);
     setError(null);
     try {
-      const url = `/api/nba/player/${row.playerId}?teamId=${encodeURIComponent(teamId)}&homeAway=${matchContext}&opponent=${encodeURIComponent(opponent || "")}&name=${encodeURIComponent(row.player)}&position=${encodeURIComponent(row.position || "")}`;
+      const url = `/api/nba/player/${row.playerId}?teamId=${encodeURIComponent(teamId)}&homeAway=${matchContext}&opponent=${encodeURIComponent(opponent || "")}&name=${encodeURIComponent(row.player)}&position=${encodeURIComponent(row.position || "")}&headshot=${encodeURIComponent(row.headshot ?? "")}`;
       const res = await fetch(url);
       if (!res.ok) { setError("Could not load player data."); return; }
       setDrawerData(await res.json());
@@ -719,6 +719,32 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
   );
 }
 
+// ─── NBA analytics helpers ────────────────────────────────────────────────────
+
+function nbaStreak(form: string[], result: string): number {
+  let s = 0;
+  for (const r of form) { if (r === result) s++; else break; }
+  return s;
+}
+
+function parseGameScores(history: TeamHistoryGame[]): { teamPts: number; oppPts: number; total: number }[] {
+  return history
+    .filter(g => g.score && g.result)
+    .map(g => {
+      const parts = (g.score ?? "").split("-").map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+      if (parts.length < 2) return null;
+      // Score format: "teamScore-oppScore" (team perspective)
+      const [a, b] = parts;
+      return { teamPts: a!, oppPts: b!, total: a! + b! };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+}
+
+function avgNum(nums: number[]): number {
+  if (!nums.length) return 0;
+  return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 10) / 10;
+}
+
 function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistory, homeSquad, awaySquad, homeInjuries, awayInjuries, h2h }: {
   game: Game; insights: Insight[]; sofascore: SofascoreMatchData | null;
   homeHistory: TeamHistoryGame[]; awayHistory: TeamHistoryGame[];
@@ -735,8 +761,38 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
   const awayStarters = awaySquad.slice(0, 5);
   const allInjuries = [...homeInjuries, ...awayInjuries];
 
+  // Derived analytics
+  const homeWStreak = nbaStreak(homeTeam.form, "W");
+  const homeLStreak = nbaStreak(homeTeam.form, "L");
+  const awayWStreak = nbaStreak(awayTeam.form, "W");
+  const awayLStreak = nbaStreak(awayTeam.form, "L");
+
+  const homeScores = parseGameScores(homeHistory);
+  const awayScores = parseGameScores(awayHistory);
+  const homeAvgPts = avgNum(homeScores.map(s => s.teamPts));
+  const homeAvgOpp = avgNum(homeScores.map(s => s.oppPts));
+  const awayAvgPts = avgNum(awayScores.map(s => s.teamPts));
+  const awayAvgOpp = avgNum(awayScores.map(s => s.oppPts));
+
+  const homeAtHomeScores = parseGameScores(homeHistory.filter(g => g.homeAway === "home"));
+  const awayAwayScores   = parseGameScores(awayHistory.filter(g => g.homeAway === "away"));
+  const homeAtHomeWins   = homeHistory.filter(g => g.homeAway === "home" && g.result === "W").length;
+  const homeAtHomePlayed = homeHistory.filter(g => g.homeAway === "home").length;
+  const awayAwayWins     = awayHistory.filter(g => g.homeAway === "away" && g.result === "W").length;
+  const awayAwayPlayed   = awayHistory.filter(g => g.homeAway === "away").length;
+
+  // H2H over/under
+  const h2hScores = h2h.map(g => {
+    const parts = g.score.split("-").map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+    return parts.length >= 2 ? (parts[0]! + parts[1]!) : 0;
+  }).filter(t => t > 0);
+  const h2hAvgTotal  = avgNum(h2hScores);
+  const h2hOver220   = h2h.length > 0 ? Math.round((h2hScores.filter(t => t > 220).length / h2h.length) * 100) : null;
+  const h2hOver200   = h2h.length > 0 ? Math.round((h2hScores.filter(t => t > 200).length / h2h.length) * 100) : null;
+
   return (
     <div className="space-y-4">
+      {/* Top performers — finished games */}
       {!isUpcoming && hasPerformers && (
         <Section title="Top Performers">
           <div className="grid grid-cols-2 gap-4">
@@ -767,6 +823,7 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
         </Section>
       )}
 
+      {/* Projected starters — upcoming games */}
       {isUpcoming && (homeStarters.length > 0 || awayStarters.length > 0) && (
         <Section title="Projected Starters">
           <div className="grid grid-cols-2 gap-4">
@@ -789,67 +846,230 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
         </Section>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Section title="Form">
-          <div className="space-y-3">
-            {[{ t: homeTeam }, { t: awayTeam }].map(({ t }) => (
-              <div key={t.name}>
-                <div className="flex items-center gap-2 mb-1.5">
-                  {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                  <span className="text-xs text-[#6B7280]">{t.shortName}</span>
-                  <span className="text-[10px] text-[#374151] ml-auto">{t.record.wins}W {t.record.losses}L</span>
-                </div>
-                <FormPills form={t.form} />
-              </div>
-            ))}
-          </div>
-        </Section>
+      {/* Main analytics — 5-col layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        <div className="lg:col-span-3 space-y-4">
 
-        {insights.length > 0 && (
-          <Section title="Key Insights">
-            <ul className="space-y-2">
-              {insights.slice(0, 4).map((ins, i) => (
-                <li key={i} className="flex items-start gap-1.5 text-xs">
-                  <span className="text-[#3B82F6] shrink-0">{ins.icon}</span>
-                  <span className="text-[#E5E7EB] leading-snug">{ins.text}</span>
-                </li>
-              ))}
-            </ul>
-          </Section>
-        )}
-      </div>
-
-      {isUpcoming && h2h.length > 0 && (
-        <Section title="Head-to-Head">
-          <H2HPanel h2h={h2h} homeTeam={homeTeam.name} awayTeam={awayTeam.name} compact />
-        </Section>
-      )}
-
-      {allInjuries.length > 0 && (
-        <Section title="Injury Report">
-          <div className="grid grid-cols-2 gap-4">
-            {[{ t: homeTeam, inj: homeInjuries }, { t: awayTeam, inj: awayInjuries }].map(({ t, inj }) => (
-              <div key={t.name}>
-                <div className="text-[10px] text-[#4B5563] uppercase tracking-widest mb-1.5">{t.shortName}</div>
-                {inj.length === 0
-                  ? <p className="text-xs text-[#22C55E]">✓ None reported</p>
-                  : inj.slice(0, 5).map((p, i) => (
-                    <div key={i} className="flex items-center justify-between py-1 border-b border-white/[0.04] last:border-0 text-xs">
-                      <span className="text-[#D1D5DB] truncate">{p.playerName}</span>
-                      <span className="text-[#F59E0B] shrink-0 text-[10px] ml-2">{p.status}</span>
+          {/* Match Intelligence */}
+          <Section title="Match Intelligence">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-0">
+              {([
+                { t: homeTeam, history: homeHistory, wStreak: homeWStreak, lStreak: homeLStreak, avgPts: homeAvgPts, avgOpp: homeAvgOpp, homeWins: homeAtHomeWins, homePlayed: homeAtHomePlayed, role: "Home" },
+                { t: awayTeam, history: awayHistory, wStreak: awayWStreak, lStreak: awayLStreak, avgPts: awayAvgPts, avgOpp: awayAvgOpp, homeWins: awayAwayWins, homePlayed: awayAwayPlayed, role: "Away" },
+              ]).map(({ t, wStreak, lStreak, avgPts, avgOpp, homeWins, homePlayed, role }) => (
+                <div key={t.name}>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                    <span className="text-xs font-semibold text-white">{t.shortName}</span>
+                    <span className="text-[9px] text-[#6B7280] ml-1">{role}</span>
+                    {wStreak >= 3 && (
+                      <span className="ml-auto text-[9px] font-bold px-1 py-px rounded bg-[#22C55E]/10 text-[#22C55E]">{wStreak}W</span>
+                    )}
+                    {lStreak >= 3 && (
+                      <span className="ml-auto text-[9px] font-bold px-1 py-px rounded bg-[#EF4444]/10 text-[#EF4444]">{lStreak}L</span>
+                    )}
+                  </div>
+                  <div className="flex gap-1 mb-3">
+                    {t.form.map((r, i) => (
+                      <span key={i} className={`w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center ${
+                        r === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" : r === "L" ? "bg-[#EF4444]/20 text-[#EF4444]" : "bg-[#F59E0B]/20 text-[#F59E0B]"
+                      }`}>{r}</span>
+                    ))}
+                  </div>
+                  {[
+                    ["Season", `${t.record.wins}W ${t.record.losses}L`],
+                    avgPts > 0 ? ["Avg Scored", `${avgPts} pts`] : null,
+                    avgOpp > 0 ? ["Avg Allowed", `${avgOpp} pts`] : null,
+                    homePlayed > 0 ? [role === "Home" ? "Home Record" : "Away Record", `${homeWins}W ${homePlayed - homeWins}L`] : null,
+                  ].filter((x): x is [string, string] => x !== null).map(([label, value]) => (
+                    <div key={label} className="flex items-center justify-between py-1 border-b border-white/[0.03] last:border-0 text-xs">
+                      <span className="text-[#4B5563]">{label}</span>
+                      <span className="text-[#D1D5DB] font-medium tabular-nums">{value}</span>
                     </div>
                   ))}
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
+                </div>
+              ))}
+            </div>
+          </Section>
 
-      {game.teamStats && (
-        <Section title="Season Stats">
-          <ComparisonBars homeTeam={homeTeam} awayTeam={awayTeam} stats={game.teamStats} compact />
-        </Section>
-      )}
+          {/* H2H */}
+          {h2h.length > 0 && (
+            <Section title="Head-to-Head">
+              <H2HPanel h2h={h2h} homeTeam={homeTeam.name} awayTeam={awayTeam.name} compact />
+            </Section>
+          )}
+
+          {/* Recent Results */}
+          {(homeHistory.length > 0 || awayHistory.length > 0) && (
+            <Section title="Recent Results">
+              <div className="grid grid-cols-2 gap-3">
+                {[{ t: homeTeam, h: homeHistory }, { t: awayTeam, h: awayHistory }].map(({ t, h }) => (
+                  <div key={t.name}>
+                    <div className="text-[10px] uppercase tracking-widest text-[#374151] mb-1.5">{t.shortName}</div>
+                    {h.slice(0, 6).map(g => (
+                      <Link key={g.gameId} href={`/game/${g.gameId}`}
+                        className="flex items-center justify-between py-1.5 border-b border-white/[0.04] hover:bg-white/[0.03] px-1 rounded text-xs group">
+                        <span className="text-[#9CA3AF] truncate max-w-[45%]">{g.opponent.split(" ").pop()}</span>
+                        <span className={`font-semibold tabular-nums ${g.result === "W" ? "text-[#22C55E]" : g.result === "L" ? "text-[#EF4444]" : "text-[#F59E0B]"}`}>
+                          {g.score ?? "—"}
+                        </span>
+                      </Link>
+                    ))}
+                    {h.length === 0 && <p className="text-xs text-[#374151]">No data</p>}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* Home / Away Splits */}
+          {(homeAtHomePlayed > 0 || awayAwayPlayed > 0) && (
+            <Section title="Home / Away Splits">
+              <div className="grid grid-cols-2 gap-3">
+                {([
+                  { t: homeTeam, wins: homeAtHomeWins, played: homeAtHomePlayed, avgPts: avgNum(homeAtHomeScores.map(s => s.teamPts)), avgOpp: avgNum(homeAtHomeScores.map(s => s.oppPts)), label: "Home" },
+                  { t: awayTeam, wins: awayAwayWins,   played: awayAwayPlayed,   avgPts: avgNum(awayAwayScores.map(s => s.teamPts)),   avgOpp: avgNum(awayAwayScores.map(s => s.oppPts)),   label: "Away" },
+                ]).map(({ t, wins, played, avgPts: ap, avgOpp: ao, label }) => {
+                  const pct = played > 0 ? Math.round((wins / played) * 100) : 0;
+                  return (
+                    <div key={t.name} className="space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                        <span className="text-[10px] text-[#9CA3AF]">{t.shortName} {label}</span>
+                      </div>
+                      <div className="flex justify-between text-[10px] mb-0.5">
+                        <span className="text-[#4B5563]">{wins}W {played - wins}L</span>
+                        <span className="text-[#D1D5DB] tabular-nums font-medium">{pct}%</span>
+                      </div>
+                      <div className="h-[2px] bg-white/5 rounded-full">
+                        <div className={`h-full rounded-full ${pct >= 50 ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      {ap > 0 && (
+                        <div className="text-[10px] text-[#4B5563]">
+                          avg <span className="text-white">{ap}</span> pts scored · <span className="text-[#9CA3AF]">{ao}</span> allowed
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
+        </div>
+
+        <div className="lg:col-span-2 space-y-4">
+
+          {/* Over/Under Indicators */}
+          {h2hAvgTotal > 0 && (
+            <Section title="Scoring Indicators">
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs mb-2">
+                  <span className="text-[#6B7280]">H2H Avg Total</span>
+                  <span className="text-white font-bold tabular-nums">{h2hAvgTotal}</span>
+                </div>
+                {h2hOver220 !== null && (
+                  <div>
+                    <div className="flex justify-between text-[10px] mb-1">
+                      <span className="text-[#4B5563]">Over 220 pts</span>
+                      <span className={`font-bold ${h2hOver220 >= 60 ? "text-[#22C55E]" : h2hOver220 >= 40 ? "text-[#F59E0B]" : "text-[#EF4444]"}`}>{h2hOver220}%</span>
+                    </div>
+                    <div className="h-[2px] bg-white/5 rounded-full">
+                      <div className={`h-full rounded-full ${h2hOver220 >= 60 ? "bg-[#22C55E]" : h2hOver220 >= 40 ? "bg-[#F59E0B]" : "bg-[#EF4444]"}`} style={{ width: `${h2hOver220}%` }} />
+                    </div>
+                  </div>
+                )}
+                {h2hOver200 !== null && (
+                  <div>
+                    <div className="flex justify-between text-[10px] mb-1">
+                      <span className="text-[#4B5563]">Over 200 pts</span>
+                      <span className={`font-bold ${h2hOver200 >= 60 ? "text-[#22C55E]" : h2hOver200 >= 40 ? "bg-[#F59E0B]" : "text-[#EF4444]"}`}>{h2hOver200}%</span>
+                    </div>
+                    <div className="h-[2px] bg-white/5 rounded-full">
+                      <div className={`h-full rounded-full ${h2hOver200 >= 60 ? "bg-[#22C55E]" : h2hOver200 >= 40 ? "bg-[#F59E0B]" : "bg-[#EF4444]"}`} style={{ width: `${h2hOver200}%` }} />
+                    </div>
+                  </div>
+                )}
+                {homeAvgPts > 0 && awayAvgPts > 0 && (
+                  <div className="pt-2 border-t border-white/[0.04] text-[10px] text-[#4B5563]">
+                    Projected combined: <span className="text-white font-bold">{Math.round(homeAvgPts + awayAvgPts)}</span>
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
+
+          {/* Scoring Comparison */}
+          {(homeAvgPts > 0 || awayAvgPts > 0) && (
+            <Section title="Scoring Comparison">
+              {([
+                { key: "Avg Scored", hv: homeAvgPts, av: awayAvgPts },
+                { key: "Avg Allowed", hv: homeAvgOpp, av: awayAvgOpp },
+              ] as { key: string; hv: number; av: number }[]).filter(row => row.hv > 0 || row.av > 0).map(({ key, hv, av }) => {
+                const max = Math.max(hv, av, 1);
+                return (
+                  <div key={key} className="mb-2 last:mb-0">
+                    <div className="flex items-center justify-between text-[10px] mb-0.5">
+                      <span className="text-white font-medium tabular-nums w-8">{hv || "—"}</span>
+                      <span className="text-[#374151] uppercase text-[9px] tracking-wide flex-1 text-center">{key}</span>
+                      <span className="text-[#9CA3AF] tabular-nums w-8 text-right">{av || "—"}</span>
+                    </div>
+                    <div className="flex gap-0.5 h-[2px]">
+                      <div className="flex-1 bg-white/5 rounded-full overflow-hidden flex justify-end">
+                        <div className="h-full bg-[#3B82F6] rounded-full" style={{ width: `${(hv / max) * 100}%` }} />
+                      </div>
+                      <div className="flex-1 bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-[#9CA3AF] rounded-full" style={{ width: `${(av / max) * 100}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </Section>
+          )}
+
+          {/* Season Stats */}
+          {game.teamStats && (
+            <Section title="Season Stats">
+              <ComparisonBars homeTeam={homeTeam} awayTeam={awayTeam} stats={game.teamStats} compact />
+            </Section>
+          )}
+
+          {/* Injury Report */}
+          {allInjuries.length > 0 && (
+            <Section title="Injury Report">
+              <div className="space-y-3">
+                {[{ t: homeTeam, inj: homeInjuries }, { t: awayTeam, inj: awayInjuries }].map(({ t, inj }) => (
+                  <div key={t.name}>
+                    <div className="text-[10px] text-[#4B5563] uppercase tracking-widest mb-1.5">{t.shortName}</div>
+                    {inj.length === 0
+                      ? <p className="text-xs text-[#22C55E]">✓ None reported</p>
+                      : inj.slice(0, 4).map((p, i) => (
+                        <div key={i} className="flex items-center justify-between py-1 border-b border-white/[0.04] last:border-0 text-xs">
+                          <span className="text-[#D1D5DB] truncate">{p.playerName}</span>
+                          <span className="text-[#F59E0B] shrink-0 text-[10px] ml-2">{p.status}</span>
+                        </div>
+                      ))}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* Key Insights */}
+          {insights.length > 0 && (
+            <Section title="Key Insights">
+              <ul className="space-y-2">
+                {insights.slice(0, 5).map((ins, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-xs">
+                    <span className="text-[#3B82F6] shrink-0">{ins.icon}</span>
+                    <span className="text-[#E5E7EB] leading-snug">{ins.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

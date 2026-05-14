@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
@@ -112,17 +113,29 @@ export default function Sidebar() {
     <aside className="fixed left-0 top-0 h-full w-[60px] xl:w-[200px] bg-[#0a1628] border-r border-white/5 z-40 flex flex-col">
 
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-3 xl:px-5 py-4 border-b border-white/5">
-        {/* DH monogram mark — readable at 32px */}
-        <div className="w-8 h-8 rounded-lg bg-[#3B82F6] flex items-center justify-center shrink-0 relative overflow-hidden">
-          <svg width="22" height="18" viewBox="0 0 22 18" fill="none" aria-hidden="true">
-            {/* D stroke */}
-            <path d="M2 2h4c3.5 0 5.5 1.8 5.5 5s-2 5-5.5 5H2V2z" stroke="white" strokeWidth="2" strokeLinejoin="round" fill="none"/>
-            {/* H stroke */}
-            <path d="M13 2v12M20 2v12M13 8h7" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
+      <div className="flex items-center justify-center xl:justify-start px-1 xl:px-3 py-4 xl:py-5 border-b border-white/[0.07] shrink-0">
+        {/* Collapsed (60px sidebar): square icon crop */}
+        <div className="block xl:hidden relative w-[46px] h-[46px] shrink-0">
+          <Image
+            src="/logo.png"
+            alt="DegenHUB"
+            fill
+            sizes="46px"
+            className="object-contain"
+            priority
+          />
         </div>
-        <span className="font-bold text-white text-base tracking-tight hidden xl:block">DegenHUB</span>
+        {/* Expanded (200px sidebar): horizontal lockup */}
+        <div className="hidden xl:block relative h-[60px] w-[172px] shrink-0">
+          <Image
+            src="/logo.png"
+            alt="DegenHUB"
+            fill
+            sizes="172px"
+            className="object-contain object-left"
+            priority
+          />
+        </div>
       </div>
 
       {/* Main nav — wrapped in Suspense for useSearchParams */}

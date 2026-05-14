@@ -47,33 +47,53 @@ function Sparkline({ values, label }: { values: (number | null)[]; label: string
   if (valid.length === 0) return null;
   const avg       = valid.reduce((a, b) => a + b, 0) / valid.length;
   const threshold = avg * 0.15;
+  const last5     = valid.slice(-5);
+  const last5Avg  = last5.length > 0 ? last5.reduce((a, b) => a + b, 0) / last5.length : avg;
+  const trending  = last5Avg > avg + threshold ? "↑" : last5Avg < avg - threshold ? "↓" : "→";
+  const trendColor = last5Avg > avg + threshold ? "text-[#22C55E]" : last5Avg < avg - threshold ? "text-[#EF4444]" : "text-[#F59E0B]";
 
   return (
     <div className="bg-white/[0.02] rounded-xl p-4 border border-white/[0.04]">
-      <div className="flex justify-between items-center mb-3">
-        <span className="text-[9px] text-[#4B5563] uppercase tracking-widest font-bold">{label} Trend</span>
-        <span className="text-[10px] text-[#6B7280] font-mono">avg {fmt(avg)}</span>
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-[9px] text-[#4B5563] uppercase tracking-widest font-bold">{label}</span>
+        <div className="flex items-center gap-2">
+          <span className={`text-[11px] font-black ${trendColor}`}>{trending}</span>
+          <span className="text-[10px] text-[#6B7280] font-mono">avg {fmt(avg)}</span>
+        </div>
       </div>
-      <div className="flex items-end gap-[3px] h-12">
+      <div className="text-[9px] text-[#374151] mb-2">last {valid.length} games</div>
+      <div className="flex items-end gap-[3px] h-10">
         {values.map((v, i) => {
           let color = "bg-[#1F2937]";
           if (v != null) {
-            if (v >= avg + threshold)     color = "bg-[#22C55E]";
+            if (v >= avg + threshold)      color = "bg-[#22C55E]";
             else if (v <= avg - threshold) color = "bg-[#EF4444]";
             else                           color = "bg-[#F59E0B]";
           }
           const height = v != null
-            ? Math.max(15, Math.min(100, (v / (avg * 1.5 || 1)) * 100))
-            : 8;
+            ? Math.max(12, Math.min(100, (v / (avg * 1.5 || 1)) * 100))
+            : 6;
           return (
             <div
               key={i}
               className={`flex-1 rounded-t ${color} transition-all duration-300`}
               style={{ height: `${height}%` }}
-              title={v != null ? fmt(v, 0) : "-"}
+              title={v != null ? `${label}: ${fmt(v, 0)}` : "No data"}
             />
           );
         })}
+      </div>
+      {/* Legend */}
+      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.04]">
+        <span className="flex items-center gap-1 text-[9px] text-[#4B5563]">
+          <span className="w-2 h-2 rounded-sm bg-[#22C55E] inline-block" /> Above avg
+        </span>
+        <span className="flex items-center gap-1 text-[9px] text-[#4B5563]">
+          <span className="w-2 h-2 rounded-sm bg-[#F59E0B] inline-block" /> Near avg
+        </span>
+        <span className="flex items-center gap-1 text-[9px] text-[#4B5563]">
+          <span className="w-2 h-2 rounded-sm bg-[#EF4444] inline-block" /> Below avg
+        </span>
       </div>
     </div>
   );
@@ -111,8 +131,9 @@ function GameRow({ game }: { game: NBAPlayerGame }) {
       <td className="py-2 px-3 text-[#6B7280] whitespace-nowrap tabular-nums text-[11px]">
         {game.date.slice(5).replace("-", "/")}
       </td>
-      <td className="py-2 pr-3 text-[#9CA3AF] truncate max-w-[110px] text-[11px] font-medium">
-        {game.homeAway === "home" ? "" : "@"}{game.opponent.split(" ").pop()}
+      <td className="py-2 pr-3 text-[11px] font-medium whitespace-nowrap">
+        <span className="text-[#4B5563] mr-0.5">{game.homeAway === "away" ? "@" : "vs"}</span>
+        <span className="text-[#9CA3AF]">{game.opponent.split(" ").slice(-1)[0]}</span>
       </td>
       <td className="py-2 pr-3">
         <div className="flex items-center gap-1.5">
@@ -167,26 +188,29 @@ function MonthGroup({ group }: { group: NBAMonthGroup }) {
   const style = SEASON_TYPE_STYLE[group.seasonType ?? "regular"] ?? SEASON_TYPE_STYLE.regular;
 
   return (
-    <div className="mb-4">
+    <div className="mb-5">
       {/* Group header */}
-      <div className={`flex items-center gap-3 px-3 py-2 rounded-t-xl border-b ${style} border`}>
+      <div className={`flex items-center gap-3 px-3 py-2.5 rounded-t-xl border-b ${style} border`}>
         <span className="text-[10px] font-black uppercase tracking-widest">{group.label}</span>
-        <span className="text-[10px] font-mono text-current/60">{group.gamesCount}G</span>
-        <div className="ml-auto flex gap-4 text-[10px] font-mono opacity-70">
-          <span>{fmt(group.avgPoints, 1)} PTS</span>
-          <span>{fmt(group.avgRebounds, 1)} REB</span>
-          <span>{fmt(group.avgAssists, 1)} AST</span>
+        <span className="text-[10px] font-mono opacity-60">{group.gamesCount}G</span>
+        <div className="ml-auto flex gap-4 text-[10px] font-mono">
+          <span className="text-white font-bold">{fmt(group.avgPoints, 1)}</span>
+          <span className="text-[#6B7280]">PTS</span>
+          <span className="text-[#9CA3AF]">{fmt(group.avgRebounds, 1)}</span>
+          <span className="text-[#6B7280]">REB</span>
+          <span className="text-[#9CA3AF]">{fmt(group.avgAssists, 1)}</span>
+          <span className="text-[#6B7280]">AST</span>
         </div>
       </div>
 
       {/* Games table */}
       <div className="overflow-x-auto bg-white/[0.01] rounded-b-xl border border-t-0 border-white/[0.05]">
-        <table className="w-full text-left border-collapse min-w-[700px]">
-          <thead>
-            <tr className="text-[9px] text-[#374151] uppercase tracking-widest border-b border-white/[0.06] bg-white/[0.015]">
-              <th className="py-2 px-3">Date</th>
-              <th className="py-2 pr-3">Opp</th>
-              <th className="py-2 pr-3">Result</th>
+        <table className="w-full text-left border-collapse min-w-[640px]">
+          <thead className="sticky top-0 z-10">
+            <tr className="text-[9px] text-[#374151] uppercase tracking-widest border-b border-white/[0.06] bg-[#0d1420]">
+              <th className="py-2 px-3 whitespace-nowrap">Date</th>
+              <th className="py-2 pr-3 whitespace-nowrap">Opponent</th>
+              <th className="py-2 pr-3 whitespace-nowrap">Result</th>
               <th className="py-2 pr-3 text-center">PTS</th>
               <th className="py-2 pr-3 text-center">REB</th>
               <th className="py-2 pr-3 text-center">AST</th>
