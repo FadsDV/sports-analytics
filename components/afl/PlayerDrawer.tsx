@@ -4,7 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import type { AFLPlayerAnalyticsResult } from "@/lib/sports/afl/players/types";
 import PlayerProfileContent from "./PlayerProfileContent";
-import { computeReliability, tierColors, tierLabel } from "@/utils/statAnalyzer";
+import { computeReliability as computeRelNew, AFL_CONFIG } from "@/lib/sports/reliability/engine";
+import { getConfidenceTier, CONFIDENCE_LABEL, CONFIDENCE_COLORS } from "@/lib/sports/reliability/labels";
 
 interface PlayerDrawerProps {
   data: AFLPlayerAnalyticsResult;
@@ -21,98 +22,96 @@ function BetChecker({ data }: { data: AFLPlayerAnalyticsResult }) {
   const { last5Context, seasonAvg } = data;
   if (!last5Context.length || !seasonAvg) return null;
 
-  const games = last5Context.map(g => ({
-    value: g.disposals ?? 0,
-    homeAway: g.homeAway,
-  }));
+  // ── Use the new reliability engine ───────────────────────────────────────
+  const dispVals = last5Context.map(g => g.disposals ?? 0);
+  const goalVals = last5Context.map(g => g.goals ?? 0);
 
-  const dispAvg = Math.round(seasonAvg.disposals);
-  const goalAvg = seasonAvg.goals;
-  const dispRel = computeReliability(games, dispAvg);
-
-  const goalGames = last5Context.map(g => ({ value: g.goals ?? 0, homeAway: g.homeAway }));
+  const dispAvg      = Math.round(seasonAvg.disposals);
+  const goalAvg      = seasonAvg.goals;
   const goalThreshold = goalAvg >= 1 ? Math.max(1, Math.round(goalAvg)) : 1;
-  const goalRel = computeReliability(goalGames, goalThreshold);
 
-  const trendIcon = (t: "up" | "flat" | "down") =>
-    t === "up" ? "↑" : t === "down" ? "↓" : "→";
+  // Threshold set comfortably below avg (same approach as Kitchen Safe)
+  const dispThreshold = Math.max(1, Math.round(dispAvg * 0.70));
+  const dispHitRate   = dispVals.filter(v => v >= dispThreshold).length / Math.max(1, dispVals.length);
+  const goalHitRate   = goalVals.filter(v => v >= goalThreshold).length / Math.max(1, goalVals.length);
 
-  const dc = tierColors(dispRel.tier);
-  const gc = tierColors(goalRel.tier);
+  const dispBreakdown = computeRelNew({ vals: dispVals, threshold: dispThreshold, config: AFL_CONFIG });
+  const goalBreakdown = computeRelNew({ vals: goalVals, threshold: goalThreshold, config: AFL_CONFIG });
+
+  const dispTier = getConfidenceTier(dispBreakdown.finalReliability);
+  const goalTier = getConfidenceTier(goalBreakdown.finalReliability);
+  const dc = CONFIDENCE_COLORS[dispTier];
+  const gc = CONFIDENCE_COLORS[goalTier];
+
+  // Trend: compare last 2 vs previous 2
+  function trendOf(vals: number[]): "up" | "flat" | "down" {
+    if (vals.length < 4) return "flat";
+    const recent = (vals[vals.length - 1]! + vals[vals.length - 2]!) / 2;
+    const prior  = (vals[vals.length - 3]! + vals[vals.length - 4]!) / 2;
+    return recent > prior * 1.08 ? "up" : recent < prior * 0.92 ? "down" : "flat";
+  }
+  const dispTrend = trendOf(dispVals);
+  const goalTrend = trendOf(goalVals);
+  const trendIcon = (t: "up" | "flat" | "down") => t === "up" ? "↑" : t === "down" ? "↓" : "→";
 
   return (
     <div className="px-6 py-4 border-b border-white/5 bg-[#0d1421]">
       <div className="text-[9px] font-black uppercase tracking-[0.15em] text-[#374151] mb-3">
-        Bet Checker · Last {dispRel.gamesUsed} Games
+        Bet Checker · Last {dispVals.length} Games
       </div>
       <div className="grid grid-cols-2 gap-3">
-        {/* Disposals reliability */}
+        {/* Disposals */}
         <div className={`rounded-xl p-3 border ${dc.border} ${dc.bg}`}>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] text-[#6B7280] font-medium">Disposals ≥{dispAvg}</span>
+            <span className="text-[10px] text-[#6B7280] font-medium">Disposals ≥{dispThreshold}</span>
             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${dc.bg} ${dc.text}`}>
-              {tierLabel(dispRel.tier)}
+              {CONFIDENCE_LABEL[dispTier]}
             </span>
           </div>
           <div className="flex items-baseline gap-1.5">
             <span className={`text-2xl font-black tabular-nums ${dc.text}`}>
-              {Math.round(dispRel.hitRate * 100)}%
+              {Math.round(dispHitRate * 100)}%
             </span>
             <span className="text-[10px] text-[#6B7280]">hit rate</span>
           </div>
-          <div className="flex items-center gap-2 mt-1.5 text-[9px] text-[#4B5563]">
-            <span>{dispRel.hitsInWindow}/{dispRel.gamesUsed} games</span>
-            <span>·</span>
-            <span className={dispRel.trend === "up" ? "text-[#22C55E]" : dispRel.trend === "down" ? "text-[#EF4444]" : "text-[#9CA3AF]"}>
-              {trendIcon(dispRel.trend)} trend
-            </span>
-            <span>·</span>
-            <span>avg {dispRel.avg.toFixed(1)}</span>
+          <div className="h-[3px] bg-white/5 rounded-full overflow-hidden mt-2 mb-1.5">
+            <div className={`h-full rounded-full ${dc.bar}`}
+              style={{ width: `${Math.round(dispBreakdown.finalReliability * 100)}%` }} />
           </div>
-          {Math.abs(dispRel.homeEdge) > 1.5 && (
-            <div className="mt-1.5 text-[9px] text-[#F59E0B]">
-              {dispRel.homeEdge > 0 ? "↑ Better at home" : "↑ Better away"}
-              {" "}(Δ{Math.abs(dispRel.homeEdge).toFixed(1)})
-            </div>
-          )}
+          <div className="flex items-center gap-2 text-[9px] text-[#4B5563]">
+            <span>avg {seasonAvg.disposals.toFixed(1)}</span>
+            <span>·</span>
+            <span className={dispTrend === "up" ? "text-[#22C55E]" : dispTrend === "down" ? "text-[#EF4444]" : "text-[#9CA3AF]"}>
+              {trendIcon(dispTrend)} trend
+            </span>
+          </div>
         </div>
 
-        {/* Goals reliability */}
+        {/* Goals */}
         <div className={`rounded-xl p-3 border ${gc.border} ${gc.bg}`}>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[10px] text-[#6B7280] font-medium">Goals ≥{goalThreshold}</span>
             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${gc.bg} ${gc.text}`}>
-              {tierLabel(goalRel.tier)}
+              {CONFIDENCE_LABEL[goalTier]}
             </span>
           </div>
           <div className="flex items-baseline gap-1.5">
             <span className={`text-2xl font-black tabular-nums ${gc.text}`}>
-              {Math.round(goalRel.hitRate * 100)}%
+              {Math.round(goalHitRate * 100)}%
             </span>
             <span className="text-[10px] text-[#6B7280]">hit rate</span>
           </div>
-          <div className="flex items-center gap-2 mt-1.5 text-[9px] text-[#4B5563]">
-            <span>{goalRel.hitsInWindow}/{goalRel.gamesUsed} games</span>
-            <span>·</span>
-            <span className={goalRel.trend === "up" ? "text-[#22C55E]" : goalRel.trend === "down" ? "text-[#EF4444]" : "text-[#9CA3AF]"}>
-              {trendIcon(goalRel.trend)} trend
-            </span>
-            <span>·</span>
-            <span>avg {goalRel.avg.toFixed(1)}</span>
+          <div className="h-[3px] bg-white/5 rounded-full overflow-hidden mt-2 mb-1.5">
+            <div className={`h-full rounded-full ${gc.bar}`}
+              style={{ width: `${Math.round(goalBreakdown.finalReliability * 100)}%` }} />
           </div>
-        </div>
-      </div>
-      {/* Confidence bar */}
-      <div className="mt-3">
-        <div className="flex justify-between text-[9px] text-[#374151] mb-1">
-          <span>Disposals confidence</span>
-          <span className={dc.text}>{Math.round(dispRel.confidence * 100)}%</span>
-        </div>
-        <div className="h-[3px] bg-white/5 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all ${
-            dispRel.tier === "strong" ? "bg-[#22C55E]" :
-            dispRel.tier === "moderate" ? "bg-[#F59E0B]" : "bg-[#EF4444]"
-          }`} style={{ width: `${Math.round(dispRel.confidence * 100)}%` }} />
+          <div className="flex items-center gap-2 text-[9px] text-[#4B5563]">
+            <span>avg {goalAvg.toFixed(1)}</span>
+            <span>·</span>
+            <span className={goalTrend === "up" ? "text-[#22C55E]" : goalTrend === "down" ? "text-[#EF4444]" : "text-[#9CA3AF]"}>
+              {trendIcon(goalTrend)} trend
+            </span>
+          </div>
         </div>
       </div>
     </div>

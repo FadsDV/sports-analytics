@@ -1,19 +1,27 @@
 /**
  * AFL Kitchen — 6-slip bet slip generator.
  *
- * Slip architecture (redesigned):
+ * Slip architecture:
  *
- *   safe        — top 3 legs by composite, each ≥ 6.8/10. Combined ~30-50%.
- *   doable      — next 3 legs, each ≥ 5.5/10. Mixed reliable + slightly harder.
- *   goalscorers — goals only, max 4 legs, each ≥ 3.2/10.
- *   disposals   — disposals only, max 5 legs, each ≥ 4.2/10.
- *   ballsy      — max 3 legs. On-form players (last 3g > avg × 1.10) pushed to
- *                 higher thresholds. Regular bold picks as fallback.
- *   value       — single legs, odds > 1.60, top 10 by (reliability × odds).
+ *   safe        — top 3 legs. Threshold set well below average (≤75% of avg).
+ *                 Each leg hits 80%+ of games. Goal: near-certain combined bet.
  *
- * Fewer legs per slip = honest combined probability.
- * Same player max 2× per slip (different stat or threshold).
- * Min games: 5.
+ *   doable      — next 3 legs. Threshold ~80-90% of avg. Hit rate 68-80%.
+ *                 Reliable but slightly harder than Safe.
+ *
+ *   goalscorers — goals only, max 4 legs. Same comfortable-below-avg approach.
+ *
+ *   disposals   — disposals only, max 5 legs. Same approach.
+ *
+ *   ballsy      — max 3 legs. On-form players (last 3g ≥ avg × 1.10) pushed
+ *                 ABOVE recent form (threshold > recentAvg). Regular bold picks
+ *                 at/above season avg as fallback.
+ *
+ *   value       — bookmaker line is BELOW player average. Hit rate at the actual
+ *                 book line, not a computed threshold. Odds > 1.60.
+ *                 Sorted by edge (avg − line) × odds.
+ *
+ * Same player max 2× per slip (different stat). Min 5 games.
  */
 
 import type { AFLGamePlayerStats } from "@/lib/sports/espn";
@@ -47,6 +55,8 @@ export interface KitchenLeg {
   /** Player's last 3 games are trending above their season average */
   isOnForm:      boolean;
   prop?:         { price: number; line: number; bookmaker: string };
+  /** Value only: how far the book line sits below the player's average */
+  edge?:         number;
 }
 
 export interface KitchenSlip {
@@ -78,6 +88,11 @@ function calcHitRate(vals: number[], thr: number): number {
   return vals.length ? vals.filter(v => v >= thr).length / vals.length : 0;
 }
 
+/**
+ * Find the HIGHEST threshold within [minFraction×avg, maxFraction×avg] that
+ * still achieves a hit rate between minHR and maxHR.
+ * "Highest threshold that still passes" = hardest beatable line in the zone.
+ */
 function findBestThreshold(
   vals:        number[],
   avg:         number,
@@ -85,17 +100,21 @@ function findBestThreshold(
   minHR:       number,
   maxHR:       number,
   minFraction: number,
-  maxFraction: number = 1.8,
+  maxFraction: number,
 ): { threshold: number; hitRate: number } | null {
   const step   = STEP[stat];
   const rawMin = avg * minFraction;
+  const rawMax = avg * maxFraction;
   const minThr = stat === "G"
     ? Math.max(step, Math.round(rawMin * 2) / 2)
     : Math.max(step, Math.round(rawMin));
+  const maxThr = stat === "G"
+    ? Math.round(rawMax * 2) / 2
+    : Math.round(rawMax);
 
   let best: { threshold: number; hitRate: number } | null = null;
 
-  for (let t = minThr; t <= avg * maxFraction + step; t += step) {
+  for (let t = minThr; t <= maxThr + step; t += step) {
     const thr = stat === "G" ? Math.round(t * 2) / 2 : Math.round(t);
     const hr  = calcHitRate(vals, thr);
     if (hr >= minHR && hr <= maxHR) {
@@ -171,18 +190,20 @@ function buildProfiles(
   return profiles;
 }
 
-// ─── Leg assembler ────────────────────────────────────────────────────────────
+// ─── Leg assembler (threshold-based slips) ────────────────────────────────────
 
 interface TierConfig {
-  minFlatHR:       number;
-  maxFlatHR:       number;
-  minFraction:     number;
-  maxFraction?:    number;
-  minReliability:  number;
-  maxReliability:  number;
-  maxLegs:         number;
-  statsFilter?:    AFLPickStat[];
-  formBonus:       number;
+  minFlatHR:      number;
+  maxFlatHR:      number;
+  minFraction:    number;   // threshold lower bound as fraction of avg
+  maxFraction:    number;   // threshold upper bound as fraction of avg
+  minReliability: number;
+  maxReliability: number;
+  maxLegs:        number;
+  statsFilter?:   AFLPickStat[];
+  formBonus:      number;
+  /** If true, use recentAvg instead of avg as the base for fractions */
+  useRecentBase?: boolean;
 }
 
 function buildLegs(
@@ -203,8 +224,10 @@ function buildLegs(
   for (const p of profiles) {
     if (tier.statsFilter && !tier.statsFilter.includes(p.stat)) continue;
 
+    const base = tier.useRecentBase && p.recentAvg > 0 ? p.recentAvg : p.avg;
+
     const found = findBestThreshold(
-      p.vals, p.avg, p.stat,
+      p.vals, base, p.stat,
       tier.minFlatHR, tier.maxFlatHR,
       tier.minFraction, tier.maxFraction,
     );
@@ -265,6 +288,69 @@ function buildLegs(
   return legs;
 }
 
+// ─── Value picks (book line vs player average) ────────────────────────────────
+
+function buildValueLegs(
+  profiles: Profile[],
+  propOdds: Map<string, { price: number; line: number; bookmaker: string }>,
+): KitchenLeg[] {
+  type ValueCandidate = { leg: KitchenLeg; score: number };
+  const candidates: ValueCandidate[] = [];
+  const seen = new Set<string>();
+
+  for (const p of profiles) {
+    const key  = `${p.name}|${p.stat}`;
+    if (seen.has(key)) continue;
+
+    const prop = propOdds.get(key);
+    // Need a prop with price > 1.60 AND book line below player average
+    if (!prop || prop.price < 1.60) continue;
+    if (prop.line >= p.avg) continue;  // No edge — book line is at or above avg
+
+    // Hit rate at the actual book line (not a computed threshold)
+    const hitRate = calcHitRate(p.vals, prop.line);
+    if (hitRate < 0.65) continue;  // Player doesn't clear this line often enough
+
+    const breakdown = computeReliability({
+      vals:      p.vals,
+      threshold: prop.line,
+      config:    AFL_CONFIG,
+    });
+    if (breakdown.finalReliability === 0) continue;
+
+    seen.add(key);
+
+    // Edge = how far below average the book line sits (bigger = better value)
+    const edge = p.avg - prop.line;
+    // Score = edge as fraction of avg × odds × reliability
+    const score = (edge / p.avg) * prop.price * breakdown.finalReliability;
+
+    candidates.push({
+      leg: {
+        player:        p.name,
+        side:          p.side,
+        teamAbbr:      p.teamAbbr,
+        stat:          p.stat,
+        statLabel:     STAT_LABELS[p.stat],
+        threshold:     prop.line,   // show the actual book line as the threshold
+        hitRate,
+        reliability:   breakdown.finalReliability,
+        breakdown,
+        avgStat:       Math.round(p.avg * 10) / 10,
+        gamesAnalyzed: p.gamesAnalyzed,
+        isBounceBack:  p.isBounceBack,
+        isOnForm:      p.isOnForm,
+        prop,
+        edge:          Math.round(edge * 10) / 10,
+      },
+      score,
+    });
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates.slice(0, 10).map(c => c.leg);
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function computeAFLKitchen(params: {
@@ -282,59 +368,69 @@ export function computeAFLKitchen(params: {
   const awayProfiles = buildProfiles(awayGames, awayTeamId, "away", awayAbbr);
   const all = [...homeProfiles, ...awayProfiles];
 
-  // ── 1. Safe — top 3 by composite, each ≥ 6.8/10 ─────────────────────────
-  // Max 3 legs so combined stays ~30–50% (honest "safe" parlay).
+  // ── 1. Safe ───────────────────────────────────────────────────────────────
+  // Threshold set well below avg (50–75%). Must hit 80%+ of games.
+  // Each leg should be near-certain. Goal: ~2 odds combined across 3 legs.
   const safeLegs = buildLegs(all, propOdds, {
-    minFlatHR: 0.65, maxFlatHR: 1.00, minFraction: 0.50,
-    minReliability: 0.68, maxReliability: 1.00,
+    minFlatHR: 0.80, maxFlatHR: 1.00,
+    minFraction: 0.50, maxFraction: 0.75,
+    minReliability: 0.60, maxReliability: 1.00,
     maxLegs: 3, formBonus: 0,
   });
 
-  // ── 2. Doable — next 3 legs, each 5.5–8.0/10 ─────────────────────────────
+  // ── 2. Doable ─────────────────────────────────────────────────────────────
+  // Threshold 75–90% of avg. Hit rate 68–80%. Reliable but a step harder.
   const safeKeys   = new Set(safeLegs.map(l => `${l.player}|${l.stat}|${l.threshold}`));
   const doableRaw  = buildLegs(all, propOdds, {
-    minFlatHR: 0.60, maxFlatHR: 1.00, minFraction: 0.60,
-    minReliability: 0.55, maxReliability: 1.00,
+    minFlatHR: 0.68, maxFlatHR: 1.00,
+    minFraction: 0.75, maxFraction: 0.92,
+    minReliability: 0.45, maxReliability: 1.00,
     maxLegs: 5, formBonus: 0,
   });
   const doableLegs = doableRaw
     .filter(l => !safeKeys.has(`${l.player}|${l.stat}|${l.threshold}`))
     .slice(0, 3);
 
-  // ── 3. Goal Scorers — goals only, max 4, each ≥ 3.2/10 ──────────────────
+  // ── 3. Goal Scorers ───────────────────────────────────────────────────────
+  // Goals only. Same comfortable-below-avg approach.
   const goalLegs = buildLegs(all, propOdds, {
-    minFlatHR: 0.50, maxFlatHR: 1.00, minFraction: 0.40,
+    minFlatHR: 0.65, maxFlatHR: 1.00,
+    minFraction: 0.40, maxFraction: 0.80,
     minReliability: 0.32, maxReliability: 1.00,
     maxLegs: 4, statsFilter: ["G"], formBonus: 0,
   });
 
-  // ── 4. Disposals — max 5, each ≥ 4.2/10 ─────────────────────────────────
+  // ── 4. Disposals ──────────────────────────────────────────────────────────
+  // Disposals only. Below-avg threshold, high hit rate.
   const disposalLegs = buildLegs(all, propOdds, {
-    minFlatHR: 0.60, maxFlatHR: 1.00, minFraction: 0.55,
+    minFlatHR: 0.72, maxFlatHR: 1.00,
+    minFraction: 0.55, maxFraction: 0.85,
     minReliability: 0.42, maxReliability: 1.00,
     maxLegs: 5, statsFilter: ["D"], formBonus: 0,
   });
 
-  // ── 5. Ballsy — max 3 legs ────────────────────────────────────────────────
-  // Pass A: on-form players (last 3g ≥ avg × 1.10) pushed to higher threshold
-  //         (minFraction 1.00 = starts at 100% of avg → hard threshold).
-  // Pass B: regular bold picks (any player, 35–62% flat HR, hard threshold).
-  // Merge, dedup, take top 3 by reliability. Combined ~5–15% is honest.
+  // ── 5. Ballsy ─────────────────────────────────────────────────────────────
+  // Pass A: on-form players (last 3g ≥ avg × 1.10).
+  //   Threshold starts ABOVE recent avg (110% of recentAvg).
+  //   e.g. averaging 18 in last 3 → suggest 20+.
+  // Pass B: regular bold picks — threshold at/above season avg.
   const onFormProfiles = all.filter(p => p.isOnForm);
   const ballsyOnForm   = buildLegs(onFormProfiles, propOdds, {
-    minFlatHR: 0.30, maxFlatHR: 0.65, minFraction: 1.00, maxFraction: 2.0,
-    minReliability: 0.15, maxReliability: 0.58,
-    maxLegs: 5, formBonus: 0.05,
+    minFlatHR: 0.25, maxFlatHR: 0.60,
+    minFraction: 1.10, maxFraction: 1.60,
+    minReliability: 0.10, maxReliability: 0.55,
+    maxLegs: 5, formBonus: 0.05, useRecentBase: true,
   });
 
   const ballsyRegular = buildLegs(all, propOdds, {
-    minFlatHR: 0.35, maxFlatHR: 0.62, minFraction: 0.85, maxFraction: 1.8,
-    minReliability: 0.15, maxReliability: 0.55,
+    minFlatHR: 0.30, maxFlatHR: 0.60,
+    minFraction: 0.95, maxFraction: 1.50,
+    minReliability: 0.10, maxReliability: 0.52,
     maxLegs: 5, formBonus: 0,
   });
 
-  // Merge: on-form legs first (they get priority), then fill with regular
-  const ballsySeen = new Set<string>();
+  // Merge: on-form first (priority), fill with regular, max 3
+  const ballsySeen    = new Set<string>();
   const ballsyMerged: KitchenLeg[] = [];
   for (const leg of [...ballsyOnForm, ...ballsyRegular]) {
     const key = `${leg.player}|${leg.stat}|${leg.threshold}`;
@@ -343,63 +439,18 @@ export function computeAFLKitchen(params: {
     ballsyMerged.push(leg);
     if (ballsyMerged.length >= 3) break;
   }
-  const ballsyLegs = ballsyMerged;
 
-  // ── 6. Value Picks — single legs, odds > 1.60, top 10 ───────────────────
-  const valueCandidates: Array<{ leg: KitchenLeg; score: number }> = [];
-  const valueSeen = new Set<string>();
-
-  for (const p of all) {
-    const key = `${p.name}|${p.stat}`;
-    if (valueSeen.has(key)) continue;
-
-    const found = findBestThreshold(p.vals, p.avg, p.stat, 0.68, 1.0, 0.58);
-    if (!found) continue;
-
-    const prop = propOdds.get(`${p.name}|${p.stat}`);
-    if (!prop || prop.price < 1.60) continue;
-
-    const breakdown = computeReliability({
-      vals:      p.vals,
-      threshold: found.threshold,
-      config:    AFL_CONFIG,
-    });
-
-    if (breakdown.finalReliability === 0) continue;
-
-    valueSeen.add(key);
-    const score = breakdown.finalReliability * prop.price;
-
-    valueCandidates.push({
-      leg: {
-        player:        p.name,
-        side:          p.side,
-        teamAbbr:      p.teamAbbr,
-        stat:          p.stat,
-        statLabel:     STAT_LABELS[p.stat],
-        threshold:     found.threshold,
-        hitRate:       found.hitRate,
-        reliability:   breakdown.finalReliability,
-        breakdown,
-        avgStat:       Math.round(p.avg * 10) / 10,
-        gamesAnalyzed: p.gamesAnalyzed,
-        isBounceBack:  p.isBounceBack,
-        isOnForm:      p.isOnForm,
-        prop,
-      },
-      score,
-    });
-  }
-
-  valueCandidates.sort((a, b) => b.score - a.score);
-  const valueLegs = valueCandidates.slice(0, 10).map(c => c.leg);
+  // ── 6. Value Picks ────────────────────────────────────────────────────────
+  // Book line < player average. Evaluates hit rate at the actual book line.
+  // Sorted by (edge / avg) × odds × reliability.
+  const valueLegs = buildValueLegs(all, propOdds);
 
   return [
     { type: "safe",        legs: safeLegs },
     { type: "doable",      legs: doableLegs },
     { type: "goalscorers", legs: goalLegs },
     { type: "disposals",   legs: disposalLegs },
-    { type: "ballsy",      legs: ballsyLegs },
+    { type: "ballsy",      legs: ballsyMerged },
     { type: "value",       legs: valueLegs },
   ];
 }
