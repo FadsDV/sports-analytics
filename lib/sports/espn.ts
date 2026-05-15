@@ -323,6 +323,8 @@ export interface NBAGamePlayerStats {
   FG3M:   number;
   STL:    number;
   BLK:    number;
+  /** Minutes played. Parsed from ESPN "MM:SS" format. 0 if not available. */
+  MIN:    number;
 }
 
 /** Fetches raw player stats from a completed NBA game's box score. Cached 24h. */
@@ -353,6 +355,7 @@ export async function fetchNBABoxScoreForPicks(eventId: string): Promise<NBAGame
         const idx3PT  = labels.indexOf("3PT");
         const idxSTL  = labels.indexOf("STL");
         const idxBLK  = labels.indexOf("BLK");
+        const idxMIN  = labels.indexOf("MIN");
 
         for (const a of group.athletes ?? []) {
           if (a.didNotPlay || a.active === false) continue;
@@ -370,6 +373,18 @@ export async function fetchNBABoxScoreForPicks(eventId: string): Promise<NBAGame
             return Number(v) || 0;
           };
 
+          /** Parse "MM:SS" minutes string → decimal minutes */
+          const parseMin = (idx: number): number => {
+            if (idx < 0) return 0;
+            const v = a.stats?.[idx];
+            if (v == null) return 0;
+            if (typeof v === "string" && v.includes(":")) {
+              const [mm, ss] = v.split(":").map(Number);
+              return (mm ?? 0) + (ss ?? 0) / 60;
+            }
+            return Number(v) || 0;
+          };
+
           // Skip if already added (starters / bench groups overlap)
           if (results.find(r => r.name === name && r.teamId === teamId)) continue;
 
@@ -381,6 +396,7 @@ export async function fetchNBABoxScoreForPicks(eventId: string): Promise<NBAGame
             FG3M: getN(idx3PT),
             STL:  getN(idxSTL),
             BLK:  getN(idxBLK),
+            MIN:  parseMin(idxMIN),
           });
         }
       }

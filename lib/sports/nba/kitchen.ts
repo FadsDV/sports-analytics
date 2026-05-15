@@ -1,55 +1,56 @@
 /**
- * AFL Kitchen — 6-slip bet slip generator.
+ * NBA Kitchen — 6-slip bet slip generator.
  *
  * Slip architecture:
  *
  *   safe        — top 3 legs. Threshold set well below average (≤75% of avg).
  *                 Each leg hits 80%+ of games. Goal: near-certain combined bet.
  *
- *   doable      — next 3 legs. Threshold ~80-90% of avg. Hit rate 68-80%.
- *                 Reliable but slightly harder than Safe.
+ *   doable      — next 3 legs. Threshold ~75-92% of avg. Hit rate 68-80%.
+ *                 Reliable but a step harder than Safe.
  *
- *   goalscorers — goals only, max 4 legs. Same comfortable-below-avg approach.
+ *   scorers     — PTS only, max 4 legs. Comfortable below-avg threshold.
  *
- *   disposals   — disposals only, max 5 legs. Same approach.
+ *   playmakers  — REB + AST only, max 4 legs. Same approach.
  *
  *   ballsy      — max 3 legs. On-form players (last 3g ≥ avg × 1.10) pushed
  *                 ABOVE recent form (threshold > recentAvg). Regular bold picks
  *                 at/above season avg as fallback.
  *
- *   value       — bookmaker line is BELOW player average. Hit rate at the actual
- *                 book line, not a computed threshold. Odds > 1.60.
- *                 Sorted by edge (avg − line) × odds.
+ *   value       — bookmaker line is BELOW player average. Hit rate evaluated at
+ *                 the actual book line. Odds > 1.60.
+ *                 Sorted by edge (avg − line) × odds × reliability.
  *
  * Same player max 2× per slip (different stat). Min 5 games.
  */
 
-import type { AFLGamePlayerStats } from "@/lib/sports/espn";
-import type { AFLPickStat } from "./picks";
-import { computeReliability, AFL_CONFIG } from "@/lib/sports/reliability/engine";
+import type { NBAGamePlayerStats } from "@/lib/sports/espn";
+import type { NBAPickStat } from "./picks";
+import { computeReliability, NBA_CONFIG } from "@/lib/sports/reliability/engine";
 import type { ReliabilityBreakdown } from "@/lib/sports/reliability/types";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
-export type KitchenSlipType =
+export type NBAKitchenSlipType =
   | "safe"
   | "doable"
-  | "goalscorers"
-  | "disposals"
+  | "scorers"
+  | "playmakers"
   | "ballsy"
   | "value";
 
-export interface KitchenLeg {
+export interface NBAKitchenLeg {
   player:        string;
   side:          "home" | "away";
   teamAbbr:      string;
-  stat:          AFLPickStat;
+  stat:          NBAPickStat;
   statLabel:     string;
   threshold:     number;
   hitRate:       number;
   reliability:   number;
   breakdown:     ReliabilityBreakdown;
   avgStat:       number;
+  avgMinutes:    number;
   gamesAnalyzed: number;
   isBounceBack:  boolean;
   /** Player's last 3 games are trending above their season average */
@@ -59,23 +60,38 @@ export interface KitchenLeg {
   edge?:         number;
 }
 
-export interface KitchenSlip {
-  type: KitchenSlipType;
-  legs: KitchenLeg[];
+export interface NBAKitchenSlip {
+  type: NBAKitchenSlipType;
+  legs: NBAKitchenLeg[];
 }
 
 // ─── Internal config ──────────────────────────────────────────────────────────
 
-const STAT_LABELS: Record<AFLPickStat, string> = {
-  D: "disposals", G: "goals", M: "marks", T: "tackles", HO: "hitouts",
+const STAT_LABELS: Record<NBAPickStat, string> = {
+  PTS:  "points",
+  REB:  "rebounds",
+  AST:  "assists",
+  FG3M: "threes",
+  STL:  "steals",
+  BLK:  "blocks",
 };
 
-const STEP: Record<AFLPickStat, number> = {
-  D: 1, G: 0.5, M: 1, T: 1, HO: 2,
+const STEP: Record<NBAPickStat, number> = {
+  PTS:  1,
+  REB:  1,
+  AST:  1,
+  FG3M: 0.5,
+  STL:  0.5,
+  BLK:  0.5,
 };
 
-const MIN_AVG: Record<AFLPickStat, number> = {
-  D: 8, G: 0.35, M: 2, T: 2, HO: 3,
+const MIN_AVG: Record<NBAPickStat, number> = {
+  PTS:  8,
+  REB:  3,
+  AST:  2,
+  FG3M: 0.8,
+  STL:  0.3,
+  BLK:  0.3,
 };
 
 // ─── Math ─────────────────────────────────────────────────────────────────────
@@ -91,31 +107,31 @@ function calcHitRate(vals: number[], thr: number): number {
 /**
  * Find the HIGHEST threshold within [minFraction×avg, maxFraction×avg] that
  * still achieves a hit rate between minHR and maxHR.
- * "Highest threshold that still passes" = hardest beatable line in the zone.
  */
 function findBestThreshold(
   vals:        number[],
   avg:         number,
-  stat:        AFLPickStat,
+  stat:        NBAPickStat,
   minHR:       number,
   maxHR:       number,
   minFraction: number,
   maxFraction: number,
 ): { threshold: number; hitRate: number } | null {
   const step   = STEP[stat];
+  const isHalf = step === 0.5;
   const rawMin = avg * minFraction;
   const rawMax = avg * maxFraction;
-  const minThr = stat === "G"
+  const minThr = isHalf
     ? Math.max(step, Math.round(rawMin * 2) / 2)
     : Math.max(step, Math.round(rawMin));
-  const maxThr = stat === "G"
+  const maxThr = isHalf
     ? Math.round(rawMax * 2) / 2
     : Math.round(rawMax);
 
   let best: { threshold: number; hitRate: number } | null = null;
 
   for (let t = minThr; t <= maxThr + step; t += step) {
-    const thr = stat === "G" ? Math.round(t * 2) / 2 : Math.round(t);
+    const thr = isHalf ? Math.round(t * 2) / 2 : Math.round(t);
     const hr  = calcHitRate(vals, thr);
     if (hr >= minHR && hr <= maxHR) {
       if (!best || thr > best.threshold) {
@@ -132,42 +148,47 @@ interface Profile {
   name:          string;
   side:          "home" | "away";
   teamAbbr:      string;
-  stat:          AFLPickStat;
+  stat:          NBAPickStat;
   vals:          number[];
   avg:           number;
-  recentAvg:     number;   // avg of last 3 games
-  isOnForm:      boolean;  // last 3g avg ≥ season avg × 1.10
+  avgMinutes:    number;
+  recentAvg:     number;
+  isOnForm:      boolean;
   isBounceBack:  boolean;
   gamesAnalyzed: number;
 }
 
 function buildProfiles(
-  gamesByGame: AFLGamePlayerStats[][],
+  gamesByGame: NBAGamePlayerStats[][],
   teamId:      string,
   side:        "home" | "away",
   teamAbbr:    string,
 ): Profile[] {
-  const playerStats = new Map<string, Record<AFLPickStat, number[]>>();
+  const playerStats = new Map<string, Record<NBAPickStat, number[]> & { MIN: number[] }>();
 
   for (const game of gamesByGame) {
     for (const p of game) {
       if (p.teamId !== teamId) continue;
       if (!playerStats.has(p.name)) {
-        playerStats.set(p.name, { D: [], G: [], M: [], T: [], HO: [] });
+        playerStats.set(p.name, { PTS: [], REB: [], AST: [], FG3M: [], STL: [], BLK: [], MIN: [] });
       }
       const m = playerStats.get(p.name)!;
-      m.D.push(p.D);
-      m.G.push(p.G);
-      m.M.push(p.M);
-      m.T.push(p.T);
-      m.HO.push(p.HO);
+      m.PTS.push(p.PTS);
+      m.REB.push(p.REB);
+      m.AST.push(p.AST);
+      m.FG3M.push(p.FG3M);
+      m.STL.push(p.STL);
+      m.BLK.push(p.BLK);
+      if (p.MIN > 0) m.MIN.push(p.MIN);
     }
   }
 
   const profiles: Profile[] = [];
-  const STATS: AFLPickStat[] = ["D", "G", "M", "T", "HO"];
+  const STATS: NBAPickStat[] = ["PTS", "REB", "AST", "FG3M", "STL", "BLK"];
 
   for (const [name, statMap] of Array.from(playerStats.entries())) {
+    const avgMinutes = statMap.MIN.length > 0 ? mean(statMap.MIN) : 0;
+
     for (const stat of STATS) {
       const vals = statMap[stat];
       if (vals.length < 5) continue;
@@ -182,7 +203,7 @@ function buildProfiles(
 
       profiles.push({
         name, side, teamAbbr, stat, vals, avg,
-        recentAvg, isOnForm, isBounceBack, gamesAnalyzed: vals.length,
+        avgMinutes, recentAvg, isOnForm, isBounceBack, gamesAnalyzed: vals.length,
       });
     }
   }
@@ -195,14 +216,14 @@ function buildProfiles(
 interface TierConfig {
   minFlatHR:      number;
   maxFlatHR:      number;
-  minFraction:    number;   // threshold lower bound as fraction of avg
-  maxFraction:    number;   // threshold upper bound as fraction of avg
+  minFraction:    number;
+  maxFraction:    number;
   minReliability: number;
   maxReliability: number;
   maxLegs:        number;
-  statsFilter?:   AFLPickStat[];
+  statsFilter?:   NBAPickStat[];
   formBonus:      number;
-  /** If true, use recentAvg instead of avg as the base for fractions */
+  /** If true, use recentAvg instead of avg as the fraction base */
   useRecentBase?: boolean;
 }
 
@@ -210,7 +231,7 @@ function buildLegs(
   profiles: Profile[],
   propOdds: Map<string, { price: number; line: number; bookmaker: string }>,
   tier:     TierConfig,
-): KitchenLeg[] {
+): NBAKitchenLeg[] {
   type Candidate = {
     profile:     Profile;
     threshold:   number;
@@ -234,9 +255,10 @@ function buildLegs(
     if (!found) continue;
 
     const breakdown = computeReliability({
-      vals:      p.vals,
-      threshold: found.threshold,
-      config:    AFL_CONFIG,
+      vals:        p.vals,
+      threshold:   found.threshold,
+      avgMinutes:  p.avgMinutes,
+      config:      NBA_CONFIG,
     });
 
     let reliability = breakdown.finalReliability;
@@ -255,7 +277,7 @@ function buildLegs(
 
   candidates.sort((a, b) => b.reliability - a.reliability);
 
-  const legs: KitchenLeg[] = [];
+  const legs: NBAKitchenLeg[] = [];
   const playerCount = new Map<string, number>();
 
   for (const { profile: p, threshold, flatHitRate, reliability, breakdown } of candidates) {
@@ -276,6 +298,7 @@ function buildLegs(
       reliability,
       breakdown,
       avgStat:       Math.round(p.avg * 10) / 10,
+      avgMinutes:    Math.round(p.avgMinutes * 10) / 10,
       gamesAnalyzed: p.gamesAnalyzed,
       isBounceBack:  p.isBounceBack,
       isOnForm:      p.isOnForm,
@@ -293,8 +316,8 @@ function buildLegs(
 function buildValueLegs(
   profiles: Profile[],
   propOdds: Map<string, { price: number; line: number; bookmaker: string }>,
-): KitchenLeg[] {
-  type ValueCandidate = { leg: KitchenLeg; score: number };
+): NBAKitchenLeg[] {
+  type ValueCandidate = { leg: NBAKitchenLeg; score: number };
   const candidates: ValueCandidate[] = [];
   const seen = new Set<string>();
 
@@ -305,24 +328,23 @@ function buildValueLegs(
     const prop = propOdds.get(key);
     // Need a prop with price > 1.60 AND book line below player average
     if (!prop || prop.price < 1.60) continue;
-    if (prop.line >= p.avg) continue;  // No edge — book line is at or above avg
+    if (prop.line >= p.avg) continue;  // No edge — book line at or above avg
 
-    // Hit rate at the actual book line (not a computed threshold)
+    // Hit rate at the actual book line
     const hitRate = calcHitRate(p.vals, prop.line);
-    if (hitRate < 0.65) continue;  // Player doesn't clear this line often enough
+    if (hitRate < 0.65) continue;
 
     const breakdown = computeReliability({
-      vals:      p.vals,
-      threshold: prop.line,
-      config:    AFL_CONFIG,
+      vals:        p.vals,
+      threshold:   prop.line,
+      avgMinutes:  p.avgMinutes,
+      config:      NBA_CONFIG,
     });
     if (breakdown.finalReliability === 0) continue;
 
     seen.add(key);
 
-    // Edge = how far below average the book line sits (bigger = better value)
-    const edge = p.avg - prop.line;
-    // Score = edge as fraction of avg × odds × reliability
+    const edge  = p.avg - prop.line;
     const score = (edge / p.avg) * prop.price * breakdown.finalReliability;
 
     candidates.push({
@@ -332,11 +354,12 @@ function buildValueLegs(
         teamAbbr:      p.teamAbbr,
         stat:          p.stat,
         statLabel:     STAT_LABELS[p.stat],
-        threshold:     prop.line,   // show the actual book line as the threshold
+        threshold:     prop.line,
         hitRate,
         reliability:   breakdown.finalReliability,
         breakdown,
         avgStat:       Math.round(p.avg * 10) / 10,
+        avgMinutes:    Math.round(p.avgMinutes * 10) / 10,
         gamesAnalyzed: p.gamesAnalyzed,
         isBounceBack:  p.isBounceBack,
         isOnForm:      p.isOnForm,
@@ -353,15 +376,15 @@ function buildValueLegs(
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-export function computeAFLKitchen(params: {
-  homeGames:  AFLGamePlayerStats[][];
-  awayGames:  AFLGamePlayerStats[][];
+export function computeNBAKitchen(params: {
+  homeGames:  NBAGamePlayerStats[][];
+  awayGames:  NBAGamePlayerStats[][];
   homeTeamId: string;
   awayTeamId: string;
   homeAbbr:   string;
   awayAbbr:   string;
   propOdds:   Map<string, { price: number; line: number; bookmaker: string }>;
-}): KitchenSlip[] {
+}): NBAKitchenSlip[] {
   const { homeGames, awayGames, homeTeamId, awayTeamId, homeAbbr, awayAbbr, propOdds } = params;
 
   const homeProfiles = buildProfiles(homeGames, homeTeamId, "home", homeAbbr);
@@ -369,51 +392,48 @@ export function computeAFLKitchen(params: {
   const all = [...homeProfiles, ...awayProfiles];
 
   // ── 1. Safe ───────────────────────────────────────────────────────────────
-  // Threshold set well below avg (50–75%). Must hit 80%+ of games.
-  // Each leg should be near-certain. Goal: ~2 odds combined across 3 legs.
+  // Threshold 50–75% of avg. Must hit 80%+ of games.
+  // e.g. avg 25 pts → suggest 18+. Combined ~2 odds across 3 legs.
   const safeLegs = buildLegs(all, propOdds, {
     minFlatHR: 0.80, maxFlatHR: 1.00,
     minFraction: 0.50, maxFraction: 0.75,
-    minReliability: 0.60, maxReliability: 1.00,
+    minReliability: 0.55, maxReliability: 1.00,
     maxLegs: 3, formBonus: 0,
   });
 
   // ── 2. Doable ─────────────────────────────────────────────────────────────
-  // Threshold 75–90% of avg. Hit rate 68–80%. Reliable but a step harder.
+  // Threshold 75–92% of avg. Hit rate 68–80%. Reliable but harder than Safe.
   const safeKeys   = new Set(safeLegs.map(l => `${l.player}|${l.stat}|${l.threshold}`));
   const doableRaw  = buildLegs(all, propOdds, {
     minFlatHR: 0.68, maxFlatHR: 1.00,
     minFraction: 0.75, maxFraction: 0.92,
-    minReliability: 0.45, maxReliability: 1.00,
+    minReliability: 0.40, maxReliability: 1.00,
     maxLegs: 5, formBonus: 0,
   });
   const doableLegs = doableRaw
     .filter(l => !safeKeys.has(`${l.player}|${l.stat}|${l.threshold}`))
     .slice(0, 3);
 
-  // ── 3. Goal Scorers ───────────────────────────────────────────────────────
-  // Goals only. Same comfortable-below-avg approach.
-  const goalLegs = buildLegs(all, propOdds, {
-    minFlatHR: 0.65, maxFlatHR: 1.00,
-    minFraction: 0.40, maxFraction: 0.80,
-    minReliability: 0.32, maxReliability: 1.00,
-    maxLegs: 4, statsFilter: ["G"], formBonus: 0,
+  // ── 3. Scorers — PTS only ─────────────────────────────────────────────────
+  const scorerLegs = buildLegs(all, propOdds, {
+    minFlatHR: 0.70, maxFlatHR: 1.00,
+    minFraction: 0.50, maxFraction: 0.82,
+    minReliability: 0.30, maxReliability: 1.00,
+    maxLegs: 4, statsFilter: ["PTS"], formBonus: 0,
   });
 
-  // ── 4. Disposals ──────────────────────────────────────────────────────────
-  // Disposals only. Below-avg threshold, high hit rate.
-  const disposalLegs = buildLegs(all, propOdds, {
-    minFlatHR: 0.72, maxFlatHR: 1.00,
-    minFraction: 0.55, maxFraction: 0.85,
-    minReliability: 0.42, maxReliability: 1.00,
-    maxLegs: 5, statsFilter: ["D"], formBonus: 0,
+  // ── 4. Playmakers — REB + AST ─────────────────────────────────────────────
+  const playmakerLegs = buildLegs(all, propOdds, {
+    minFlatHR: 0.68, maxFlatHR: 1.00,
+    minFraction: 0.52, maxFraction: 0.85,
+    minReliability: 0.35, maxReliability: 1.00,
+    maxLegs: 4, statsFilter: ["REB", "AST"], formBonus: 0,
   });
 
   // ── 5. Ballsy ─────────────────────────────────────────────────────────────
-  // Pass A: on-form players (last 3g ≥ avg × 1.10).
-  //   Threshold starts ABOVE recent avg (110% of recentAvg).
-  //   e.g. averaging 18 in last 3 → suggest 20+.
-  // Pass B: regular bold picks — threshold at/above season avg.
+  // Pass A: on-form players pushed ABOVE recent avg (110% of recentAvg).
+  //   e.g. averaging 18 pts in last 3 games → suggest 20+.
+  // Pass B: regular bold picks at/above season avg.
   const onFormProfiles = all.filter(p => p.isOnForm);
   const ballsyOnForm   = buildLegs(onFormProfiles, propOdds, {
     minFlatHR: 0.25, maxFlatHR: 0.60,
@@ -429,9 +449,8 @@ export function computeAFLKitchen(params: {
     maxLegs: 5, formBonus: 0,
   });
 
-  // Merge: on-form first (priority), fill with regular, max 3
-  const ballsySeen    = new Set<string>();
-  const ballsyMerged: KitchenLeg[] = [];
+  const ballsySeen   = new Set<string>();
+  const ballsyMerged: NBAKitchenLeg[] = [];
   for (const leg of [...ballsyOnForm, ...ballsyRegular]) {
     const key = `${leg.player}|${leg.stat}|${leg.threshold}`;
     if (ballsySeen.has(key)) continue;
@@ -441,15 +460,14 @@ export function computeAFLKitchen(params: {
   }
 
   // ── 6. Value Picks ────────────────────────────────────────────────────────
-  // Book line < player average. Evaluates hit rate at the actual book line.
-  // Sorted by (edge / avg) × odds × reliability.
+  // Book line < player average → evaluate hit rate at the actual book line.
   const valueLegs = buildValueLegs(all, propOdds);
 
   return [
     { type: "safe",        legs: safeLegs },
     { type: "doable",      legs: doableLegs },
-    { type: "goalscorers", legs: goalLegs },
-    { type: "disposals",   legs: disposalLegs },
+    { type: "scorers",     legs: scorerLegs },
+    { type: "playmakers",  legs: playmakerLegs },
     { type: "ballsy",      legs: ballsyMerged },
     { type: "value",       legs: valueLegs },
   ];

@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import type { KitchenSlip, KitchenLeg, KitchenSlipType } from "@/lib/sports/afl/kitchen";
+import type { NBAKitchenSlip, NBAKitchenLeg, NBAKitchenSlipType } from "@/lib/sports/nba/kitchen";
 import {
   getConfidenceTier,
   CONFIDENCE_LABEL,
@@ -12,13 +12,13 @@ import {
 
 // ─── Slip display config ──────────────────────────────────────────────────────
 
-const SLIP_CONFIG: Record<KitchenSlipType, {
-  emoji:   string;
-  title:   string;
-  desc:    string;
-  color:   string;
-  border:  string;
-  bg:      string;
+const SLIP_CONFIG: Record<NBAKitchenSlipType, {
+  emoji:  string;
+  title:  string;
+  desc:   string;
+  color:  string;
+  border: string;
+  bg:     string;
 }> = {
   safe: {
     emoji: "🛡️", title: "Safe",
@@ -30,14 +30,14 @@ const SLIP_CONFIG: Record<KitchenSlipType, {
     desc: "Reliable picks with stronger returns. Slightly harder thresholds.",
     color: "text-[#60A5FA]", border: "border-[#60A5FA]/25", bg: "bg-[#60A5FA]/5",
   },
-  goalscorers: {
-    emoji: "🎯", title: "Goal Scorers",
-    desc: "Best attacking trends. Goals only.",
+  scorers: {
+    emoji: "🏀", title: "Point Scorers",
+    desc: "Best scoring trends. Points only, minutes-adjusted.",
     color: "text-[#F97316]", border: "border-[#F97316]/25", bg: "bg-[#F97316]/5",
   },
-  disposals: {
-    emoji: "📋", title: "Disposals Only",
-    desc: "Volume-possession plays. Disposal legs only.",
+  playmakers: {
+    emoji: "🎯", title: "Playmakers",
+    desc: "Rebounds + assists legs. Volume and consistency plays.",
     color: "text-[#14B8A6]", border: "border-[#14B8A6]/25", bg: "bg-[#14B8A6]/5",
   },
   ballsy: {
@@ -59,7 +59,7 @@ function lastName(name: string): string {
   return parts[parts.length - 1] ?? name;
 }
 
-function combinedProb(legs: KitchenLeg[]): number {
+function combinedProb(legs: NBAKitchenLeg[]): number {
   return legs.length ? legs.reduce((acc, l) => acc * l.reliability, 1) : 0;
 }
 
@@ -73,7 +73,7 @@ function ConfidenceBadge({ reliability, onClick }: { reliability: number; onClic
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-end gap-0.5 shrink-0 group cursor-pointer`}
+      className="flex flex-col items-end gap-0.5 shrink-0 group cursor-pointer"
       title="Click for reliability breakdown"
     >
       <span className={`text-[10px] font-black uppercase tracking-wider ${colors.text} group-hover:opacity-75 transition-opacity`}>
@@ -94,16 +94,19 @@ function ConfidenceBadge({ reliability, onClick }: { reliability: number; onClic
 
 // ─── Reliability breakdown tooltip ───────────────────────────────────────────
 
-function BreakdownTooltip({ leg, onClose }: { leg: KitchenLeg; onClose: () => void }) {
+function BreakdownTooltip({ leg, onClose }: { leg: NBAKitchenLeg; onClose: () => void }) {
   const b    = leg.breakdown;
   const tier = getConfidenceTier(leg.reliability);
   const c    = CONFIDENCE_COLORS[tier];
 
   const rows: [string, string][] = [
-    ["Weighted hit rate",       `${Math.round(b.weightedHitRate * 100)}%`],
-    ["Consistency factor",      `×${b.consistencyFactor.toFixed(2)}`],
+    ["Weighted hit rate",        `${Math.round(b.weightedHitRate * 100)}%`],
+    ["Consistency factor",       `×${b.consistencyFactor.toFixed(2)}`],
     [`Sample (${leg.gamesAnalyzed}g)`, `×${b.sampleFactor.toFixed(2)}`],
   ];
+  if (b.minutesFactor < 1.0 && b.minutesFactor > 0) {
+    rows.push(["Minutes factor", `×${b.minutesFactor.toFixed(2)}`]);
+  }
   if (b.contextualBonus > 0) {
     rows.push(["Contextual bonus", `+${Math.round(b.contextualBonus * 100)}%`]);
   }
@@ -140,12 +143,12 @@ function BreakdownTooltip({ leg, onClose }: { leg: KitchenLeg; onClose: () => vo
 
 // ─── Single leg row ───────────────────────────────────────────────────────────
 
-function LegRow({ leg }: { leg: KitchenLeg }) {
+function LegRow({ leg }: { leg: NBAKitchenLeg }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   return (
     <div className="py-2 border-b border-border last:border-0">
-      {/* Top row: player name + confidence badge */}
+      {/* Top row: player + confidence badge */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0 pt-0.5">
           {leg.isOnForm && (
@@ -179,7 +182,9 @@ function LegRow({ leg }: { leg: KitchenLeg }) {
       </div>
       {/* Context */}
       <div className="text-[10px] text-text-2 mt-0.5">
-        avg {leg.avgStat} · {leg.gamesAnalyzed}g
+        avg {leg.avgStat}
+        {leg.avgMinutes > 0 && <span className="ml-1">· {Math.round(leg.avgMinutes)}mpg</span>}
+        <span className="ml-1">· {leg.gamesAnalyzed}g</span>
       </div>
     </div>
   );
@@ -187,7 +192,7 @@ function LegRow({ leg }: { leg: KitchenLeg }) {
 
 // ─── Slip footer: combined hit chance ────────────────────────────────────────
 
-function CombinedHitChance({ legs }: { legs: KitchenLeg[] }) {
+function CombinedHitChance({ legs }: { legs: NBAKitchenLeg[] }) {
   const [show, setShow] = useState(false);
   const prob = combinedProb(legs);
   const pct  = Math.round(prob * 100);
@@ -199,7 +204,6 @@ function CombinedHitChance({ legs }: { legs: KitchenLeg[] }) {
 
   return (
     <div className="flex items-center justify-between gap-3">
-      {/* Left: hit chance label + tooltip */}
       <div className="relative">
         <button
           onMouseEnter={() => setShow(true)}
@@ -221,8 +225,6 @@ function CombinedHitChance({ legs }: { legs: KitchenLeg[] }) {
           </div>
         )}
       </div>
-
-      {/* Right: pct + multi odds */}
       <div className="flex items-center gap-2">
         <span className={`text-xs font-bold tabular-nums ${c.text}`}>~{pct}%</span>
         {multiOdds && (
@@ -237,7 +239,7 @@ function CombinedHitChance({ legs }: { legs: KitchenLeg[] }) {
 
 // ─── Slip card ────────────────────────────────────────────────────────────────
 
-function SlipCard({ slip }: { slip: KitchenSlip }) {
+function SlipCard({ slip }: { slip: NBAKitchenSlip }) {
   const cfg = SLIP_CONFIG[slip.type];
 
   return (
@@ -278,7 +280,7 @@ function SlipCard({ slip }: { slip: KitchenSlip }) {
 
 // ─── Value picks section ──────────────────────────────────────────────────────
 
-function ValuePickCard({ leg, index }: { leg: KitchenLeg; index: number }) {
+function ValuePickCard({ leg }: { leg: NBAKitchenLeg }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
   const tier   = getConfidenceTier(leg.reliability);
   const colors = CONFIDENCE_COLORS[tier];
@@ -300,7 +302,6 @@ function ValuePickCard({ leg, index }: { leg: KitchenLeg; index: number }) {
             <span className="text-[11px] text-text-2 font-medium">{leg.teamAbbr}</span>
           </div>
         </div>
-        {/* Confidence badge */}
         <div className="relative shrink-0">
           <button
             onClick={() => setShowBreakdown(v => !v)}
@@ -352,7 +353,7 @@ function ValuePickCard({ leg, index }: { leg: KitchenLeg; index: number }) {
   );
 }
 
-function ValuePicks({ legs }: { legs: KitchenLeg[] }) {
+function ValuePicks({ legs }: { legs: NBAKitchenLeg[] }) {
   const cfg = SLIP_CONFIG.value;
   if (legs.length === 0) return null;
 
@@ -369,7 +370,7 @@ function ValuePicks({ legs }: { legs: KitchenLeg[] }) {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10">
         {legs.map((leg, i) => (
-          <ValuePickCard key={i} leg={leg} index={i} />
+          <ValuePickCard key={i} leg={leg} />
         ))}
       </div>
     </div>
@@ -378,7 +379,7 @@ function ValuePicks({ legs }: { legs: KitchenLeg[] }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function AFLKitchen({ slips }: { slips: KitchenSlip[] }) {
+export default function NBAKitchen({ slips }: { slips: NBAKitchenSlip[] }) {
   const mainSlips = slips.filter(s => s.type !== "value");
   const valueSlip = slips.find(s => s.type === "value");
   const allLegs   = slips.flatMap(s => s.legs);
