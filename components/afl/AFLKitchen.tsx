@@ -16,13 +16,13 @@ const SLIP_CONFIG: Record<KitchenSlipType, {
 }> = {
   safe: {
     emoji: "🛡️", title: "Safe",
-    desc: "Top reliability composite. Conservative thresholds.",
+    desc: "Top 3 legs. Each scores 6.8+/10. Best combined hit chance.",
     color: "text-[#22C55E]", border: "border-[#22C55E]/25", bg: "bg-[#22C55E]/5",
   },
   doable: {
     emoji: "✅", title: "Doable",
-    desc: "Solid but not bulletproof. Score 4.5+.",
-    color: "text-primary", border: "border-primary/25", bg: "bg-primary/5",
+    desc: "Next best 3 legs. Reliable picks, slightly harder thresholds.",
+    color: "text-[#60A5FA]", border: "border-[#60A5FA]/25", bg: "bg-[#60A5FA]/5",
   },
   goalscorers: {
     emoji: "🎯", title: "Goal Scorers",
@@ -36,7 +36,7 @@ const SLIP_CONFIG: Record<KitchenSlipType, {
   },
   ballsy: {
     emoji: "🔥", title: "If You Have Balls",
-    desc: "High thresholds. Bounce-back included.",
+    desc: "Bold 3-leg picks. ▲ = on-form player pushed to harder threshold.",
     color: "text-[#EF4444]", border: "border-[#EF4444]/25", bg: "bg-[#EF4444]/5",
   },
   value: {
@@ -56,15 +56,15 @@ function scoreOf10(r: number): string {
 
 /**
  * Colour by reliability score (out of 10):
- *  9.0+ → green   (very reliable)
- *  7.0+ → primary (good)
- *  5.0+ → amber   (moderate)
- *  3.0+ → orange  (risky)
- *  <3.0 → red     (long shot, covers ≤1.5 per spec)
+ *  9.0+ → green  #22C55E (very reliable)
+ *  7.0+ → blue   #60A5FA (good)
+ *  5.0+ → amber  #F59E0B (moderate)
+ *  3.0+ → orange #F97316 (risky)
+ *  <3.0 → red    #EF4444 (long shot, covers ≤1.5 per spec)
  */
 function hrColor(r: number): string {
   if (r >= 0.90) return "text-[#22C55E]";
-  if (r >= 0.70) return "text-primary";
+  if (r >= 0.70) return "text-[#60A5FA]";
   if (r >= 0.50) return "text-[#F59E0B]";
   if (r >= 0.30) return "text-[#F97316]";
   return "text-[#EF4444]";
@@ -152,7 +152,10 @@ function LegRow({ leg }: { leg: KitchenLeg }) {
       {/* Top row: player + score */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          {leg.isBounceBack && (
+          {leg.isOnForm && (
+            <span title="On form — last 3 games above season average" className="text-[#22C55E] text-[10px] shrink-0 leading-none font-bold">▲</span>
+          )}
+          {leg.isBounceBack && !leg.isOnForm && (
             <span title="Bounce-back candidate — below-average last game" className="text-[#F59E0B] text-xs shrink-0 leading-none">↺</span>
           )}
           <span className="text-xs font-semibold text-text-1 truncate">{lastName(leg.player)}</span>

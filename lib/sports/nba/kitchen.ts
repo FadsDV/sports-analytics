@@ -1,21 +1,19 @@
 /**
  * NBA Kitchen — 6-slip bet slip generator.
  *
- * Slip types:
- *   safe        — composite ≥ 0.70, conservative thresholds, max 5 legs
- *   doable      — composite ≥ 0.50, moderate thresholds, max 5 legs
- *   scorers     — PTS only, composite ≥ 0.42, max 5 legs
- *   playmakers  — REB + AST legs only, composite ≥ 0.50, max 8 legs
- *   ballsy      — composite 0.20–0.55, high thresholds, bounce-back bonus, max 8 legs
- *   value       — single legs, odds > 1.60, top 10 by (reliability × odds)
+ * Slip architecture (redesigned):
  *
- * Scoring uses the sport-agnostic reliability engine:
- *   composite = weightedHitRate × consistencyFactor × sampleFactor × minutesFactor
- *               + contextualBonus
+ *   safe        — top 3 legs by composite, each ≥ 5.5/10. Combined ~17–30%.
+ *   doable      — next 3 legs, each ≥ 3.8/10. Mixed reliable + slightly harder.
+ *   scorers     — PTS only, max 4 legs, each ≥ 3.0/10.
+ *   playmakers  — REB + AST only, max 4 legs, each ≥ 3.8/10.
+ *   ballsy      — max 3 legs. On-form players (last 3g > avg × 1.10) pushed to
+ *                 higher thresholds. Regular bold picks as fallback.
+ *   value       — single legs, odds > 1.60, top 10 by (reliability × odds).
  *
+ * Fewer legs = honest combined probability.
  * Same player max 2× per slip (different stat or threshold).
- * Bounce-back: last game < 65% of average → flagged for ballsy + value.
- * Min games: 5 (players with fewer games are excluded).
+ * Min games: 5.
  */
 
 import type { NBAGamePlayerStats } from "@/lib/sports/espn";
@@ -40,16 +38,15 @@ export interface NBAKitchenLeg {
   stat:          NBAPickStat;
   statLabel:     string;
   threshold:     number;
-  /** Flat (unweighted) hit rate — for threshold search display context */
   hitRate:       number;
-  /** Composite reliability score (0–1). This is the primary display score. */
   reliability:   number;
-  /** Full breakdown for expandable tooltip */
   breakdown:     ReliabilityBreakdown;
   avgStat:       number;
   avgMinutes:    number;
   gamesAnalyzed: number;
   isBounceBack:  boolean;
+  /** Player's last 3 games are trending above their season average */
+  isOnForm:      boolean;
   prop?:         { price: number; line: number; bookmaker: string };
 }
 
@@ -97,10 +94,6 @@ function calcHitRate(vals: number[], thr: number): number {
   return vals.length ? vals.filter(v => v >= thr).length / vals.length : 0;
 }
 
-/**
- * Find the highest threshold in [avg×minFraction, avg×1.65] where flat hit rate
- * falls within [minHR, maxHR].
- */
 function findBestThreshold(
   vals:        number[],
   avg:         number,
@@ -108,6 +101,7 @@ function findBestThreshold(
   minHR:       number,
   maxHR:       number,
   minFraction: number,
+  maxFraction: number = 1.8,
 ): { threshold: number; hitRate: number } | null {
   const step   = STEP[stat];
   const rawMin = avg * minFraction;
@@ -118,7 +112,7 @@ function findBestThreshold(
 
   let best: { threshold: number; hitRate: number } | null = null;
 
-  for (let t = minThr; t <= avg * 1.65 + step; t += step) {
+  for (let t = minThr; t <= avg * maxFraction + step; t += step) {
     const thr = isHalf ? Math.round(t * 2) / 2 : Math.round(t);
     const hr  = calcHitRate(vals, thr);
     if (hr >= minHR && hr <= maxHR) {
@@ -140,6 +134,8 @@ interface Profile {
   vals:          number[];
   avg:           number;
   avgMinutes:    number;
+  recentAvg:     number;
+  isOnForm:      boolean;
   isBounceBack:  boolean;
   gamesAnalyzed: number;
 }
@@ -177,17 +173,19 @@ function buildProfiles(
 
     for (const stat of STATS) {
       const vals = statMap[stat];
-      // Minimum 5 games required (engine enforces this, but pre-filter here too)
       if (vals.length < 5) continue;
       const avg = mean(vals);
       if (avg < MIN_AVG[stat]) continue;
 
+      const recent3      = vals.slice(-3);
+      const recentAvg    = mean(recent3);
+      const isOnForm     = recent3.length >= 3 && recentAvg >= avg * 1.10;
       const lastGame     = vals[vals.length - 1] ?? 0;
       const isBounceBack = lastGame < avg * 0.65 && avg >= MIN_AVG[stat] * 1.5;
 
       profiles.push({
         name, side, teamAbbr, stat, vals, avg,
-        avgMinutes, isBounceBack, gamesAnalyzed: vals.length,
+        avgMinutes, recentAvg, isOnForm, isBounceBack, gamesAnalyzed: vals.length,
       });
     }
   }
@@ -198,18 +196,15 @@ function buildProfiles(
 // ─── Leg assembler ────────────────────────────────────────────────────────────
 
 interface TierConfig {
-  /** Flat hit rate range for threshold search */
-  minFlatHR:    number;
-  maxFlatHR:    number;
-  /** Min fraction of avg for threshold floor */
-  minFraction:  number;
-  /** Min composite reliability to include in slip */
-  minReliability: number;
-  /** Max composite reliability (use 1.0 for no upper cap) */
-  maxReliability: number;
-  maxLegs:        number;
-  statsFilter?:   NBAPickStat[];
-  bounceBonusWeight: number;
+  minFlatHR:       number;
+  maxFlatHR:       number;
+  minFraction:     number;
+  maxFraction?:    number;
+  minReliability:  number;
+  maxReliability:  number;
+  maxLegs:         number;
+  statsFilter?:    NBAPickStat[];
+  formBonus:       number;
 }
 
 function buildLegs(
@@ -230,7 +225,11 @@ function buildLegs(
   for (const p of profiles) {
     if (tier.statsFilter && !tier.statsFilter.includes(p.stat)) continue;
 
-    const found = findBestThreshold(p.vals, p.avg, p.stat, tier.minFlatHR, tier.maxFlatHR, tier.minFraction);
+    const found = findBestThreshold(
+      p.vals, p.avg, p.stat,
+      tier.minFlatHR, tier.maxFlatHR,
+      tier.minFraction, tier.maxFraction,
+    );
     if (!found) continue;
 
     const breakdown = computeReliability({
@@ -240,12 +239,9 @@ function buildLegs(
       config:      NBA_CONFIG,
     });
 
-    // Apply bounce-back contextual bonus
-    const reliability = tier.bounceBonusWeight > 0 && p.isBounceBack
-      ? Math.min(1.0, breakdown.finalReliability + tier.bounceBonusWeight)
-      : breakdown.finalReliability;
+    let reliability = breakdown.finalReliability;
+    if (tier.formBonus > 0 && p.isOnForm) reliability = Math.min(1.0, reliability + tier.formBonus);
 
-    // Filter by composite reliability range
     if (reliability < tier.minReliability || reliability > tier.maxReliability) continue;
 
     candidates.push({
@@ -257,7 +253,6 @@ function buildLegs(
     });
   }
 
-  // Sort by composite reliability descending
   candidates.sort((a, b) => b.reliability - a.reliability);
 
   const legs: NBAKitchenLeg[] = [];
@@ -284,6 +279,7 @@ function buildLegs(
       avgMinutes:    Math.round(p.avgMinutes * 10) / 10,
       gamesAnalyzed: p.gamesAnalyzed,
       isBounceBack:  p.isBounceBack,
+      isOnForm:      p.isOnForm,
       prop,
     });
 
@@ -310,47 +306,64 @@ export function computeNBAKitchen(params: {
   const awayProfiles = buildProfiles(awayGames, awayTeamId, "away", awayAbbr);
   const all = [...homeProfiles, ...awayProfiles];
 
-  // ── 1. Safe — composite ≥ 0.55 ───────────────────────────────────────────
-  // flatHR gate lowered to 0.65 so composite score is the primary filter.
-  // Minutes factor further reduces NBA composites vs AFL, so threshold is
-  // lower — a 34MPG star with 65% flat and good consistency still qualifies.
+  // ── 1. Safe — top 3 by composite, each ≥ 5.5/10 ─────────────────────────
   const safeLegs = buildLegs(all, propOdds, {
     minFlatHR: 0.65, maxFlatHR: 1.00, minFraction: 0.50,
     minReliability: 0.55, maxReliability: 1.00,
-    maxLegs: 5, bounceBonusWeight: 0,
+    maxLegs: 3, formBonus: 0,
   });
 
-  // ── 2. Doable — composite ≥ 0.38, broader threshold range ───────────────
+  // ── 2. Doable — next 3 legs, each 3.8–8.0/10 ─────────────────────────────
   const safeKeys   = new Set(safeLegs.map(l => `${l.player}|${l.stat}|${l.threshold}`));
   const doableRaw  = buildLegs(all, propOdds, {
-    minFlatHR: 0.65, maxFlatHR: 1.00, minFraction: 0.65,
+    minFlatHR: 0.60, maxFlatHR: 1.00, minFraction: 0.60,
     minReliability: 0.38, maxReliability: 1.00,
-    maxLegs: 7, bounceBonusWeight: 0,
+    maxLegs: 5, formBonus: 0,
   });
   const doableLegs = doableRaw
     .filter(l => !safeKeys.has(`${l.player}|${l.stat}|${l.threshold}`))
-    .slice(0, 5);
+    .slice(0, 3);
 
-  // ── 3. Scorers — PTS only, composite ≥ 0.30 ─────────────────────────────
+  // ── 3. Scorers — PTS only, max 4, each ≥ 3.0/10 ─────────────────────────
   const scorerLegs = buildLegs(all, propOdds, {
     minFlatHR: 0.55, maxFlatHR: 1.00, minFraction: 0.40,
     minReliability: 0.30, maxReliability: 1.00,
-    maxLegs: 5, statsFilter: ["PTS"], bounceBonusWeight: 0,
+    maxLegs: 4, statsFilter: ["PTS"], formBonus: 0,
   });
 
-  // ── 4. Playmakers — REB + AST only, composite ≥ 0.38 ────────────────────
+  // ── 4. Playmakers — REB + AST only, max 4, each ≥ 3.8/10 ────────────────
   const playmakerLegs = buildLegs(all, propOdds, {
     minFlatHR: 0.60, maxFlatHR: 1.00, minFraction: 0.55,
     minReliability: 0.38, maxReliability: 1.00,
-    maxLegs: 8, statsFilter: ["REB", "AST"], bounceBonusWeight: 0,
+    maxLegs: 4, statsFilter: ["REB", "AST"], formBonus: 0,
   });
 
-  // ── 5. Ballsy — composite 0.12–0.42, high thresholds, bounce-back bonus ──
-  const ballsyLegs = buildLegs(all, propOdds, {
-    minFlatHR: 0.35, maxFlatHR: 0.62, minFraction: 0.82,
-    minReliability: 0.12, maxReliability: 0.42,
-    maxLegs: 8, bounceBonusWeight: 0.08,
+  // ── 5. Ballsy — max 3 legs ────────────────────────────────────────────────
+  // Pass A: on-form players (last 3g ≥ avg × 1.10) pushed to higher threshold.
+  // Pass B: regular bold picks fallback.
+  const onFormProfiles = all.filter(p => p.isOnForm);
+  const ballsyOnForm   = buildLegs(onFormProfiles, propOdds, {
+    minFlatHR: 0.30, maxFlatHR: 0.65, minFraction: 1.00, maxFraction: 2.0,
+    minReliability: 0.12, maxReliability: 0.58,
+    maxLegs: 5, formBonus: 0.05,
   });
+
+  const ballsyRegular = buildLegs(all, propOdds, {
+    minFlatHR: 0.35, maxFlatHR: 0.62, minFraction: 0.85, maxFraction: 1.8,
+    minReliability: 0.12, maxReliability: 0.55,
+    maxLegs: 5, formBonus: 0,
+  });
+
+  const ballsySeen   = new Set<string>();
+  const ballsyMerged: NBAKitchenLeg[] = [];
+  for (const leg of [...ballsyOnForm, ...ballsyRegular]) {
+    const key = `${leg.player}|${leg.stat}|${leg.threshold}`;
+    if (ballsySeen.has(key)) continue;
+    ballsySeen.add(key);
+    ballsyMerged.push(leg);
+    if (ballsyMerged.length >= 3) break;
+  }
+  const ballsyLegs = ballsyMerged;
 
   // ── 6. Value Picks — single legs, odds > 1.60, top 10 ───────────────────
   const valueCandidates: Array<{ leg: NBAKitchenLeg; score: number }> = [];
@@ -373,10 +386,9 @@ export function computeNBAKitchen(params: {
       config:      NBA_CONFIG,
     });
 
-    if (breakdown.finalReliability === 0) continue; // ineligible
+    if (breakdown.finalReliability === 0) continue;
 
     valueSeen.add(key);
-    // Value score = reliability × odds (not just flat hit rate)
     const score = breakdown.finalReliability * prop.price;
 
     valueCandidates.push({
@@ -394,6 +406,7 @@ export function computeNBAKitchen(params: {
         avgMinutes:    Math.round(p.avgMinutes * 10) / 10,
         gamesAnalyzed: p.gamesAnalyzed,
         isBounceBack:  p.isBounceBack,
+        isOnForm:      p.isOnForm,
         prop,
       },
       score,
