@@ -12,6 +12,7 @@ import {
   fetchNBABoxScoreForPicks, type NBAGamePlayerStats,
 } from "@/lib/sports/espn";
 import { computeAFLPlayerPicks, type AFLPlayerPick, type AFLPickStat } from "@/lib/sports/afl/picks";
+import { computeAFLKitchen, type KitchenSlip } from "@/lib/sports/afl/kitchen";
 import { computeNBAPlayerPicks, type NBAPlayerPick } from "@/lib/sports/nba/picks";
 import { resolveTeamCanonicalId } from "@/lib/mappings";
 import {
@@ -263,6 +264,7 @@ export default async function GameDetailPage({
   let aflLadder: LadderEntry[] = [];
   let aflPlayerPicks: AFLPlayerPick[] = [];
   let aflPropOdds = new Map<string, { price: number; line: number; bookmaker: string }>();
+  let aflKitchenSlips: KitchenSlip[] = [];
   if (isAFL) {
     // Extract last 5 completed game event IDs for each team from their schedules
     const completedHomeIds = homeSchedule
@@ -305,6 +307,16 @@ export default async function GameDetailPage({
       awayAbbr:     game.awayTeam.shortName,
       homeInjuries,
       awayInjuries,
+    });
+
+    aflKitchenSlips = computeAFLKitchen({
+      homeGames:  homeBoxScores,
+      awayGames:  awayBoxScores,
+      homeTeamId: game.homeTeam.espnId ?? "",
+      awayTeamId: game.awayTeam.espnId ?? "",
+      homeAbbr:   game.homeTeam.shortName,
+      awayAbbr:   game.awayTeam.shortName,
+      propOdds:   aflPropOdds,
     });
   }
 
@@ -906,6 +918,7 @@ export default async function GameDetailPage({
               h2hVariants={h2hVariants} aflAnalytics={aflAnalytics}
               sofascore={sofascore} insights={insights}
               isSoccer={false} isBasketball={false} isAFL={true}
+              kitchenSlips={aflKitchenSlips}
               initialTab={activeTab}
               initialH2hFilter={h2hFilter as VenueFilter}
               initialHistoryFilter={historyFilter as VenueFilter}

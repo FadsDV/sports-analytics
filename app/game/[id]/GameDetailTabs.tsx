@@ -18,14 +18,17 @@ import PlayerAvatar from "@/components/afl/PlayerAvatar";
 import type { AFLPlayerAnalyticsResult } from "@/lib/sports/afl/players/types";
 import NBAPlayerDrawer from "@/components/nba/NBAPlayerDrawer";
 import type { NBAPlayerAnalyticsResult } from "@/lib/sports/nba/players/types";
+import AFLKitchen from "@/components/afl/AFLKitchen";
+import type { KitchenSlip } from "@/lib/sports/afl/kitchen";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { key: "overview", label: "Overview" },
-  { key: "players",  label: "Players"  },
-  { key: "stats",    label: "Stats"    },
-  { key: "h2h",      label: "H2H"      },
+  { key: "overview", label: "Overview",     aflOnly: false },
+  { key: "players",  label: "Players",      aflOnly: false },
+  { key: "stats",    label: "Stats",        aflOnly: false },
+  { key: "h2h",      label: "H2H",          aflOnly: false },
+  { key: "kitchen",  label: "🍳 Kitchen",   aflOnly: true  },
 ] as const;
 
 const WEATHER_ICON: Record<string, string> = {
@@ -64,6 +67,7 @@ export interface GameDetailTabsProps {
   isSoccer:           boolean;
   isBasketball:       boolean;
   isAFL:              boolean;
+  kitchenSlips?:      KitchenSlip[];
   initialTab:         string;
   initialH2hFilter:   VenueFilter;
   initialHistoryFilter: VenueFilter;
@@ -1596,10 +1600,12 @@ export default function GameDetailTabs({
   game, id, homeSquad, awaySquad, homeInjuries, awayInjuries,
   homeHistories, awayHistories, h2hVariants, aflAnalytics, sofascore,
   insights, isSoccer, isBasketball, isAFL,
+  kitchenSlips,
   initialTab, initialH2hFilter, initialHistoryFilter,
 }: GameDetailTabsProps) {
-  const [tab, setTab] = useState<"overview"|"players"|"stats"|"h2h">(
-    (["overview","players","stats","h2h"].includes(initialTab) ? initialTab : "overview") as "overview"|"players"|"stats"|"h2h"
+  const VALID_TABS = ["overview","players","stats","h2h", ...(isAFL ? ["kitchen"] : [])] as const;
+  const [tab, setTab] = useState<"overview"|"players"|"stats"|"h2h"|"kitchen">(
+    (VALID_TABS.includes(initialTab as any) ? initialTab : "overview") as "overview"|"players"|"stats"|"h2h"|"kitchen"
   );
   const [h2hFilter, setH2hFilter] = useState<VenueFilter>(initialH2hFilter);
   const [historyFilter, setHistoryFilter] = useState<VenueFilter>(initialHistoryFilter);
@@ -1617,10 +1623,10 @@ export default function GameDetailTabs({
       {/* Tab bar — visually continues the hero card */}
       <div className="bg-surface rounded-b-2xl overflow-hidden mb-4">
         <div className="flex border-t border-white/5">
-          {TABS.map(t => (
+          {TABS.filter(t => !t.aflOnly || isAFL).map(t => (
             <button
               key={t.key}
-              onClick={() => setTab(t.key)}
+              onClick={() => setTab(t.key as any)}
               className={`flex-1 py-3 text-center text-sm font-medium relative transition-colors ${
                 tab === t.key
                   ? "text-text-1 after:absolute after:bottom-0 after:left-4 after:right-4 after:h-[2px] after:bg-primary after:rounded-full"
@@ -1798,6 +1804,16 @@ export default function GameDetailTabs({
             ? <H2HPanel h2h={currentH2H} homeTeam={homeTeam.name} awayTeam={awayTeam.name} />
             : <p className="text-sm text-text-2">No head-to-head data.</p>}
         </Section>
+      )}
+
+      {/* ── Kitchen ──────────────────────────────────────────────────────── */}
+      {tab === "kitchen" && isAFL && (
+        kitchenSlips && kitchenSlips.some(s => s.legs.length > 0)
+          ? <AFLKitchen slips={kitchenSlips} />
+          : <div className="bg-surface rounded-xl p-8 border border-border text-center">
+              <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
+              <p className="text-[10px] text-text-2">Requires at least 3 completed games per team.</p>
+            </div>
       )}
     </>
   );
