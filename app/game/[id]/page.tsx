@@ -14,6 +14,7 @@ import {
 import { computeAFLPlayerPicks, type AFLPlayerPick, type AFLPickStat } from "@/lib/sports/afl/picks";
 import { computeAFLKitchen, type KitchenSlip } from "@/lib/sports/afl/kitchen";
 import { computeNBAPlayerPicks, type NBAPlayerPick } from "@/lib/sports/nba/picks";
+import { computeNBAKitchen, type NBAKitchenSlip } from "@/lib/sports/nba/kitchen";
 import { resolveTeamCanonicalId } from "@/lib/mappings";
 import {
   fetchTeamRoster, fetchTeamInjuries, ESPNPlayer, ESPNInjury,
@@ -323,6 +324,7 @@ export default async function GameDetailPage({
   // Fetch NBA player pick history in parallel (basketball only)
   let nbaPlayerPicks: NBAPlayerPick[] = [];
   let nbaPropOdds = new Map<string, { price: number; line: number; bookmaker: string }>();
+  let nbaKitchenSlips: NBAKitchenSlip[] = [];
   if (isBasketball && game.homeTeam.espnId && game.awayTeam.espnId) {
     const completedHomeIds = homeSchedule
       .filter((e: any) => e.competitions?.[0]?.status?.type?.state === "post")
@@ -351,6 +353,16 @@ export default async function GameDetailPage({
       awayTeamId: game.awayTeam.espnId,
       homeAbbr:   game.homeTeam.shortName,
       awayAbbr:   game.awayTeam.shortName,
+    });
+
+    nbaKitchenSlips = computeNBAKitchen({
+      homeGames:  homeBoxScores,
+      awayGames:  awayBoxScores,
+      homeTeamId: game.homeTeam.espnId,
+      awayTeamId: game.awayTeam.espnId,
+      homeAbbr:   game.homeTeam.shortName,
+      awayAbbr:   game.awayTeam.shortName,
+      propOdds:   nbaPropOdds,
     });
   }
 
@@ -576,6 +588,7 @@ export default async function GameDetailPage({
               isSoccer={false}
               isBasketball={true}
               isAFL={false}
+              nbaKitchenSlips={nbaKitchenSlips}
               initialTab={activeTab}
               initialH2hFilter={h2hFilter as VenueFilter}
               initialHistoryFilter={historyFilter as VenueFilter}

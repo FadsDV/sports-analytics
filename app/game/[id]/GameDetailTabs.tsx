@@ -20,15 +20,17 @@ import NBAPlayerDrawer from "@/components/nba/NBAPlayerDrawer";
 import type { NBAPlayerAnalyticsResult } from "@/lib/sports/nba/players/types";
 import AFLKitchen from "@/components/afl/AFLKitchen";
 import type { KitchenSlip } from "@/lib/sports/afl/kitchen";
+import NBAKitchen from "@/components/nba/NBAKitchen";
+import type { NBAKitchenSlip } from "@/lib/sports/nba/kitchen";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { key: "overview", label: "Overview",     aflOnly: false },
-  { key: "players",  label: "Players",      aflOnly: false },
-  { key: "stats",    label: "Stats",        aflOnly: false },
-  { key: "h2h",      label: "H2H",          aflOnly: false },
-  { key: "kitchen",  label: "🍳 Kitchen",   aflOnly: true  },
+  { key: "overview", label: "Overview",     kitchenOnly: false },
+  { key: "players",  label: "Players",      kitchenOnly: false },
+  { key: "stats",    label: "Stats",        kitchenOnly: false },
+  { key: "h2h",      label: "H2H",          kitchenOnly: false },
+  { key: "kitchen",  label: "🍳 Kitchen",   kitchenOnly: true  },
 ] as const;
 
 const WEATHER_ICON: Record<string, string> = {
@@ -68,6 +70,7 @@ export interface GameDetailTabsProps {
   isBasketball:       boolean;
   isAFL:              boolean;
   kitchenSlips?:      KitchenSlip[];
+  nbaKitchenSlips?:   NBAKitchenSlip[];
   initialTab:         string;
   initialH2hFilter:   VenueFilter;
   initialHistoryFilter: VenueFilter;
@@ -1600,10 +1603,11 @@ export default function GameDetailTabs({
   game, id, homeSquad, awaySquad, homeInjuries, awayInjuries,
   homeHistories, awayHistories, h2hVariants, aflAnalytics, sofascore,
   insights, isSoccer, isBasketball, isAFL,
-  kitchenSlips,
+  kitchenSlips, nbaKitchenSlips,
   initialTab, initialH2hFilter, initialHistoryFilter,
 }: GameDetailTabsProps) {
-  const VALID_TABS = ["overview","players","stats","h2h", ...(isAFL ? ["kitchen"] : [])] as const;
+  const hasKitchen = isAFL || isBasketball;
+  const VALID_TABS = ["overview","players","stats","h2h", ...(hasKitchen ? ["kitchen"] : [])] as const;
   const [tab, setTab] = useState<"overview"|"players"|"stats"|"h2h"|"kitchen">(
     (VALID_TABS.includes(initialTab as any) ? initialTab : "overview") as "overview"|"players"|"stats"|"h2h"|"kitchen"
   );
@@ -1623,7 +1627,7 @@ export default function GameDetailTabs({
       {/* Tab bar — visually continues the hero card */}
       <div className="bg-surface rounded-b-2xl overflow-hidden mb-4">
         <div className="flex border-t border-white/5">
-          {TABS.filter(t => !t.aflOnly || isAFL).map(t => (
+          {TABS.filter(t => !t.kitchenOnly || hasKitchen).map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key as any)}
@@ -1810,6 +1814,14 @@ export default function GameDetailTabs({
       {tab === "kitchen" && isAFL && (
         kitchenSlips && kitchenSlips.some(s => s.legs.length > 0)
           ? <AFLKitchen slips={kitchenSlips} />
+          : <div className="bg-surface rounded-xl p-8 border border-border text-center">
+              <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
+              <p className="text-[10px] text-text-2">Requires at least 3 completed games per team.</p>
+            </div>
+      )}
+      {tab === "kitchen" && isBasketball && (
+        nbaKitchenSlips && nbaKitchenSlips.some(s => s.legs.length > 0)
+          ? <NBAKitchen slips={nbaKitchenSlips} />
           : <div className="bg-surface rounded-xl p-8 border border-border text-center">
               <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
               <p className="text-[10px] text-text-2">Requires at least 3 completed games per team.</p>
