@@ -574,6 +574,11 @@ export default async function GameDetailPage({
   // ── AFL: 3-column layout with sticky side panels ──────────────────────────
   if (isAFL) {
     const allInj = [...homeInjuries, ...awayInjuries];
+    // Resolve ladder ranks for both teams
+    const homeCanonical = resolveTeamCanonicalId(homeTeam.name, "afl");
+    const awayCanonical = resolveTeamCanonicalId(awayTeam.name, "afl");
+    const homeRank = aflLadder.find(l => resolveTeamCanonicalId(l.teamName, "afl") === homeCanonical)?.rank;
+    const awayRank = aflLadder.find(l => resolveTeamCanonicalId(l.teamName, "afl") === awayCanonical)?.rank;
     return (
       <div className="px-4 pt-4 pb-10">
         <Link href="/" className="inline-flex items-center gap-1 text-xs text-text-2 hover:text-text-2 mb-4 transition-colors">
@@ -585,18 +590,24 @@ export default async function GameDetailPage({
           <aside className="hidden 2xl:flex flex-col gap-3 w-[220px] shrink-0 self-start sticky top-4">
             {/* Form comparison */}
             <div className="bg-surface rounded-xl p-3 border border-border">
-              <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Form</div>
-              {([{ t: homeTeam, role: "Home" }, { t: awayTeam, role: "Away" }] as const).map(({ t, role }) => (
+              <div className="text-[10px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Form</div>
+              {([
+                { t: homeTeam, role: "Home", an: aflAnalytics?.home },
+                { t: awayTeam, role: "Away", an: aflAnalytics?.away },
+              ] as const).map(({ t, role, an }) => (
                 <div key={t.name} className="mb-2.5 last:mb-0">
                   <div className="flex items-center gap-1.5 mb-1.5">
                     {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                    <span className="text-[10px] font-medium text-text-1">{t.shortName}</span>
-                    <span className="text-[9px] text-text-2 ml-1">{role}</span>
-                    <span className="ml-auto text-[9px] text-text-2 tabular-nums">{t.record.wins}W {t.record.losses}L</span>
+                    <span className="text-xs font-medium text-text-1">{t.shortName}</span>
+                    <span className="text-[10px] text-text-2 ml-1">{role}</span>
+                    {/* Use analytics record (accurate) — ESPN record is unreliable for AFL */}
+                    <span className="ml-auto text-[10px] text-text-2 tabular-nums">
+                      {an ? `${an.record.wins}W ${an.record.losses}L${an.record.draws > 0 ? ` ${an.record.draws}D` : ""}` : "—"}
+                    </span>
                   </div>
                   <div className="flex gap-1">
                     {t.form.slice(0, 5).map((r, i) => (
-                      <span key={i} className={`w-5 h-5 rounded text-[8px] font-bold flex items-center justify-center ${
+                      <span key={i} className={`w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center ${
                         r === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" : r === "L" ? "bg-[#EF4444]/20 text-[#EF4444]" : "bg-[#F59E0B]/20 text-[#F59E0B]"
                       }`}>{r}</span>
                     ))}
@@ -607,7 +618,7 @@ export default async function GameDetailPage({
             {/* AFL analytics summary */}
             {aflAnalytics && (
               <div className="bg-surface rounded-xl p-3 border border-border">
-                <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Season Avg</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Season Avg</div>
                 {([
                   { t: homeTeam, an: aflAnalytics.home },
                   { t: awayTeam, an: aflAnalytics.away },
@@ -615,17 +626,17 @@ export default async function GameDetailPage({
                   <div key={t.name} className="mb-2.5 last:mb-0">
                     <div className="flex items-center gap-1 mb-1">
                       {t.logoUrl && <img src={t.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
-                      <span className="text-[10px] text-text-2">{t.shortName}</span>
+                      <span className="text-xs text-text-2">{t.shortName}</span>
                     </div>
-                    <div className="flex justify-between text-[10px] py-0.5">
+                    <div className="flex justify-between text-xs py-0.5">
                       <span className="text-text-2">Scored</span>
-                      <span className="text-white font-bold tabular-nums">{an.avgScored}</span>
+                      <span className="text-text-1 font-bold tabular-nums">{an.avgScored}</span>
                     </div>
-                    <div className="flex justify-between text-[10px] py-0.5">
+                    <div className="flex justify-between text-xs py-0.5">
                       <span className="text-text-2">Conceded</span>
                       <span className="text-text-2 tabular-nums">{an.avgConceded}</span>
                     </div>
-                    <div className="flex justify-between text-[10px] py-0.5">
+                    <div className="flex justify-between text-xs py-0.5">
                       <span className="text-text-2">Win margin</span>
                       <span className="text-text-2 tabular-nums">{an.avgMarginWin != null ? Math.round(an.avgMarginWin) : "—"}</span>
                     </div>
@@ -687,7 +698,7 @@ export default async function GameDetailPage({
               </div>
               {/* Score */}
               <div className="px-5 py-6 flex items-center gap-4">
-                <TeamHero team={homeTeam} role="Home" />
+                <TeamHero team={homeTeam} role="Home" ladderRank={homeRank} />
                 <div className="flex-1 text-center">
                   <LiveScorePanel
                     gameId={id}
@@ -708,7 +719,7 @@ export default async function GameDetailPage({
                     venue={game.venue}
                   />
                 </div>
-                <TeamHero team={awayTeam} role="Away" />
+                <TeamHero team={awayTeam} role="Away" ladderRank={awayRank} />
               </div>
               {/* AFL analytics ribbon */}
               {aflAnalytics && (
@@ -768,11 +779,11 @@ export default async function GameDetailPage({
             {/* Key insights */}
             {insights.length > 0 && (
               <div className="bg-surface rounded-xl p-3 border border-border">
-                <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Key Insights</div>
-                <ul className="space-y-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Key Insights</div>
+                <ul className="space-y-2">
                   {insights.slice(0, 5).map((ins, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-[10px]">
-                      <span className="text-primary shrink-0">{ins.icon}</span>
+                    <li key={i} className="flex items-start gap-1.5 text-xs">
+                      <span className="text-primary shrink-0 mt-px">{ins.icon}</span>
                       <span className="text-text-1 leading-snug">{ins.text}</span>
                     </li>
                   ))}
@@ -981,14 +992,21 @@ export default async function GameDetailPage({
 // SHARED UI ATOMS
 // ═══════════════════════════════════════════════════════════
 
-function TeamHero({ team, role }: { team: Team; role: string }) {
+function TeamHero({ team, role, ladderRank }: { team: Team; role: string; ladderRank?: number }) {
   return (
     <div className="flex-1 flex flex-col items-center gap-2 text-center min-w-0">
       {team.logoUrl
         ? <img src={team.logoUrl} alt={team.name} className="w-14 h-14 sm:w-20 sm:h-20 object-contain" />
         : <span className="text-5xl">{team.logo}</span>}
       <div>
-        <div className="font-bold text-text-1 text-sm sm:text-base leading-tight">{team.name}</div>
+        <div className="flex items-center justify-center gap-1.5">
+          <span className="font-bold text-text-1 text-sm sm:text-base leading-tight">{team.name}</span>
+          {ladderRank != null && (
+            <span className="text-[9px] font-bold bg-surface2 border border-border rounded px-1.5 py-0.5 text-text-2 tabular-nums shrink-0">
+              #{ladderRank}
+            </span>
+          )}
+        </div>
         <div className="text-[10px] text-text-2 mt-0.5">{role}</div>
       </div>
     </div>

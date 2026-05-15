@@ -5,6 +5,14 @@
  * UI components import only from @/lib/esports/types.
  *
  * Graceful degradation: returns empty arrays/null when PANDASCORE_API_KEY is absent.
+ *
+ * ── FREE TIER RESTRICTIONS ───────────────────────────────────────────────────
+ * Individual match endpoints (/csgo/matches/{id}) return 403 on the free plan.
+ * All fetches use list endpoints only. fetchCS2Match searches the cached lists.
+ *
+ * ── CACHE ────────────────────────────────────────────────────────────────────
+ * Caching is handled by Next.js fetch cache via next: { revalidate: N }.
+ * TTLs: live=30s, upcoming=5min, past=30min, team history=2h.
  */
 
 import type {
@@ -14,6 +22,7 @@ import type {
   EsportsTournament,
   EsportsMatchStatus,
   CS2Map,
+  CS2Stream,
 } from "@/lib/esports/types";
 import {
   resolveCanonicalTeamId,
@@ -102,6 +111,26 @@ function normalizeMaps(games: any[], homeExtId: number, awayExtId: number): CS2M
   });
 }
 
+function normalizeStreams(list: any[]): CS2Stream[] {
+  if (!Array.isArray(list)) return [];
+  return list.map((s: any) => {
+    const rawUrl   = s.raw_url   ?? s.url ?? "";
+    const embedUrl = s.embed_url ?? rawUrl;
+    return {
+      language: s.language ?? "en",
+      embedUrl,
+      rawUrl,
+      main:     Boolean(s.main),
+      official: Boolean(s.official),
+    };
+  }).sort((a, b) => {
+    // official + main first
+    if (a.official !== b.official) return a.official ? -1 : 1;
+    if (a.main !== b.main) return a.main ? -1 : 1;
+    return 0;
+  });
+}
+
 function normalizeMatch(m: any): EsportsMatch {
   const home       = normalizeTeam(m.opponents?.[0]?.opponent ?? null);
   const away       = normalizeTeam(m.opponents?.[1]?.opponent ?? null);
@@ -128,33 +157,34 @@ function normalizeMatch(m: any): EsportsMatch {
     numberOfGames: m.number_of_games ?? 1,
     gameType:      "cs2",
     maps:          normalizeMaps(m.games ?? [], homeExtId ?? 0, awayExtId ?? 0),
+    streams:       normalizeStreams(m.streams_list ?? []),
   };
 }
 
 // ─── Core fetch ───────────────────────────────────────────────────────────────
 
 async function pandaFetch<T>(
-  path: string,
+  apiPath: string,
   params: Record<string, string> = {},
-  revalidate = 60,
+  ttlMs = 60_000,
 ): Promise<T | null> {
   if (!process.env.PANDASCORE_API_KEY) return null;
 
-  const url = new URL(`${PANDASCORE_BASE}${path}`);
+  const url = new URL(`${PANDASCORE_BASE}${apiPath}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
 
   try {
     const res = await fetch(url.toString(), {
       headers: authHeaders(),
-      next: { revalidate },
+      next: { revalidate: Math.ceil(ttlMs / 1000) },
     });
     if (!res.ok) {
-      console.warn(`[CS2] PandaScore ${res.status} — ${path}`);
+      console.warn(`[CS2] PandaScore ${res.status} — ${apiPath}`);
       return null;
     }
-    return res.json() as Promise<T>;
+    return await res.json() as T;
   } catch (err) {
-    console.error(`[CS2] fetch error — ${path}`, err);
+    console.error(`[CS2] fetch error — ${apiPath}`, err);
     return null;
   }
 }
@@ -162,64 +192,85 @@ async function pandaFetch<T>(
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function fetchCS2Upcoming(limit = 20): Promise<EsportsMatch[]> {
-  const raw = await pandaFetch<any[]>("/csgo/matches/upcoming", {
-    per_page: String(limit),
-    sort: "scheduled_at",
-  });
+  const raw = await pandaFetch<any[]>(
+    "/csgo/matches/upcoming",
+    { per_page: String(limit), sort: "scheduled_at" },
+    5 * 60_000,   // 5 min
+  );
   return (raw ?? []).map(normalizeMatch);
 }
 
 export async function fetchCS2Live(): Promise<EsportsMatch[]> {
-  const raw = await pandaFetch<any[]>("/csgo/matches/running", {}, 15);
+  const raw = await pandaFetch<any[]>(
+    "/csgo/matches/running",
+    {},
+    30_000,        // 30 s
+  );
   return (raw ?? []).map(normalizeMatch);
 }
 
 export async function fetchCS2Past(limit = 20): Promise<EsportsMatch[]> {
-  const raw = await pandaFetch<any[]>("/csgo/matches/past", {
-    per_page: String(limit),
-    sort: "-end_at",
-  });
+  const raw = await pandaFetch<any[]>(
+    "/csgo/matches/past",
+    { per_page: String(limit), sort: "-end_at" },
+    30 * 60_000,  // 30 min — completed results don't change
+  );
   return (raw ?? []).map(normalizeMatch);
 }
 
+/**
+ * Finds a match by its canonical ID by searching through the cached lists.
+ * Individual match endpoints (/csgo/matches/{id}) are blocked on the free tier.
+ * The lists are already cached from the hub page — this adds 0 extra API calls.
+ */
 export async function fetchCS2Match(normalizedId: string): Promise<EsportsMatch | null> {
   const psId = normalizedId.replace(/^cs2\.match\./, "");
-  const raw  = await pandaFetch<any>(`/csgo/matches/${psId}`, {}, 30);
-  if (!raw) return null;
-  return normalizeMatch(raw);
+
+  const [live, upcoming, past] = await Promise.all([
+    pandaFetch<any[]>("/csgo/matches/running", {}, 30_000),
+    pandaFetch<any[]>("/csgo/matches/upcoming", { per_page: "50", sort: "scheduled_at" }, 5 * 60_000),
+    pandaFetch<any[]>("/csgo/matches/past",     { per_page: "50", sort: "-end_at" },        30 * 60_000),
+  ]);
+
+  const all = [...(live ?? []), ...(upcoming ?? []), ...(past ?? [])];
+  const raw = all.find((m: any) => String(m.id) === String(psId));
+  return raw ? normalizeMatch(raw) : null;
 }
 
 export async function fetchCS2Team(slugOrId: string): Promise<EsportsTeam | null> {
-  const raw = await pandaFetch<any>(`/teams/${slugOrId}`, {}, 3600);
+  const raw = await pandaFetch<any>(
+    `/teams/${slugOrId}`,
+    {},
+    4 * 3600_000,  // 4 h
+  );
   if (!raw) return null;
   return normalizeTeam(raw);
-}
-
-export async function fetchCS2TeamMatches(
-  slugOrId: string,
-  limit = 6,
-): Promise<EsportsMatch[]> {
-  const teamRaw = await pandaFetch<any>(`/teams/${slugOrId}`, {}, 3600);
-  if (!teamRaw?.id) return [];
-
-  const raw = await pandaFetch<any[]>("/csgo/matches/past", {
-    per_page: String(limit),
-    sort: "-end_at",
-    "filter[opponent_id]": String(teamRaw.id),
-  });
-  return (raw ?? []).map(normalizeMatch);
 }
 
 export async function fetchCS2TeamMatchesByExternalId(
   externalId: number | string,
   limit = 20,
 ): Promise<EsportsMatch[]> {
-  const raw = await pandaFetch<any[]>("/csgo/matches/past", {
-    per_page: String(limit),
-    sort: "-end_at",
-    "filter[opponent_id]": String(externalId),
-  });
+  const raw = await pandaFetch<any[]>(
+    "/csgo/matches/past",
+    { per_page: String(limit), sort: "-end_at", "filter[opponent_id]": String(externalId) },
+    2 * 3600_000,  // 2 h — team history rarely changes mid-day
+  );
   return (raw ?? []).map(normalizeMatch);
+}
+
+/** Fetch team past matches by slug (resolves slug → externalId first). */
+export async function fetchCS2TeamMatches(
+  slugOrId: string,
+  limit = 20,
+): Promise<EsportsMatch[]> {
+  const teamRaw = await pandaFetch<any>(
+    `/teams/${slugOrId}`,
+    {},
+    4 * 3600_000,
+  );
+  if (!teamRaw?.id) return [];
+  return fetchCS2TeamMatchesByExternalId(teamRaw.id, limit);
 }
 
 export function hasAPIKey(): boolean {

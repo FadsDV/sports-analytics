@@ -179,7 +179,7 @@ export default function SquadList({
       <div className="space-y-3">
         {groups.map((group) => (
           <div key={group.rank}>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-600 mb-1 px-2">
+            <div className="text-xs font-semibold uppercase tracking-wider text-text-2 mb-1 px-2">
               {group.label}
             </div>
             <div className="space-y-0.5">
@@ -200,22 +200,22 @@ export default function SquadList({
                     <button
                       key={player.id}
                       onClick={() => handlePlayerClick(player)}
-                      className="w-full flex items-center gap-2.5 py-2 px-2 rounded-lg hover:bg-[#1e293b]/70 transition-colors group text-left"
+                      className="w-full flex items-center gap-3 py-2.5 px-2 rounded-lg hover:bg-surface2 transition-colors group text-left"
                     >
-                      <PlayerAvatar src={player.headshot} name={player.displayName} size={32} />
-                      {player.jersey && <span className="text-[11px] text-gray-600 font-mono w-5 shrink-0 text-right">{player.jersey}</span>}
+                      <PlayerAvatar src={player.headshot} name={player.displayName} size={40} />
+                      {player.jersey && <span className="text-xs text-text-2 font-mono w-5 shrink-0 text-right">{player.jersey}</span>}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`text-sm font-medium truncate transition-colors ${injury?.status === "Out" ? "text-gray-500 line-through" : "text-white group-hover:text-[#3B82F6]"}`}>
+                          <span className={`text-sm font-semibold truncate transition-colors ${injury?.status === "Out" ? "text-text-2 line-through" : "text-text-1 group-hover:text-primary"}`}>
                             {player.displayName}
                           </span>
                           {badgeCls && injury?.status && <span className={`text-[10px] font-semibold px-1.5 py-px rounded border shrink-0 ${badgeCls}`}>{injury.status}</span>}
                         </div>
-                        {nbaStats && <div className="text-[10px] text-[#4B5563] mt-0.5">{nbaStats}</div>}
+                        {nbaStats && <div className="text-xs text-text-2 mt-0.5">{nbaStats}</div>}
                       </div>
                       <div className="shrink-0 text-right">
-                        <div className="text-xs font-semibold text-gray-500">{player.position}</div>
-                        <div className="text-[9px] text-[#374151] mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">INTEL</div>
+                        <div className="text-xs font-semibold text-text-2">{player.position}</div>
+                        <div className="text-[9px] text-primary mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">INTEL →</div>
                       </div>
                     </button>
                   );

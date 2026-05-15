@@ -37,7 +37,7 @@ function Card({
     <div className={`bg-surface rounded-xl border border-border ${className.includes("overflow-") ? "" : "overflow-hidden"} ${accent ? "border-l-2 border-l-primary" : ""} ${className}`}>
       {title && (
         <div className="px-3 py-2 border-b border-border bg-surface2">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-text-2">{title}</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-text-2">{title}</span>
         </div>
       )}
       <div className="p-3">{children}</div>
@@ -139,14 +139,14 @@ function AFLPreMatch({
                 </div>
                 <FormPills form={t.form} />
                 <div className="mt-2 space-y-1">
-                  <div className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center justify-between text-xs">
                     <span className="text-text-2">Record</span>
                     <span className="text-text-1 font-medium tabular-nums">
                       {t.record.wins}W {t.record.losses}L{t.record.draws ? ` ${t.record.draws}D` : ""}
                     </span>
                   </div>
                   {an && (
-                    <div className="flex items-center justify-between text-[11px]">
+                    <div className="flex items-center justify-between text-xs">
                       <span className="text-text-2">Avg Score</span>
                       <span className="text-text-1 font-medium tabular-nums">{an.avgScored} - {an.avgConceded}</span>
                     </div>
@@ -217,12 +217,12 @@ function AFLPreMatch({
                       <div className="flex items-center gap-1.5 mb-0.5">
                         <span className="text-xs font-semibold text-text-1 leading-none">{ins.title}</span>
                         {ins.direction !== "neutral" && (
-                          <span className={`text-[9px] font-bold px-1 py-px rounded uppercase tracking-wide ${dirCls}`}>
+                          <span className={`text-[10px] font-bold px-1 py-px rounded uppercase tracking-wide ${dirCls}`}>
                             {ins.direction}
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-text-2 leading-snug">{ins.text}</p>
+                      <p className="text-xs text-text-2 leading-snug">{ins.text}</p>
                     </div>
                   </div>
                 );
@@ -334,7 +334,7 @@ function AFLPreMatch({
               <div key={t.name}>
                 <div className="flex items-center gap-1 mb-2">
                   {t.logoUrl && <img src={t.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-text-2">{t.shortName}</span>
+                  <span className="text-xs font-semibold uppercase tracking-widest text-text-2">{t.shortName}</span>
                 </div>
                 {h.slice(0, 5).map(g => (
                   <Link key={g.gameId} href={`/game/${g.gameId}`}
@@ -398,7 +398,7 @@ function AFLPreMatch({
               <div className="text-3xl font-black text-text-1 tabular-nums">
                 +{Math.abs(analytics.predictedMargin)} pts
               </div>
-              <div className="text-[9px] text-text-2 mt-1">ladder · form · attack/defence · H2H</div>
+              <div className="text-[10px] text-text-2 mt-1">ladder · form · attack/defence · H2H</div>
             </div>
           </Card>
         )}
@@ -481,7 +481,7 @@ function AFLLive({
                           <span className="text-xs text-text-1 font-medium flex-1 truncate">{row.player}</span>
                           <div className="flex items-center gap-2 shrink-0">
                             {KEY_STATS.filter(k => row.stats[k] != null).slice(0, 3).map(k => (
-                              <span key={k} className="text-[10px] tabular-nums">
+                              <span key={k} className="text-xs tabular-nums">
                                 <span className="text-text-2">{k} </span>
                                 <span className={k === "D" && elite ? "text-primary font-bold" : "text-text-2"}>
                                   {row.stats[k]}
@@ -712,12 +712,12 @@ function AFLLive({
                       <div className="flex items-center gap-1.5 mb-0.5">
                         <span className="text-xs font-semibold text-text-1 leading-none">{ins.title}</span>
                         {ins.direction !== "neutral" && (
-                          <span className={`text-[9px] font-bold px-1 py-px rounded uppercase tracking-wide ${dirCls}`}>
+                          <span className={`text-[10px] font-bold px-1 py-px rounded uppercase tracking-wide ${dirCls}`}>
                             {ins.direction}
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-text-2 leading-snug">{ins.text}</p>
+                      <p className="text-xs text-text-2 leading-snug">{ins.text}</p>
                     </div>
                   </div>
                 );
@@ -783,7 +783,7 @@ function AFLQuarterSparkline({ game }: { game: AFLDashboardProps["game"] }) {
   return (
     <Card title="Quarter Momentum">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[9px] text-text-2">{homeTeam.shortName} ↑ · {awayTeam.shortName} ↓</span>
+        <span className="text-[10px] text-text-2">{homeTeam.shortName} ↑ · {awayTeam.shortName} ↓</span>
         {leadName && (
           <span style={{ color: leadColor }} className="text-[10px] font-bold">
             {leadName} +{Math.abs(currentDiff)}
@@ -815,20 +815,20 @@ function AFLQuarterSparkline({ game }: { game: AFLDashboardProps["game"] }) {
       {/* Compact quarter grid */}
       <div className="mt-2 grid gap-y-1" style={{ gridTemplateColumns: `auto repeat(${periods}, 1fr) auto` }}>
         <div />
-        {labels.map(l => <div key={l} className="text-center text-[9px] text-text-2">{l}</div>)}
-        <div className="text-[9px] text-text-2 text-right">TOT</div>
+        {labels.map(l => <div key={l} className="text-center text-[10px] text-text-2">{l}</div>)}
+        <div className="text-[10px] text-text-2 text-right">TOT</div>
         <div className="flex items-center gap-1">
           {homeTeam.logoUrl && <img src={homeTeam.logoUrl} alt="" className="w-3 h-3 object-contain" />}
-          <span className="text-[10px] text-text-2">{homeTeam.shortName}</span>
+          <span className="text-xs text-text-2">{homeTeam.shortName}</span>
         </div>
         {Array.from({ length: periods }, (_, i) => {
           const v = hQ[i] ?? 0;
-          return <div key={i} className="text-center"><span className={`text-[10px] tabular-nums ${v > (aQ[i] ?? 0) && v > 0 ? "text-white font-bold" : "text-text-2"}`}>{v || "—"}</span></div>;
+          return <div key={i} className="text-center"><span className={`text-xs tabular-nums ${v > (aQ[i] ?? 0) && v > 0 ? "text-white font-bold" : "text-text-2"}`}>{v || "—"}</span></div>;
         })}
         <div className="text-right"><span className="text-sm font-black text-text-1 tabular-nums">{score.home}</span></div>
         <div className="flex items-center gap-1">
           {awayTeam.logoUrl && <img src={awayTeam.logoUrl} alt="" className="w-3 h-3 object-contain" />}
-          <span className="text-[10px] text-text-2">{awayTeam.shortName}</span>
+          <span className="text-xs text-text-2">{awayTeam.shortName}</span>
         </div>
         {Array.from({ length: periods }, (_, i) => {
           const v = aQ[i] ?? 0;
