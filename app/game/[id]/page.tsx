@@ -1,4 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
+export const dynamic = "force-dynamic";
+
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Game, Team, H2HGame, Insight, ProbCard } from "@/lib/types";
