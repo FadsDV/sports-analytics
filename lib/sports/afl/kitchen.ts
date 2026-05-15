@@ -2,20 +2,27 @@
  * AFL Kitchen — 6-slip bet slip generator.
  *
  * Slip types:
- *   safe        — 80%+ hit rate, conservative thresholds (avg × 0.50 floor), max 5 legs
- *   doable      — 70%+ hit rate, moderate thresholds (avg × 0.65 floor), max 5 legs
- *   goalscorers — 1+ goal at 55%+ hit rate, max 5 legs
- *   disposals   — disposal legs only, 65%+, max 9 legs
- *   ballsy      — 40–62% hit rate, high thresholds, bounce-back bonus, max 8 legs
- *   value       — single legs, odds > 1.60, top 10 by (hitRate × odds)
+ *   safe        — composite ≥ 0.75, conservative thresholds, max 5 legs
+ *   doable      — composite ≥ 0.58, moderate thresholds, max 5 legs
+ *   goalscorers — Goals only, composite ≥ 0.42, max 5 legs
+ *   disposals   — Disposals only, composite ≥ 0.55, max 9 legs
+ *   ballsy      — composite 0.22–0.55, high thresholds, bounce-back bonus, max 8 legs
+ *   value       — single legs, odds > 1.60, top 10 by (reliability × odds)
  *
- * Same player can appear max 2× in one slip (different stat or threshold).
- * Bounce-back detection: if last game was < 65% of player's average, flag as
- * a value candidate for the upcoming game (used in ballsy + value slips).
+ * Scoring uses the sport-agnostic reliability engine:
+ *   composite = weightedHitRate × consistencyFactor × sampleFactor
+ *               + contextualBonus
+ * (No minutes factor for AFL — TOG not yet extracted.)
+ *
+ * Same player max 2× per slip (different stat or threshold).
+ * Bounce-back: last game < 65% of average → flagged for ballsy + value.
+ * Min games: 5 (players with fewer games are excluded).
  */
 
 import type { AFLGamePlayerStats } from "@/lib/sports/espn";
 import type { AFLPickStat } from "./picks";
+import { computeReliability, AFL_CONFIG } from "@/lib/sports/reliability/engine";
+import type { ReliabilityBreakdown } from "@/lib/sports/reliability/types";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -34,7 +41,12 @@ export interface KitchenLeg {
   stat:          AFLPickStat;
   statLabel:     string;
   threshold:     number;
+  /** Flat (unweighted) hit rate — for threshold search context */
   hitRate:       number;
+  /** Composite reliability score (0–1). Primary display score. */
+  reliability:   number;
+  /** Full breakdown for expandable tooltip */
+  breakdown:     ReliabilityBreakdown;
   avgStat:       number;
   gamesAnalyzed: number;
   isBounceBack:  boolean;
@@ -56,7 +68,6 @@ const STEP: Record<AFLPickStat, number> = {
   D: 1, G: 0.5, M: 1, T: 1, HO: 2,
 };
 
-// Minimum average a player needs to generate a pick for this stat
 const MIN_AVG: Record<AFLPickStat, number> = {
   D: 8, G: 0.35, M: 2, T: 2, HO: 3,
 };
@@ -72,8 +83,8 @@ function calcHitRate(vals: number[], thr: number): number {
 }
 
 /**
- * Find the HIGHEST threshold in [avg * minFraction … avg * 1.6] where
- * hit rate is within [minHR, maxHR].
+ * Find the HIGHEST threshold in [avg * minFraction … avg * 1.65] where
+ * flat hit rate is within [minHR, maxHR].
  */
 function findBestThreshold(
   vals:        number[],
@@ -83,7 +94,7 @@ function findBestThreshold(
   maxHR:       number,
   minFraction: number,
 ): { threshold: number; hitRate: number } | null {
-  const step = STEP[stat];
+  const step   = STEP[stat];
   const rawMin = avg * minFraction;
   const minThr = stat === "G"
     ? Math.max(step, Math.round(rawMin * 2) / 2)
@@ -110,9 +121,9 @@ interface Profile {
   side:          "home" | "away";
   teamAbbr:      string;
   stat:          AFLPickStat;
-  vals:          number[];   // all games, chronological (oldest → newest)
+  vals:          number[];
   avg:           number;
-  isBounceBack:  boolean;    // last game < 65% of average
+  isBounceBack:  boolean;
   gamesAnalyzed: number;
 }
 
@@ -122,7 +133,6 @@ function buildProfiles(
   side:        "home" | "away",
   teamAbbr:    string,
 ): Profile[] {
-  // Accumulate stats per player across all games
   const playerStats = new Map<string, Record<AFLPickStat, number[]>>();
 
   for (const game of gamesByGame) {
@@ -146,12 +156,12 @@ function buildProfiles(
   for (const [name, statMap] of Array.from(playerStats.entries())) {
     for (const stat of STATS) {
       const vals = statMap[stat];
-      if (vals.length < 3) continue;
+      // Minimum 5 games required
+      if (vals.length < 5) continue;
       const avg = mean(vals);
       if (avg < MIN_AVG[stat]) continue;
 
-      // Most recent game = last element (schedule slice is oldest → newest)
-      const lastGame = vals[vals.length - 1] ?? 0;
+      const lastGame     = vals[vals.length - 1] ?? 0;
       const isBounceBack = lastGame < avg * 0.65 && avg >= MIN_AVG[stat] * 1.5;
 
       profiles.push({
@@ -166,43 +176,66 @@ function buildProfiles(
 
 // ─── Leg assembler ────────────────────────────────────────────────────────────
 
+interface TierConfig {
+  minFlatHR:       number;
+  maxFlatHR:       number;
+  minFraction:     number;
+  minReliability:  number;
+  maxReliability:  number;
+  maxLegs:         number;
+  statsFilter?:    AFLPickStat[];
+  bounceBonusWeight: number;
+}
+
 function buildLegs(
-  profiles:          Profile[],
-  propOdds:          Map<string, { price: number; line: number; bookmaker: string }>,
-  minHR:             number,
-  maxHR:             number,
-  minFraction:       number,
-  maxLegs:           number,
-  statsFilter?:      AFLPickStat[],
-  bounceBonusWeight: number = 0,
+  profiles: Profile[],
+  propOdds: Map<string, { price: number; line: number; bookmaker: string }>,
+  tier:     TierConfig,
 ): KitchenLeg[] {
   type Candidate = {
-    profile:   Profile;
-    threshold: number;
-    hitRate:   number;
-    score:     number;
+    profile:     Profile;
+    threshold:   number;
+    flatHitRate: number;
+    reliability: number;
+    breakdown:   ReliabilityBreakdown;
   };
 
   const candidates: Candidate[] = [];
 
   for (const p of profiles) {
-    if (statsFilter && !statsFilter.includes(p.stat)) continue;
-    const found = findBestThreshold(p.vals, p.avg, p.stat, minHR, maxHR, minFraction);
+    if (tier.statsFilter && !tier.statsFilter.includes(p.stat)) continue;
+
+    const found = findBestThreshold(p.vals, p.avg, p.stat, tier.minFlatHR, tier.maxFlatHR, tier.minFraction);
     if (!found) continue;
 
-    let score = found.hitRate * Math.min(p.gamesAnalyzed / 5, 1);
-    if (p.isBounceBack) score += bounceBonusWeight;
+    const breakdown = computeReliability({
+      vals:      p.vals,
+      threshold: found.threshold,
+      config:    AFL_CONFIG,
+    });
 
-    candidates.push({ profile: p, threshold: found.threshold, hitRate: found.hitRate, score });
+    const reliability = tier.bounceBonusWeight > 0 && p.isBounceBack
+      ? Math.min(1.0, breakdown.finalReliability + tier.bounceBonusWeight)
+      : breakdown.finalReliability;
+
+    if (reliability < tier.minReliability || reliability > tier.maxReliability) continue;
+
+    candidates.push({
+      profile:     p,
+      threshold:   found.threshold,
+      flatHitRate: found.hitRate,
+      reliability,
+      breakdown:   { ...breakdown, finalReliability: reliability },
+    });
   }
 
-  candidates.sort((a, b) => b.score - a.score);
+  candidates.sort((a, b) => b.reliability - a.reliability);
 
   const legs: KitchenLeg[] = [];
   const playerCount = new Map<string, number>();
 
-  for (const { profile: p, threshold, hitRate } of candidates) {
-    if (legs.length >= maxLegs) break;
+  for (const { profile: p, threshold, flatHitRate, reliability, breakdown } of candidates) {
+    if (legs.length >= tier.maxLegs) break;
     const used = playerCount.get(p.name) ?? 0;
     if (used >= 2) continue;
 
@@ -215,7 +248,9 @@ function buildLegs(
       stat:          p.stat,
       statLabel:     STAT_LABELS[p.stat],
       threshold,
-      hitRate,
+      hitRate:       flatHitRate,
+      reliability,
+      breakdown,
       avgStat:       Math.round(p.avg * 10) / 10,
       gamesAnalyzed: p.gamesAnalyzed,
       isBounceBack:  p.isBounceBack,
@@ -245,36 +280,46 @@ export function computeAFLKitchen(params: {
   const awayProfiles = buildProfiles(awayGames, awayTeamId, "away", awayAbbr);
   const all = [...homeProfiles, ...awayProfiles];
 
-  // ── 1. Safe — 80%+ hit rate, conservative thresholds ─────────────────────
-  const safeLegs = buildLegs(all, propOdds, 0.80, 1.0, 0.50, 5);
+  // ── 1. Safe — composite ≥ 0.75, conservative thresholds ──────────────────
+  const safeLegs = buildLegs(all, propOdds, {
+    minFlatHR: 0.75, maxFlatHR: 1.00, minFraction: 0.50,
+    minReliability: 0.75, maxReliability: 1.00,
+    maxLegs: 5, bounceBonusWeight: 0,
+  });
 
-  // ── 2. Doable — 70%+ hit rate, moderate thresholds ───────────────────────
-  // Use a higher floor fraction so thresholds are more demanding than Safe
-  const doableRaw = buildLegs(all, propOdds, 0.70, 1.0, 0.65, 7);
-  // Deduplicate: skip exact player+stat+threshold combos already in Safe
-  const safeKeys = new Set(safeLegs.map(l => `${l.player}|${l.stat}|${l.threshold}`));
+  // ── 2. Doable — composite ≥ 0.58, moderate thresholds ────────────────────
+  const safeKeys   = new Set(safeLegs.map(l => `${l.player}|${l.stat}|${l.threshold}`));
+  const doableRaw  = buildLegs(all, propOdds, {
+    minFlatHR: 0.65, maxFlatHR: 1.00, minFraction: 0.65,
+    minReliability: 0.58, maxReliability: 1.00,
+    maxLegs: 7, bounceBonusWeight: 0,
+  });
   const doableLegs = doableRaw
     .filter(l => !safeKeys.has(`${l.player}|${l.stat}|${l.threshold}`))
     .slice(0, 5);
 
-  // ── 3. Goal Scorers — goals only, 55%+, max 5 ────────────────────────────
-  const goalLegs = buildLegs(
-    all.filter(p => p.stat === "G"),
-    propOdds, 0.55, 1.0, 0.40, 5, ["G"],
-  );
+  // ── 3. Goal Scorers — Goals only, composite ≥ 0.42 ───────────────────────
+  const goalLegs = buildLegs(all, propOdds, {
+    minFlatHR: 0.50, maxFlatHR: 1.00, minFraction: 0.40,
+    minReliability: 0.42, maxReliability: 1.00,
+    maxLegs: 5, statsFilter: ["G"], bounceBonusWeight: 0,
+  });
 
-  // ── 4. Disposals Only — 65%+, max 9 legs ─────────────────────────────────
-  const disposalLegs = buildLegs(
-    all, propOdds, 0.65, 1.0, 0.55, 9, ["D"],
-  );
+  // ── 4. Disposals Only — composite ≥ 0.55 ─────────────────────────────────
+  const disposalLegs = buildLegs(all, propOdds, {
+    minFlatHR: 0.60, maxFlatHR: 1.00, minFraction: 0.55,
+    minReliability: 0.55, maxReliability: 1.00,
+    maxLegs: 9, statsFilter: ["D"], bounceBonusWeight: 0,
+  });
 
-  // ── 5. Ballsy — 40–62% hit rate, high thresholds, bounce-back bonus ───────
-  const ballsyLegs = buildLegs(
-    all, propOdds, 0.40, 0.64, 0.82, 8,
-    undefined, 0.15,
-  );
+  // ── 5. Ballsy — composite 0.22–0.55, high thresholds, bounce-back bonus ──
+  const ballsyLegs = buildLegs(all, propOdds, {
+    minFlatHR: 0.35, maxFlatHR: 0.62, minFraction: 0.82,
+    minReliability: 0.22, maxReliability: 0.55,
+    maxLegs: 8, bounceBonusWeight: 0.08,
+  });
 
-  // ── 6. Value Picks — single legs, odds > 1.60, top 10 ────────────────────
+  // ── 6. Value Picks — single legs, odds > 1.60, top 10 ───────────────────
   const valueCandidates: Array<{ leg: KitchenLeg; score: number }> = [];
   const valueSeen = new Set<string>();
 
@@ -288,8 +333,16 @@ export function computeAFLKitchen(params: {
     const prop = propOdds.get(`${p.name}|${p.stat}`);
     if (!prop || prop.price < 1.60) continue;
 
+    const breakdown = computeReliability({
+      vals:      p.vals,
+      threshold: found.threshold,
+      config:    AFL_CONFIG,
+    });
+
+    if (breakdown.finalReliability === 0) continue;
+
     valueSeen.add(key);
-    const score = found.hitRate * Math.min(p.gamesAnalyzed / 5, 1) * prop.price;
+    const score = breakdown.finalReliability * prop.price;
 
     valueCandidates.push({
       leg: {
@@ -300,6 +353,8 @@ export function computeAFLKitchen(params: {
         statLabel:     STAT_LABELS[p.stat],
         threshold:     found.threshold,
         hitRate:       found.hitRate,
+        reliability:   breakdown.finalReliability,
+        breakdown,
         avgStat:       Math.round(p.avg * 10) / 10,
         gamesAnalyzed: p.gamesAnalyzed,
         isBounceBack:  p.isBounceBack,
