@@ -313,6 +313,84 @@ export async function fetchAFLBoxScoreForPicks(eventId: string): Promise<AFLGame
   }
 }
 
+export interface NBAGamePlayerStats {
+  name:   string;
+  teamId: string;
+  side:   "home" | "away";
+  PTS:    number;
+  REB:    number;
+  AST:    number;
+  FG3M:   number;
+  STL:    number;
+  BLK:    number;
+}
+
+/** Fetches raw player stats from a completed NBA game's box score. Cached 24h. */
+export async function fetchNBABoxScoreForPicks(eventId: string): Promise<NBAGamePlayerStats[]> {
+  const url = `${BASE}/${ESPN_PATHS.basketball}/summary?event=${eventId}`;
+  try {
+    const res = await fetch(url, {
+      next: { revalidate: 86400 },
+      headers: { "User-Agent": "SportsPulse/1.0 personal" },
+    });
+    if (!res.ok) return [];
+    const raw = await res.json();
+    const sections: any[] = raw.boxscore?.players ?? [];
+    if (!sections.length) return [];
+
+    const results: NBAGamePlayerStats[] = [];
+
+    sections.slice(0, 2).forEach((section: any, sectionIdx: number) => {
+      const side   = sectionIdx === 0 ? "home" : "away";
+      const teamId = String(section.team?.id ?? "");
+      const statGroups: any[] = section.statistics ?? [];
+
+      for (const group of statGroups) {
+        const labels: string[] = group.labels ?? group.names ?? [];
+        const idxPTS  = labels.indexOf("PTS");
+        const idxREB  = labels.indexOf("REB");
+        const idxAST  = labels.indexOf("AST");
+        const idx3PT  = labels.indexOf("3PT");
+        const idxSTL  = labels.indexOf("STL");
+        const idxBLK  = labels.indexOf("BLK");
+
+        for (const a of group.athletes ?? []) {
+          if (a.didNotPlay || a.active === false) continue;
+          const name = a.athlete?.displayName;
+          if (!name) continue;
+
+          const getN = (idx: number): number => {
+            if (idx < 0) return 0;
+            const v = a.stats?.[idx];
+            if (v == null) return 0;
+            // PTS etc. are plain numbers; 3PT comes as "m-a" string
+            if (typeof v === "string" && v.includes("-")) {
+              return Number(v.split("-")[0]) || 0;
+            }
+            return Number(v) || 0;
+          };
+
+          // Skip if already added (starters / bench groups overlap)
+          if (results.find(r => r.name === name && r.teamId === teamId)) continue;
+
+          results.push({
+            name, teamId, side,
+            PTS:  getN(idxPTS),
+            REB:  getN(idxREB),
+            AST:  getN(idxAST),
+            FG3M: getN(idx3PT),
+            STL:  getN(idxSTL),
+            BLK:  getN(idxBLK),
+          });
+        }
+      }
+    });
+    return results;
+  } catch {
+    return [];
+  }
+}
+
 function parseSummary(raw: any, sport: ESPNSport, fantasyMap: Map<string, number> | null = null): ESPNSummary {
   const result: ESPNSummary = {};
 

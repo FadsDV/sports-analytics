@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -9,8 +9,10 @@ import {
   fetchTeamSchedule, deriveFormFromSchedule, findH2HFromSchedule,
   deriveTeamHistoryFromSchedule, ESPN_PATHS, VenueFilter,
   fetchAFLBoxScoreForPicks, type AFLGamePlayerStats,
+  fetchNBABoxScoreForPicks, type NBAGamePlayerStats,
 } from "@/lib/sports/espn";
 import { computeAFLPlayerPicks, type AFLPlayerPick, type AFLPickStat } from "@/lib/sports/afl/picks";
+import { computeNBAPlayerPicks, type NBAPlayerPick } from "@/lib/sports/nba/picks";
 import { resolveTeamCanonicalId } from "@/lib/mappings";
 import {
   fetchTeamRoster, fetchTeamInjuries, ESPNPlayer, ESPNInjury,
@@ -79,6 +81,82 @@ async function fetchAFLPlayerProps(
       for (const market of bm.markets ?? []) {
         // Find which stat this market maps to
         const stat = (Object.entries(STAT_TO_MARKET) as [AFLPickStat, string][])
+          .find(([, v]) => v === market.key)?.[0];
+        if (!stat) continue;
+
+        for (const o of market.outcomes ?? []) {
+          if (o.name !== "Over") continue;
+          const mapKey = `${o.description}|${stat}`;
+          const existing = propMap.get(mapKey);
+          if (!existing || pri < existing._pri) {
+            propMap.set(mapKey, { price: o.price, line: o.point, bookmaker: bm.title, _pri: pri });
+          }
+        }
+      }
+    }
+    return propMap as Map<string, { price: number; line: number; bookmaker: string }>;
+  } catch {
+    return new Map();
+  }
+}
+
+// ─── NBA Player Prop Odds (server-side, 6h cache) ────────────────────────────
+
+const NBA_STAT_TO_MARKET: Partial<Record<string, string>> = {
+  PTS:  "player_points",
+  REB:  "player_rebounds",
+  AST:  "player_assists",
+  FG3M: "player_threes",
+};
+
+async function fetchNBAPlayerProps(
+  homeTeam: string,
+  awayTeam: string,
+): Promise<Map<string, { price: number; line: number; bookmaker: string }>> {
+  const key = process.env.THE_ODDS_API_KEY;
+  if (!key) return new Map();
+
+  try {
+    const evRes = await fetch(
+      `https://api.the-odds-api.com/v4/sports/basketball_nba/events?apiKey=${key}`,
+      { next: { revalidate: 21_600 } },
+    );
+    if (!evRes.ok) return new Map();
+    const events: { id: string; home_team: string; away_team: string }[] = await evRes.json();
+
+    // Loose team name matching
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+    const homeN = norm(homeTeam);
+    const awayN = norm(awayTeam);
+    const event = events.find(e => {
+      const eH = norm(e.home_team);
+      const eA = norm(e.away_team);
+      return (eH.includes(homeN) || homeN.includes(eH)) &&
+             (eA.includes(awayN) || awayN.includes(eA));
+    }) ?? events.find(e => {
+      const eH = norm(e.home_team);
+      const eA = norm(e.away_team);
+      return (eH.includes(awayN) || awayN.includes(eH)) &&
+             (eA.includes(homeN) || homeN.includes(eA));
+    });
+    if (!event) return new Map();
+
+    const markets = Object.values(NBA_STAT_TO_MARKET).join(",");
+    const propsRes = await fetch(
+      `https://api.the-odds-api.com/v4/sports/basketball_nba/events/${event.id}/odds` +
+      `?apiKey=${key}&regions=us,au&markets=${markets}&oddsFormat=decimal`,
+      { next: { revalidate: 21_600 } },
+    );
+    if (!propsRes.ok) return new Map();
+    const propsData = await propsRes.json();
+
+    const propMap = new Map<string, { price: number; line: number; bookmaker: string; _pri: number }>();
+    const PRIORITY: Record<string, number> = { draftkings: 0, fanduel: 1, betmgm: 2, sportsbet: 3 };
+
+    for (const bm of propsData.bookmakers ?? []) {
+      const pri = PRIORITY[bm.key] ?? 9;
+      for (const market of bm.markets ?? []) {
+        const stat = (Object.entries(NBA_STAT_TO_MARKET) as [string, string][])
           .find(([, v]) => v === market.key)?.[0];
         if (!stat) continue;
 
@@ -226,6 +304,40 @@ export default async function GameDetailPage({
       awayAbbr:     game.awayTeam.shortName,
       homeInjuries,
       awayInjuries,
+    });
+  }
+
+  // Fetch NBA player pick history in parallel (basketball only)
+  let nbaPlayerPicks: NBAPlayerPick[] = [];
+  let nbaPropOdds = new Map<string, { price: number; line: number; bookmaker: string }>();
+  if (isBasketball && game.homeTeam.espnId && game.awayTeam.espnId) {
+    const completedHomeIds = homeSchedule
+      .filter((e: any) => e.competitions?.[0]?.status?.type?.state === "post")
+      .slice(0, 5)
+      .map((e: any) => String(e.id));
+    const completedAwayIds = awaySchedule
+      .filter((e: any) => e.competitions?.[0]?.status?.type?.state === "post")
+      .slice(0, 5)
+      .map((e: any) => String(e.id));
+
+    const [propOddsResult, ...rawBoxScores] = await Promise.all([
+      fetchNBAPlayerProps(game.homeTeam.name, game.awayTeam.name),
+      ...completedHomeIds.map((id: string) => fetchNBABoxScoreForPicks(id)),
+      ...completedAwayIds.map((id: string) => fetchNBABoxScoreForPicks(id)),
+    ]);
+    nbaPropOdds = propOddsResult as Map<string, { price: number; line: number; bookmaker: string }>;
+
+    const boxScores = rawBoxScores as NBAGamePlayerStats[][];
+    const homeBoxScores = boxScores.slice(0, completedHomeIds.length);
+    const awayBoxScores = boxScores.slice(completedHomeIds.length);
+
+    nbaPlayerPicks = computeNBAPlayerPicks({
+      homeGames:  homeBoxScores,
+      awayGames:  awayBoxScores,
+      homeTeamId: game.homeTeam.espnId,
+      awayTeamId: game.awayTeam.espnId,
+      homeAbbr:   game.homeTeam.shortName,
+      awayAbbr:   game.awayTeam.shortName,
     });
   }
 
@@ -563,6 +675,56 @@ export default async function GameDetailPage({
                     </div>
                   ) : null
                 )}
+              </div>
+            )}
+
+            {/* NBA Player Picks */}
+            {nbaPlayerPicks.length > 0 && (
+              <div className="bg-surface rounded-xl p-3 border border-border">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Player Picks</div>
+                <div className="space-y-1.5">
+                  {nbaPlayerPicks.map((pick, i) => {
+                    const confColor =
+                      pick.confidence === "high"   ? "text-[#22C55E]" :
+                      pick.confidence === "medium" ? "text-[#F59E0B]" : "text-text-2";
+                    const pct     = Math.round(pick.hitRate * 100);
+                    const prop    = nbaPropOdds.get(`${pick.player}|${pick.stat}`);
+                    // Display last name only
+                    const lastName = pick.player.trim().split(" ").pop() ?? pick.player;
+                    const teamLogo = pick.side === "home" ? homeTeam.logoUrl : awayTeam.logoUrl;
+                    return (
+                      <div key={i} className="border-b border-border last:border-0 pb-1.5 last:pb-0">
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="min-w-0">
+                            <span className="text-[10px] text-text-1 font-medium leading-tight block truncate">
+                              {lastName}
+                            </span>
+                            <span className="text-[10px] font-bold text-primary">
+                              ↑ {pick.threshold}+ {pick.statLabel}
+                            </span>
+                            {prop && (
+                              <span className="block text-[9px] text-text-2 mt-0.5">
+                                {prop.bookmaker}{" "}
+                                <span className="text-text-1 font-semibold tabular-nums">
+                                  {prop.line}+ @ {prop.price.toFixed(2)}
+                                </span>
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
+                            <span className={`text-[10px] font-bold tabular-nums ${confColor}`}>{pct}%</span>
+                            {teamLogo && (
+                              <img src={teamLogo} alt={pick.teamAbbr} className="w-4 h-4 object-contain opacity-80" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 pt-2 border-t border-border text-[8px] text-text-2">
+                  Based on last {Math.max(...nbaPlayerPicks.map(p => p.gamesAnalyzed))} games · not betting advice
+                </div>
               </div>
             )}
 
