@@ -1069,20 +1069,312 @@ export default async function GameDetailPage({
     );
   }
 
-  // Non-basketball / non-AFL: original single-column layout
+  // ── Soccer: 3-column layout with sticky side panels ─────────────────────────
+  if (isSoccer) {
+    const allInj = [...homeInjuries, ...awayInjuries];
+    const sfHome = (sofascore?.lineups?.home ?? []);
+    const sfAway = (sofascore?.lineups?.away ?? []);
+
+    // Top performers from Sofascore (rated players)
+    const topRated = (arr: typeof sfHome) =>
+      [...arr].filter(p => p.starter && p.rating != null)
+        .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
+        .slice(0, 4);
+    const homeTopRated = topRated(sfHome);
+    const awayTopRated = topRated(sfAway);
+    const hasPerf = (status === "live" || status === "finished") && (homeTopRated.length > 0 || awayTopRated.length > 0);
+
+    return (
+      <div className="px-4 pt-4 pb-10">
+        <Link href="/" className="inline-flex items-center gap-1 text-xs text-text-2 hover:text-text-2 mb-4 transition-colors">
+          ← Back
+        </Link>
+
+        <div className="flex gap-5 items-start">
+
+          {/* ── Left sticky panel ────────────────────────────────────── */}
+          <aside className="hidden 2xl:flex flex-col gap-3 w-[240px] shrink-0 self-start sticky top-4">
+
+            {/* Form comparison */}
+            <div className="bg-surface rounded-xl p-3 border border-border">
+              <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Form</div>
+              {([{ t: homeTeam, role: "Home" }, { t: awayTeam, role: "Away" }] as const).map(({ t, role }) => (
+                <div key={t.name} className="mb-2.5 last:mb-0">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                    <span className="text-[10px] font-medium text-text-1">{t.shortName}</span>
+                    <span className="text-[9px] text-text-2 ml-1">{role}</span>
+                    <span className="ml-auto text-[9px] text-text-2 tabular-nums">{t.record.wins}W {t.record.losses}L{t.record.draws ? ` ${t.record.draws}D` : ""}</span>
+                  </div>
+                  <div className="flex gap-1">
+                    {t.form.slice(0, 5).map((r, i) => (
+                      <span key={i} className={`w-5 h-5 rounded text-[8px] font-bold flex items-center justify-center ${
+                        r === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" : r === "L" ? "bg-[#EF4444]/20 text-[#EF4444]" : "bg-[#F59E0B]/20 text-[#F59E0B]"
+                      }`}>{r}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* H2H summary */}
+            {h2hVariants.all.length > 0 && (() => {
+              const h2h = h2hVariants.all;
+              const hw  = h2h.filter(g => g.winner === homeTeam.name).length;
+              const dr  = h2h.filter(g => g.winner === "Draw").length;
+              const aw  = h2h.length - hw - dr;
+              // Goal stats
+              const goals = h2h.map(g => {
+                const p = g.score.split("-").map(Number);
+                return (p[0] ?? 0) + (p[1] ?? 0);
+              });
+              const avgGoals = goals.length ? (goals.reduce((a, b) => a + b, 0) / goals.length).toFixed(1) : null;
+              const over25   = goals.length ? Math.round(goals.filter(v => v > 2.5).length / goals.length * 100) : null;
+
+              return (
+                <div className="bg-surface rounded-xl p-3 border border-border">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2.5">H2H</div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-center flex-1">
+                      {homeTeam.logoUrl && <img src={homeTeam.logoUrl} alt="" className="w-6 h-6 object-contain mx-auto mb-0.5" />}
+                      <div className="text-lg font-black text-primary">{hw}</div>
+                    </div>
+                    <div className="text-center flex-1">
+                      <div className="text-lg font-black text-[#F59E0B]">{dr}</div>
+                      <div className="text-[9px] text-text-2">D</div>
+                    </div>
+                    <div className="text-center flex-1">
+                      {awayTeam.logoUrl && <img src={awayTeam.logoUrl} alt="" className="w-6 h-6 object-contain mx-auto mb-0.5" />}
+                      <div className="text-lg font-black text-text-2">{aw}</div>
+                    </div>
+                  </div>
+                  {avgGoals && (
+                    <div className="flex justify-between text-[10px] mb-1">
+                      <span className="text-text-2">Avg goals</span>
+                      <span className="text-text-1 font-bold">{avgGoals}</span>
+                    </div>
+                  )}
+                  {over25 !== null && (
+                    <div className="flex justify-between text-[10px] mb-2">
+                      <span className="text-text-2">Over 2.5</span>
+                      <span className={`font-bold ${over25 >= 60 ? "text-[#22C55E]" : over25 >= 40 ? "text-[#F59E0B]" : "text-[#EF4444]"}`}>{over25}%</span>
+                    </div>
+                  )}
+                  <div className="space-y-0.5">
+                    {h2h.slice(0, 4).map((g, i) => (
+                      <div key={i} className="flex items-center gap-1 text-[9px] py-0.5 border-b border-border last:border-0">
+                        <span className="text-text-2 w-12 shrink-0">{g.date.slice(5)}</span>
+                        <span className="flex-1 truncate text-text-2">{g.homeTeam.split(" ").pop()} <span className="text-white font-medium">{g.score}</span> {g.awayTeam.split(" ").pop()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Key insights */}
+            {insights.length > 0 && (
+              <div className="bg-surface rounded-xl p-3 border border-border">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Key Insights</div>
+                <ul className="space-y-1.5">
+                  {insights.slice(0, 5).map((ins, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-[10px]">
+                      <span className="text-primary shrink-0">{ins.icon}</span>
+                      <span className="text-text-1 leading-snug">{ins.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+          </aside>
+
+          {/* ── Center content ───────────────────────────────────────── */}
+          <div className="flex-1 min-w-0">
+            <div className="bg-surface rounded-t-2xl overflow-hidden">
+              {/* League bar */}
+              <div className="flex items-center gap-2 px-5 py-2.5 border-b border-white/5">
+                {league?.logo && <img src={league.logo} alt="" className="w-4 h-4 object-contain opacity-70" />}
+                <span className="text-xs text-text-2">{league?.name}</span>
+                <span className="text-text-2 mx-1">·</span>
+                <span className="text-xs text-text-2 truncate">{game.venue}</span>
+                <div className="ml-auto">
+                  {status === "live" ? (
+                    <span className="flex items-center gap-1.5 text-xs font-bold text-red-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                      {statusLabel()}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-text-2">{statusLabel()}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Score */}
+              <div className="px-5 py-6 flex items-center gap-4">
+                <TeamHero team={homeTeam} role="Home" />
+                <div className="flex-1 text-center">
+                  <LiveScorePanel
+                    gameId={id}
+                    initial={{
+                      homeScore:    score?.home ?? null,
+                      awayScore:    score?.away ?? null,
+                      status,
+                      period:       null,
+                      displayClock: null,
+                      shortDetail:  null,
+                      lineScores:   lineScores ?? null,
+                    }}
+                    homeShortName={homeTeam.shortName}
+                    awayShortName={awayTeam.shortName}
+                    isAFL={false}
+                    isBasketball={false}
+                    kickoff={game.kickoff}
+                    venue={game.venue}
+                  />
+                </div>
+                <TeamHero team={awayTeam} role="Away" />
+              </div>
+
+              {/* Prob cards */}
+              {probs.length > 0 && (
+                <div className="px-5 pb-5 border-t border-border pt-3">
+                  <div className="grid grid-cols-6 gap-2">
+                    {probs.map(p => (
+                      <div key={p.label} className="bg-bg rounded-xl px-2 py-3 text-center">
+                        <div className={`text-xl font-black tabular-nums ${
+                          p.conf === "high" ? "text-[#22C55E]" : p.conf === "medium" ? "text-[#F59E0B]" : "text-[#EF4444]"
+                        }`}>{p.value}%</div>
+                        <div className="text-[9px] text-text-2 mt-0.5 leading-tight">{p.label}</div>
+                        <div className="mt-2 h-[2px] bg-surface2 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${
+                            p.conf === "high" ? "bg-[#22C55E]" : p.conf === "medium" ? "bg-[#F59E0B]" : "bg-[#EF4444]"
+                          }`} style={{ width: `${Math.min(100, p.value)}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <GameDetailTabs
+              game={game}
+              id={id}
+              homeSquad={homeSquad}
+              awaySquad={awaySquad}
+              homeInjuries={homeInjuries}
+              awayInjuries={awayInjuries}
+              homeHistories={homeHistories}
+              awayHistories={awayHistories}
+              h2hVariants={h2hVariants}
+              aflAnalytics={aflAnalytics}
+              sofascore={sofascore}
+              insights={insights}
+              isSoccer={true}
+              isBasketball={false}
+              isAFL={false}
+              initialTab={activeTab}
+              initialH2hFilter={h2hFilter as VenueFilter}
+              initialHistoryFilter={historyFilter as VenueFilter}
+            />
+          </div>
+
+          {/* ── Right sticky panel ───────────────────────────────────── */}
+          <aside className="hidden 2xl:flex flex-col gap-3 w-[240px] shrink-0 self-start sticky top-4">
+
+            {/* Top performers — live/finished */}
+            {hasPerf && (
+              <div className="bg-surface rounded-xl p-3 border border-border">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Top Performers</div>
+                {([{ t: homeTeam, players: homeTopRated }, { t: awayTeam, players: awayTopRated }] as const).map(({ t, players }) => (
+                  players.length > 0 ? (
+                    <div key={t.name} className="mb-3 last:mb-0">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        {t.logoUrl && <img src={t.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
+                        <span className="text-[9px] text-text-2">{t.shortName}</span>
+                      </div>
+                      {players.map((p, i) => (
+                        <div key={i} className="flex items-center gap-1 py-1 border-b border-border last:border-0">
+                          <span className="text-[10px] text-text-1 flex-1 truncate min-w-0">{p.shortName}</span>
+                          <span className="text-[9px] text-text-2 shrink-0">{p.position}</span>
+                          {p.rating != null && (
+                            <span className={`text-[9px] px-1 py-px rounded font-bold shrink-0 ml-1 ${
+                              p.rating >= 7.5 ? "bg-[#22C55E]/20 text-[#22C55E]" :
+                              p.rating >= 6.5 ? "bg-[#F59E0B]/20 text-[#F59E0B]" :
+                              "bg-[#EF4444]/20 text-[#EF4444]"
+                            }`}>{p.rating.toFixed(1)}</span>
+                          )}
+                          {(p.stats.goals as number) > 0 && (
+                            <span className="text-sm shrink-0">⚽</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null
+                ))}
+              </div>
+            )}
+
+            {/* Injury report */}
+            {allInj.length > 0 && (
+              <div className="bg-surface rounded-xl p-3 border border-border">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Injuries</div>
+                {([{ t: homeTeam, inj: homeInjuries }, { t: awayTeam, inj: awayInjuries }] as const).map(({ t, inj }) =>
+                  inj.length > 0 ? (
+                    <div key={t.name} className="mb-2 last:mb-0">
+                      <div className="text-[9px] text-text-2 uppercase tracking-widest mb-1">{t.shortName}</div>
+                      {inj.slice(0, 4).map((p, i) => (
+                        <div key={i} className="flex items-center justify-between py-0.5 text-[10px]">
+                          <span className="text-text-1 truncate">{p.playerName}</span>
+                          <span className={`shrink-0 ml-1 text-[9px] font-medium ${p.status === "Out" ? "text-[#EF4444]" : "text-[#F59E0B]"}`}>{p.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null
+                )}
+              </div>
+            )}
+
+            {/* Weather */}
+            {weather && weather.condition !== "Indoor" && (
+              <div className="bg-surface rounded-xl p-3 border border-border">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2">Conditions</div>
+                <div className="flex items-center gap-2.5">
+                  <span className="text-2xl">{
+                    weather.condition === "Sunny" ? "☀️" :
+                    weather.condition === "Partly Cloudy" ? "⛅" :
+                    weather.condition === "Cloudy" ? "☁️" :
+                    weather.condition === "Rain" ? "🌧️" :
+                    weather.condition === "Storm" ? "⛈️" : "🌤️"
+                  }</span>
+                  <div>
+                    <div className={`text-sm font-semibold ${
+                      weather.windKph > 40 || ["Storm","Rain"].includes(weather.condition) ? "text-[#F59E0B]" : "text-text-1"
+                    }`}>{weather.condition}</div>
+                    <div className="text-[10px] text-text-2">{weather.tempC}°C · {weather.windKph} km/h</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </aside>
+
+        </div>
+      </div>
+    );
+  }
+
+  // Non-basketball / non-AFL / non-soccer: original single-column layout
   return (
-    <div className={`${isAFL ? "max-w-7xl" : "max-w-5xl"} px-4 pt-4 pb-10 mx-auto`}>
+    <div className="max-w-5xl px-4 pt-4 pb-10 mx-auto">
 
       {/* Back */}
       <Link href="/" className="inline-flex items-center gap-1 text-xs text-text-2 hover:text-text-2 mb-4 transition-colors">
         ← Back
       </Link>
 
-      {/* ═══════════════════════════════════════════════════════════
-          HERO — no bottom rounding (GameDetailTabs provides that)
-      ═══════════════════════════════════════════════════════════ */}
       <div className="bg-surface rounded-t-2xl overflow-hidden">
-
         {/* League bar */}
         <div className="flex items-center gap-2 px-5 py-2.5 border-b border-white/5">
           {league?.logo && <img src={league.logo} alt="" className="w-4 h-4 object-contain opacity-70" />}
@@ -1104,7 +1396,6 @@ export default async function GameDetailPage({
         {/* Score */}
         <div className="px-5 py-6 flex items-center gap-4">
           <TeamHero team={homeTeam} role="Home" />
-
           <div className="flex-1 text-center">
             <LiveScorePanel
               gameId={id}
@@ -1125,40 +1416,10 @@ export default async function GameDetailPage({
               venue={game.venue}
             />
           </div>
-
           <TeamHero team={awayTeam} role="Away" />
         </div>
-
-        {/* AFL analytics ribbon */}
-        {isAFL && aflAnalytics && (
-          <div className="px-5 pb-4 grid grid-cols-2 gap-2 border-t border-border pt-3">
-            <AFLTeamCard team={homeTeam} analytics={aflAnalytics.home} />
-            <AFLTeamCard team={awayTeam} analytics={aflAnalytics.away} />
-          </div>
-        )}
-        {/* Prob cards — soccer only */}
-        {isSoccer && probs.length > 0 && (
-          <div className="px-5 pb-5">
-            <div className="grid grid-cols-6 gap-2">
-              {probs.map(p => (
-                <div key={p.label} className="bg-bg rounded-xl px-2 py-3 text-center">
-                  <div className={`text-xl font-black tabular-nums ${
-                    p.conf === "high" ? "text-[#22C55E]" : p.conf === "medium" ? "text-[#F59E0B]" : "text-[#EF4444]"
-                  }`}>{p.value}%</div>
-                  <div className="text-[9px] text-text-2 mt-0.5 leading-tight">{p.label}</div>
-                  <div className="mt-2 h-[2px] bg-surface2 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${
-                      p.conf === "high" ? "bg-[#22C55E]" : p.conf === "medium" ? "bg-[#F59E0B]" : "bg-[#EF4444]"
-                    }`} style={{ width: `${Math.min(100, p.value)}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Tab bar + content (client component — instant switching, no re-render) */}
       <GameDetailTabs
         game={game}
         id={id}
