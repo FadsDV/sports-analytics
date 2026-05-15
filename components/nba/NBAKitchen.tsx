@@ -220,6 +220,19 @@ function SlipCard({ slip }: { slip: NBAKitchenSlip }) {
           <span className="text-[11px] text-text-2 font-medium">{slip.legs.length} leg{slip.legs.length !== 1 ? "s" : ""}</span>
         </div>
         <p className="text-[11px] text-text-2 leading-snug">{cfg.desc}</p>
+        {slip.type === "ballsy" && (
+          <div className="flex items-center gap-3 mt-1.5 pt-1.5 border-t border-border/30">
+            <span className="flex items-center gap-1 text-[10px] text-text-2">
+              <span className="text-[#22C55E] font-bold">▲</span> on form
+            </span>
+            <span className="flex items-center gap-1 text-[10px] text-text-2">
+              <span className="text-[#F59E0B]">↺</span> bounce-back
+            </span>
+            <span className="flex items-center gap-1 text-[10px] text-text-2">
+              <span className="text-primary">↑</span> threshold
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Legs */}
