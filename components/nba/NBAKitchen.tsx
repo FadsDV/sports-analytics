@@ -16,12 +16,12 @@ const SLIP_CONFIG: Record<NBAKitchenSlipType, {
 }> = {
   safe: {
     emoji: "🛡️", title: "Safe",
-    desc: "Composite ≥ 70%. Consistent starters, full minutes.",
+    desc: "80%+ flat hit rate, composite ≥ 55%. Consistent starters.",
     color: "text-[#22C55E]", border: "border-[#22C55E]/25", bg: "bg-[#22C55E]/5",
   },
   doable: {
     emoji: "✅", title: "Doable",
-    desc: "Composite ≥ 50%. Solid but not bulletproof.",
+    desc: "65%+ flat hit rate, composite ≥ 38%. Solid but not bulletproof.",
     color: "text-primary", border: "border-primary/25", bg: "bg-primary/5",
   },
   scorers: {
@@ -62,6 +62,35 @@ function lastName(name: string): string {
 
 function combinedProb(legs: NBAKitchenLeg[]): number {
   return legs.length ? legs.reduce((acc, l) => acc * l.reliability, 1) : 0;
+}
+
+// ─── All legs hit tooltip ─────────────────────────────────────────────────────
+
+function AllLegsHitLabel() {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        className="flex items-center gap-1 text-[11px] text-text-2 hover:text-text-1 transition-colors"
+      >
+        All legs hit
+        <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-text-2/40 text-[9px] text-text-2/60 leading-none">?</span>
+      </button>
+      {show && (
+        <div className="absolute z-50 bottom-full mb-2 left-0 w-56 bg-bg-2 border border-border rounded-lg shadow-xl p-2.5 text-[11px]">
+          <p className="text-text-1 font-semibold mb-1">Parlay probability</p>
+          <p className="text-text-2 leading-snug">
+            Estimated chance every leg in this slip hits — calculated by multiplying each leg&apos;s composite reliability score together.
+          </p>
+          <p className="text-text-2/70 mt-1.5 text-[10px]">
+            Independent legs only. Real correlation may differ.
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Reliability breakdown tooltip ───────────────────────────────────────────
@@ -173,7 +202,10 @@ function SlipCard({ slip }: { slip: NBAKitchenSlip }) {
       {/* Legs */}
       <div className="px-3 flex-1">
         {slip.legs.length === 0 ? (
-          <p className="text-xs text-text-2 py-4 text-center">Not enough data</p>
+          <div className="py-4 text-center space-y-1">
+            <p className="text-xs text-text-2">No legs met the composite threshold</p>
+            <p className="text-[10px] text-text-2/60">Need more game history or higher consistency</p>
+          </div>
         ) : (
           slip.legs.map((leg, i) => <LegRow key={i} leg={leg} />)
         )}
@@ -182,7 +214,7 @@ function SlipCard({ slip }: { slip: NBAKitchenSlip }) {
       {/* Footer */}
       {slip.legs.length > 1 && (
         <div className="px-3 py-2 border-t border-border/50 flex items-center justify-between gap-2">
-          <span className="text-[11px] text-text-2">All legs hit</span>
+          <AllLegsHitLabel />
           <div className="flex items-center gap-2">
             <span className={`text-xs font-bold tabular-nums ${hrColor(prob)}`}>~{pct}%</span>
             {multiOdds && (

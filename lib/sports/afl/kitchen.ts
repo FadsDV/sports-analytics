@@ -280,42 +280,44 @@ export function computeAFLKitchen(params: {
   const awayProfiles = buildProfiles(awayGames, awayTeamId, "away", awayAbbr);
   const all = [...homeProfiles, ...awayProfiles];
 
-  // ── 1. Safe — composite ≥ 0.75, conservative thresholds ──────────────────
+  // ── 1. Safe — composite ≥ 0.62 ────────────────────────────────────────────
+  // Note: at minimum 5-game window, max possible composite is ~0.75 (sample
+  // penalty × 0.65). Threshold calibrated for production data, not simulation.
   const safeLegs = buildLegs(all, propOdds, {
     minFlatHR: 0.75, maxFlatHR: 1.00, minFraction: 0.50,
-    minReliability: 0.75, maxReliability: 1.00,
+    minReliability: 0.62, maxReliability: 1.00,
     maxLegs: 5, bounceBonusWeight: 0,
   });
 
-  // ── 2. Doable — composite ≥ 0.58, moderate thresholds ────────────────────
+  // ── 2. Doable — composite ≥ 0.45, moderate thresholds ────────────────────
   const safeKeys   = new Set(safeLegs.map(l => `${l.player}|${l.stat}|${l.threshold}`));
   const doableRaw  = buildLegs(all, propOdds, {
     minFlatHR: 0.65, maxFlatHR: 1.00, minFraction: 0.65,
-    minReliability: 0.58, maxReliability: 1.00,
+    minReliability: 0.45, maxReliability: 1.00,
     maxLegs: 7, bounceBonusWeight: 0,
   });
   const doableLegs = doableRaw
     .filter(l => !safeKeys.has(`${l.player}|${l.stat}|${l.threshold}`))
     .slice(0, 5);
 
-  // ── 3. Goal Scorers — Goals only, composite ≥ 0.42 ───────────────────────
+  // ── 3. Goal Scorers — Goals only, composite ≥ 0.32 ───────────────────────
   const goalLegs = buildLegs(all, propOdds, {
     minFlatHR: 0.50, maxFlatHR: 1.00, minFraction: 0.40,
-    minReliability: 0.42, maxReliability: 1.00,
+    minReliability: 0.32, maxReliability: 1.00,
     maxLegs: 5, statsFilter: ["G"], bounceBonusWeight: 0,
   });
 
-  // ── 4. Disposals Only — composite ≥ 0.55 ─────────────────────────────────
+  // ── 4. Disposals Only — composite ≥ 0.42 ─────────────────────────────────
   const disposalLegs = buildLegs(all, propOdds, {
     minFlatHR: 0.60, maxFlatHR: 1.00, minFraction: 0.55,
-    minReliability: 0.55, maxReliability: 1.00,
+    minReliability: 0.42, maxReliability: 1.00,
     maxLegs: 9, statsFilter: ["D"], bounceBonusWeight: 0,
   });
 
-  // ── 5. Ballsy — composite 0.22–0.55, high thresholds, bounce-back bonus ──
+  // ── 5. Ballsy — composite 0.15–0.48, high thresholds, bounce-back bonus ──
   const ballsyLegs = buildLegs(all, propOdds, {
     minFlatHR: 0.35, maxFlatHR: 0.62, minFraction: 0.82,
-    minReliability: 0.22, maxReliability: 0.55,
+    minReliability: 0.15, maxReliability: 0.48,
     maxLegs: 8, bounceBonusWeight: 0.08,
   });
 
