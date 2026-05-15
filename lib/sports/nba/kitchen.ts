@@ -311,10 +311,11 @@ export function computeNBAKitchen(params: {
   const all = [...homeProfiles, ...awayProfiles];
 
   // ── 1. Safe — composite ≥ 0.55 ───────────────────────────────────────────
-  // Note: NBA minutes factor reduces composite further vs AFL. At 5 games +
-  // 28MPG, max composite ≈ 0.63. Threshold calibrated for production data.
+  // flatHR gate lowered to 0.65 so composite score is the primary filter.
+  // Minutes factor further reduces NBA composites vs AFL, so threshold is
+  // lower — a 34MPG star with 65% flat and good consistency still qualifies.
   const safeLegs = buildLegs(all, propOdds, {
-    minFlatHR: 0.75, maxFlatHR: 1.00, minFraction: 0.50,
+    minFlatHR: 0.65, maxFlatHR: 1.00, minFraction: 0.50,
     minReliability: 0.55, maxReliability: 1.00,
     maxLegs: 5, bounceBonusWeight: 0,
   });

@@ -281,10 +281,11 @@ export function computeAFLKitchen(params: {
   const all = [...homeProfiles, ...awayProfiles];
 
   // ── 1. Safe — composite ≥ 0.62 ────────────────────────────────────────────
-  // Note: at minimum 5-game window, max possible composite is ~0.75 (sample
-  // penalty × 0.65). Threshold calibrated for production data, not simulation.
+  // flatHR gate lowered to 0.65 so that composite score (not flat HR alone)
+  // is the primary filter. Players hitting 65%+ flat but consistently can
+  // composite above 0.62 and rightfully belong in Safe.
   const safeLegs = buildLegs(all, propOdds, {
-    minFlatHR: 0.75, maxFlatHR: 1.00, minFraction: 0.50,
+    minFlatHR: 0.65, maxFlatHR: 1.00, minFraction: 0.50,
     minReliability: 0.62, maxReliability: 1.00,
     maxLegs: 5, bounceBonusWeight: 0,
   });
