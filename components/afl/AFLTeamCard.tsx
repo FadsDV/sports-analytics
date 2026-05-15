@@ -16,8 +16,8 @@ export default function AFLTeamCard({ team, analytics: an }: AFLTeamCardProps) {
         {team.logoUrl && (
           <img src={team.logoUrl} alt="" className="w-4 h-4 object-contain" />
         )}
-        <span className="text-[10px] text-text-1 font-medium">{team.shortName}</span>
-        <span className="ml-auto text-[10px] text-text-2 tabular-nums">
+        <span className="text-xs text-text-1 font-semibold">{team.shortName}</span>
+        <span className="ml-auto text-xs text-text-2 tabular-nums">
           {an.record.wins}W {an.record.losses}L
           {an.record.draws > 0 ? ` ${an.record.draws}D` : ""}
         </span>
@@ -28,7 +28,7 @@ export default function AFLTeamCard({ team, analytics: an }: AFLTeamCardProps) {
         {an.form.map((r, i) => (
           <span
             key={i}
-            className={`w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center ${
+            className={`w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center ${
               r === "W"
                 ? "bg-[#22C55E]/20 text-[#22C55E]"
                 : r === "L"
@@ -42,7 +42,7 @@ export default function AFLTeamCard({ team, analytics: an }: AFLTeamCardProps) {
       </div>
 
       {/* Stats row: avg score · rest · streak */}
-      <div className="flex items-center gap-3 text-[10px] text-text-2">
+      <div className="flex items-center gap-3 text-xs text-text-2">
         <span>
           <span className="text-text-1">{an.avgScored}</span> avg
         </span>
@@ -72,38 +72,74 @@ export default function AFLTeamCard({ team, analytics: an }: AFLTeamCardProps) {
 
 function FormSparkline({ games }: { games: AFLRecentGame[] }) {
   const ordered = [...games].reverse();
-  const scores  = ordered.map(g => g.teamScore);
   const margins = ordered.map(g => g.margin);
-  const min     = Math.min(...scores);
-  const max     = Math.max(...scores);
-  const range   = Math.max(max - min, 1);
-  const W = 200, H = 30, pad = 3;
-  const xStep = (W - pad * 2) / Math.max(scores.length - 1, 1);
-  const pts = scores.map((s, i) => ({
-    x:   pad + i * xStep,
-    y:   H - pad - ((s - min) / range) * (H - pad * 2),
-    win: margins[i] >= 0,
-  }));
-  const line = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const absMax  = Math.max(...margins.map(Math.abs), 1);
+  const MAX_BAR = 28; // max bar height (px) in each direction
 
   return (
     <div className="mt-2 pt-2 border-t border-border">
-      <div className="text-[8px] uppercase tracking-widest text-text-2 mb-1 opacity-60">Score margin — last {games.length}</div>
-      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full overflow-visible">
-        <path d={line} fill="none" stroke="var(--text-2)" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.5} />
-        {pts.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r={2.5}
-            fill={p.win ? "#22C55E" : "#EF4444"}
-            stroke="var(--bg)" strokeWidth={1}
-          />
-        ))}
-      </svg>
-      <div className="flex justify-between text-[8px] mt-0.5 px-0.5">
-        {ordered.map((g, i) => (
-          <span key={i} className={g.margin >= 0 ? "text-[#22C55E]/70" : "text-[#EF4444]/70"}>
-            {g.margin >= 0 ? "+" : ""}{g.margin}
-          </span>
-        ))}
+      {/* Header */}
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-[8px] uppercase tracking-widest text-text-2 opacity-60">Margin — last {games.length}</div>
+        <div className="relative group">
+          <span className="w-3.5 h-3.5 rounded-full border border-border flex items-center justify-center cursor-default text-[8px] font-bold text-text-2 leading-none hover:border-primary hover:text-primary transition-colors">?</span>
+          <div className="absolute right-0 top-4 z-50 w-44 bg-surface2 border border-border rounded-lg p-2 shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 text-[9px] text-text-2 leading-snug">
+            Each bar = one game. Green = win, red = loss, orange = draw. Taller bar = bigger margin.
+          </div>
+        </div>
+      </div>
+
+      {/* Win/Draw bars — grow upward from midline */}
+      <div className="flex gap-1" style={{ height: MAX_BAR + 12 }}>
+        {margins.map((m, i) => {
+          const isDraw = m === 0;
+          const isWin  = m > 0;
+          const showTop = isWin || isDraw;
+          const barH  = showTop ? Math.max(Math.round((Math.abs(m) / absMax) * MAX_BAR), isDraw ? 4 : 3) : 0;
+          const color  = isDraw ? { text: "#F59E0B", bg: "rgba(245,158,11,0.25)", border: "rgba(245,158,11,0.6)" }
+                                : { text: "#22C55E", bg: "rgba(34,197,94,0.25)",  border: "rgba(34,197,94,0.6)"  };
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center justify-end">
+              {showTop && (
+                <span className="text-[11px] font-bold tabular-nums leading-none mb-0.5" style={{ color: color.text }}>
+                  {isWin ? `+${m}` : "0"}
+                </span>
+              )}
+              {showTop && (
+                <div
+                  className="w-full rounded-t-sm"
+                  style={{ height: isDraw ? 4 : barH, background: color.bg, borderTop: `2px solid ${color.border}` }}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Midline */}
+      <div className="h-px bg-white/10" />
+
+      {/* Loss bars — grow downward from midline */}
+      <div className="flex gap-1" style={{ height: MAX_BAR + 12 }}>
+        {margins.map((m, i) => {
+          const isLoss = m < 0;
+          const barH   = isLoss ? Math.max(Math.round((Math.abs(m) / absMax) * MAX_BAR), 3) : 0;
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center justify-start">
+              {isLoss && (
+                <div
+                  className="w-full rounded-b-sm"
+                  style={{ height: barH, background: "rgba(239,68,68,0.25)", borderBottom: "2px solid rgba(239,68,68,0.6)" }}
+                />
+              )}
+              {isLoss && (
+                <span className="text-[11px] font-bold text-[#EF4444] tabular-nums leading-none mt-0.5">
+                  {m}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

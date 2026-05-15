@@ -64,6 +64,16 @@ export interface EsportsTournament {
   endAt?:      string;
 }
 
+// ─── CS2-specific: stream ─────────────────────────────────────────────────────
+
+export interface CS2Stream {
+  language: string;   // "en", "ru", "tr" etc
+  embedUrl: string;   // "https://player.twitch.tv/?channel=PGL"
+  rawUrl:   string;   // "https://www.twitch.tv/PGL"
+  main:     boolean;
+  official: boolean;
+}
+
 // ─── CS2-specific: individual map result ──────────────────────────────────────
 
 export interface CS2Map {
@@ -107,6 +117,7 @@ export interface EsportsMatch {
   liveUrl?:       string;
   games?:         EsportsGame[];
   maps?:          CS2Map[];
+  streams?:       CS2Stream[];
 }
 
 // ─── Normalization utility ────────────────────────────────────────────────────

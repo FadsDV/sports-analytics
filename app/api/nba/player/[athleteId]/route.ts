@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchNBAPlayerHistory } from "@/lib/sports/nba/players/history";
 import { computeNBAPlayerAnalytics } from "@/lib/sports/nba/players/analytics";
 
+export const revalidate = 1800;
+
 export async function GET(
   request:  NextRequest,
   { params }: { params: { athleteId: string } }

@@ -17,7 +17,7 @@ const NAV_EXPLORE = [
   { href: "/leagues",     icon: "◈", label: "Leagues" },
   { href: "/teams",       icon: "◎", label: "Teams"   },
   { href: "/players",     icon: "◉", label: "Players"  },
-  { href: "/sports/cs2",  icon: "⊕", label: "CS2"     },
+  { href: "/sports/cs2",  icon: "⊕", label: "CS2", disabled: true },
 ];
 
 // Inner component uses useSearchParams — must be inside Suspense
@@ -66,6 +66,21 @@ function NavLinks() {
 
       {NAV_EXPLORE.map((item) => {
         const isActive = pathname === item.href;
+        if ((item as any).disabled) {
+          return (
+            <span
+              key={item.label}
+              title="Coming soon"
+              className="flex items-center gap-3 px-2 xl:px-3 py-2.5 rounded-lg text-sm font-medium opacity-30 cursor-not-allowed select-none"
+            >
+              <span className="text-base shrink-0 w-5 text-center">{item.icon}</span>
+              <span className="hidden xl:flex xl:items-center xl:gap-1.5">
+                {item.label}
+                <span className="text-[9px] uppercase tracking-wider opacity-70">soon</span>
+              </span>
+            </span>
+          );
+        }
         return (
           <Link
             key={item.label}

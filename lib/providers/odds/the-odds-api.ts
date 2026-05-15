@@ -40,7 +40,9 @@ export class TheOddsApiProvider implements OddsProvider {
       url.searchParams.append("markets", markets.join(","));
       url.searchParams.append("oddsFormat", "decimal");
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), {
+        next: { revalidate: 300 },
+      });
       if (!response.ok) {
         throw new Error(`The Odds API responded with ${response.status}`);
       }

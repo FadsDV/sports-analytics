@@ -74,7 +74,7 @@ export interface GameDetailTabsProps {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-surface rounded-xl p-4 border border-border">
-      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-text-2 mb-3">{title}</h3>
+      <h3 className="text-xs font-semibold uppercase tracking-widest text-text-2 mb-3">{title}</h3>
       {children}
     </div>
   );
@@ -273,7 +273,7 @@ function AFLPlayerList({
                     size={20}
                   />
                   <span className="text-text-1 truncate max-w-[120px] font-medium group-hover:text-primary">{r.player}</span>
-                  {r.playerId && <span className="text-[9px] text-text-2">INTEL</span>}
+                  {r.playerId && <span className="text-[10px] text-primary">INTEL</span>}
                 </div>
               </td>
               {showHeaders.map(h => {
@@ -415,7 +415,7 @@ function NBAPlayerList({
                         {r.position && <span className="text-[9px] text-text-2 leading-tight">{r.position}</span>}
                       </div>
                       {r.playerId && teamId && (
-                        <span className="text-[8px] text-text-1 ml-1 shrink-0">INTEL</span>
+                        <span className="text-[9px] text-primary ml-1 shrink-0">INTEL</span>
                       )}
                     </div>
                   </td>
@@ -786,7 +786,7 @@ function NBAQuarterCompact({ game }: { game: Game }) {
         {/* Quarter score grid */}
         <div className="shrink-0">
           <div className="flex items-center gap-4 mb-2">
-            <span className="text-[9px] font-semibold uppercase tracking-widest text-text-2">Quarter by Quarter</span>
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-text-2">Quarter by Quarter</span>
             {leadTeam && status !== "upcoming" && (
               <span style={{ color: leadColor }} className="text-[10px] font-bold">
                 {leadTeam} {Math.abs(currentDiff) > 0 ? `+${Math.abs(currentDiff)}` : "tied"}
@@ -991,17 +991,17 @@ function BasketballOverview({ game, insights, sofascore, homeHistory, awayHistor
                   <div className="flex items-center gap-1.5 mb-2">
                     {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
                     <span className="text-xs font-semibold text-text-1">{t.shortName}</span>
-                    <span className="text-[9px] text-text-2 ml-1">{role}</span>
+                    <span className="text-[10px] text-text-2 ml-1">{role}</span>
                     {wStreak >= 3 && (
-                      <span className="ml-auto text-[9px] font-bold px-1 py-px rounded bg-[#22C55E]/10 text-[#22C55E]">{wStreak}W</span>
+                      <span className="ml-auto text-[10px] font-bold px-1 py-px rounded bg-[#22C55E]/10 text-[#22C55E]">{wStreak}W</span>
                     )}
                     {lStreak >= 3 && (
-                      <span className="ml-auto text-[9px] font-bold px-1 py-px rounded bg-[#EF4444]/10 text-[#EF4444]">{lStreak}L</span>
+                      <span className="ml-auto text-[10px] font-bold px-1 py-px rounded bg-[#EF4444]/10 text-[#EF4444]">{lStreak}L</span>
                     )}
                   </div>
                   <div className="flex gap-1 mb-3">
                     {t.form.map((r, i) => (
-                      <span key={i} className={`w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center ${
+                      <span key={i} className={`w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center ${
                         r === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" : r === "L" ? "bg-[#EF4444]/20 text-[#EF4444]" : "bg-[#F59E0B]/20 text-[#F59E0B]"
                       }`}>{r}</span>
                     ))}
