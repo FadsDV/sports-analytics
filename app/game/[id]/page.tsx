@@ -27,6 +27,7 @@ import { generateAFLInsights, type AFLInsight } from "@/lib/sports/afl/insights"
 import { fetchAFLStandings } from "@/lib/sports/squiggle";
 import LiveScorePanel from "@/components/LiveScorePanel";
 import AFLTeamCard from "@/components/afl/AFLTeamCard";
+import { AFLQuarterSparkline } from "@/components/afl/AFLDashboard";
 import GameDetailTabs, { HistoryVariants, H2HVariants } from "./GameDetailTabs";
 
 // ─── AFL Player Prop Odds (server-side, 6h cache) ────────────────────────────
@@ -885,13 +886,17 @@ export default async function GameDetailPage({
                 </div>
                 <TeamHero team={awayTeam} role="Away" ladderRank={awayRank} />
               </div>
-              {/* AFL analytics ribbon */}
-              {aflAnalytics && (
+              {/* AFL analytics ribbon — momentum when live, team cards otherwise */}
+              {status === "live" && lineScores && lineScores.home.length > 0 ? (
+                <div className="px-5 pb-4 border-t border-border pt-3">
+                  <AFLQuarterSparkline game={game} />
+                </div>
+              ) : aflAnalytics ? (
                 <div className="px-5 pb-4 grid grid-cols-2 gap-2 border-t border-border pt-3">
                   <AFLTeamCard team={homeTeam} analytics={aflAnalytics.home} />
                   <AFLTeamCard team={awayTeam} analytics={aflAnalytics.away} />
                 </div>
-              )}
+              ) : null}
             </div>
             <GameDetailTabs
               game={game} id={id}
