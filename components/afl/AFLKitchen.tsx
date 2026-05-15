@@ -51,7 +51,7 @@ function hrColor(hr: number): string {
   if (hr >= 0.80) return "text-[#22C55E]";
   if (hr >= 0.70) return "text-primary";
   if (hr >= 0.55) return "text-[#F59E0B]";
-  return "text-[#F97316]";
+  return "text-[#EF4444]";
 }
 
 function lastName(name: string): string {
@@ -68,31 +68,31 @@ function combinedProb(legs: KitchenLeg[]): number {
 function LegRow({ leg }: { leg: KitchenLeg }) {
   const pct = Math.round(leg.hitRate * 100);
   return (
-    <div className="py-1.5 border-b border-border last:border-0">
+    <div className="py-2 border-b border-border last:border-0">
       {/* Top row: player + hit rate */}
-      <div className="flex items-center justify-between gap-1">
-        <div className="flex items-center gap-1 min-w-0">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
           {leg.isBounceBack && (
-            <span title="Bounce-back candidate — below-average last game" className="text-[#F59E0B] text-[9px] shrink-0">↺</span>
+            <span title="Bounce-back candidate — below-average last game" className="text-[#F59E0B] text-[11px] shrink-0 leading-none">↺</span>
           )}
-          <span className="text-[10px] font-semibold text-text-1 truncate">{lastName(leg.player)}</span>
-          <span className="text-[9px] text-text-2 shrink-0">{leg.teamAbbr}</span>
+          <span className="text-xs font-semibold text-text-1 truncate">{lastName(leg.player)}</span>
+          <span className="text-[11px] text-text-2 shrink-0 font-medium">{leg.teamAbbr}</span>
         </div>
-        <span className={`text-[10px] font-bold tabular-nums shrink-0 ${hrColor(leg.hitRate)}`}>{pct}%</span>
+        <span className={`text-xs font-bold tabular-nums shrink-0 ${hrColor(leg.hitRate)}`}>{pct}%</span>
       </div>
-      {/* Bottom row: threshold + odds */}
-      <div className="flex items-center justify-between gap-1 mt-0.5">
-        <span className="text-[10px] text-primary font-medium">
+      {/* Threshold + odds */}
+      <div className="flex items-center justify-between gap-2 mt-1">
+        <span className="text-[11px] text-primary font-semibold">
           ↑ {leg.threshold}+ {leg.statLabel}
         </span>
         {leg.prop ? (
-          <span className="text-[9px] text-text-2 shrink-0 tabular-nums">
-            @<span className="text-text-1 font-semibold">{leg.prop.price.toFixed(2)}</span>
+          <span className="text-[11px] text-text-2 shrink-0 tabular-nums">
+            @<span className="text-text-1 font-bold">{leg.prop.price.toFixed(2)}</span>
           </span>
         ) : null}
       </div>
       {/* Avg context */}
-      <div className="text-[8px] text-text-2 mt-0.5">
+      <div className="text-[10px] text-text-2 mt-0.5">
         avg {leg.avgStat} · {leg.gamesAnalyzed}g
       </div>
     </div>
@@ -106,7 +106,6 @@ function SlipCard({ slip }: { slip: KitchenSlip }) {
   const prob  = combinedProb(slip.legs);
   const pct   = Math.round(prob * 100);
 
-  // Combined multi odds when all legs have props
   const allOdds = slip.legs.length > 0 && slip.legs.every(l => l.prop);
   const multiOdds = allOdds
     ? slip.legs.reduce((acc, l) => acc * (l.prop!.price), 1)
@@ -115,21 +114,21 @@ function SlipCard({ slip }: { slip: KitchenSlip }) {
   return (
     <div className={`rounded-xl border ${cfg.border} ${cfg.bg} flex flex-col overflow-hidden`}>
       {/* Card header */}
-      <div className="px-3 py-2 border-b border-border/50">
-        <div className="flex items-center justify-between mb-0.5">
+      <div className="px-3 py-2.5 border-b border-border/50">
+        <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-1.5">
             <span className="text-base leading-none">{cfg.emoji}</span>
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${cfg.color}`}>{cfg.title}</span>
+            <span className={`text-xs font-bold uppercase tracking-wider ${cfg.color}`}>{cfg.title}</span>
           </div>
-          <span className="text-[9px] text-text-2">{slip.legs.length} leg{slip.legs.length !== 1 ? "s" : ""}</span>
+          <span className="text-[11px] text-text-2 font-medium">{slip.legs.length} leg{slip.legs.length !== 1 ? "s" : ""}</span>
         </div>
-        <p className="text-[9px] text-text-2 leading-snug">{cfg.desc}</p>
+        <p className="text-[11px] text-text-2 leading-snug">{cfg.desc}</p>
       </div>
 
       {/* Legs */}
       <div className="px-3 flex-1">
         {slip.legs.length === 0 ? (
-          <p className="text-[10px] text-text-2 py-4 text-center">Not enough data</p>
+          <p className="text-xs text-text-2 py-4 text-center">Not enough data</p>
         ) : (
           slip.legs.map((leg, i) => <LegRow key={i} leg={leg} />)
         )}
@@ -138,12 +137,12 @@ function SlipCard({ slip }: { slip: KitchenSlip }) {
       {/* Footer */}
       {slip.legs.length > 1 && (
         <div className="px-3 py-2 border-t border-border/50 flex items-center justify-between gap-2">
-          <span className="text-[9px] text-text-2">All legs hit</span>
+          <span className="text-[11px] text-text-2">All legs hit</span>
           <div className="flex items-center gap-2">
-            <span className={`text-[10px] font-bold tabular-nums ${hrColor(prob)}`}>~{pct}%</span>
+            <span className={`text-xs font-bold tabular-nums ${hrColor(prob)}`}>~{pct}%</span>
             {multiOdds && (
-              <span className="text-[9px] text-text-2 tabular-nums">
-                ~<span className="text-text-1 font-semibold">{multiOdds.toFixed(1)}x</span>
+              <span className="text-[11px] text-text-2 tabular-nums">
+                ~<span className="text-text-1 font-bold">{multiOdds.toFixed(1)}x</span>
               </span>
             )}
           </div>
@@ -161,45 +160,45 @@ function ValuePicks({ legs }: { legs: KitchenLeg[] }) {
 
   return (
     <div className={`rounded-xl border ${cfg.border} ${cfg.bg} overflow-hidden`}>
-      <div className="px-4 py-2.5 border-b border-border/50 flex items-center gap-2">
+      <div className="px-4 py-3 border-b border-border/50 flex items-center gap-2">
         <span className="text-base">{cfg.emoji}</span>
         <div>
-          <span className={`text-[11px] font-bold uppercase tracking-wider ${cfg.color}`}>{cfg.title}</span>
-          <p className="text-[9px] text-text-2">{cfg.desc}</p>
+          <span className={`text-xs font-bold uppercase tracking-wider ${cfg.color}`}>{cfg.title}</span>
+          <p className="text-[11px] text-text-2 mt-0.5">{cfg.desc}</p>
         </div>
-        <span className="ml-auto text-[9px] text-text-2">{legs.length} picks</span>
+        <span className="ml-auto text-[11px] text-text-2 font-medium">{legs.length} picks</span>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10">
         {legs.map((leg, i) => (
           <div key={i} className="p-3 border-b border-r border-border/40 last:border-r-0">
             {/* Player + hit rate */}
-            <div className="flex items-start justify-between gap-1 mb-1">
+            <div className="flex items-start justify-between gap-1 mb-1.5">
               <div className="min-w-0">
                 <div className="flex items-center gap-1 flex-wrap">
                   {leg.isBounceBack && (
-                    <span title="Bounce-back candidate" className="text-[#F59E0B] text-[9px]">↺</span>
+                    <span title="Bounce-back candidate" className="text-[#F59E0B] text-[11px] leading-none">↺</span>
                   )}
-                  <span className="text-[10px] font-semibold text-text-1 truncate">{lastName(leg.player)}</span>
-                  <span className="text-[9px] text-text-2">{leg.teamAbbr}</span>
+                  <span className="text-xs font-semibold text-text-1 truncate">{lastName(leg.player)}</span>
+                  <span className="text-[11px] text-text-2 font-medium">{leg.teamAbbr}</span>
                 </div>
               </div>
-              <span className={`text-[10px] font-bold tabular-nums shrink-0 ${hrColor(leg.hitRate)}`}>
+              <span className={`text-xs font-bold tabular-nums shrink-0 ${hrColor(leg.hitRate)}`}>
                 {Math.round(leg.hitRate * 100)}%
               </span>
             </div>
             {/* Stat */}
-            <div className="text-[10px] text-primary font-medium mb-1">
+            <div className="text-[11px] text-primary font-semibold mb-1.5">
               ↑ {leg.threshold}+ {leg.statLabel}
             </div>
             {/* Odds */}
             {leg.prop && (
-              <div className="text-[9px] text-text-2 leading-tight">
-                <span className="text-text-1 font-semibold">@{leg.prop.price.toFixed(2)}</span>
-                <span className="ml-1">{leg.prop.bookmaker.split(" ")[0]}</span>
+              <div className="text-[11px] text-text-2 leading-tight">
+                <span className="text-text-1 font-bold">@{leg.prop.price.toFixed(2)}</span>
+                <span className="ml-1 text-text-2">{leg.prop.bookmaker.split(" ")[0]}</span>
               </div>
             )}
-            <div className="text-[8px] text-text-2 mt-0.5">avg {leg.avgStat}</div>
+            <div className="text-[10px] text-text-2 mt-1">avg {leg.avgStat}</div>
           </div>
         ))}
       </div>
@@ -223,7 +222,7 @@ export default function AFLKitchen({ slips }: { slips: KitchenSlip[] }) {
         <span className="text-2xl">🍳</span>
         <div>
           <h2 className="text-sm font-bold text-text-1 tracking-wide">The Kitchen</h2>
-          <p className="text-[10px] text-text-2">
+          <p className="text-xs text-text-2">
             5 cooked slips + value picks · based on {maxGames > 0 ? `last ${maxGames} games` : "player history"} · not betting advice
           </p>
         </div>
