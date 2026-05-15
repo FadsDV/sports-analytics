@@ -650,11 +650,23 @@ function AFLLive({
           </Card>
         )}
 
-        {/* Quarter-by-quarter sparkline */}
-        {game.lineScores && game.lineScores.home.length > 0 && (
+        {/* Quarter sparkline for finished/upcoming — sits under leaders */}
+        {!isLive && game.lineScores && game.lineScores.home.length > 0 && (
           <AFLQuarterSparkline game={game} />
         )}
+
       </div>
+
+      {/* ══════════════════════════════════════════
+          CENTER — Live Momentum (live games only)
+          Only rendered when live so RIGHT auto-places
+          to col 2 (not col 3) when no live game.
+      ══════════════════════════════════════════ */}
+      {isLive && game.lineScores && game.lineScores.home.length > 0 && (
+        <div className="hidden lg:block space-y-3">
+          <AFLQuarterSparkline game={game} />
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════
           RIGHT — Intelligence
