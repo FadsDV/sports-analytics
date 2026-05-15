@@ -650,8 +650,8 @@ function AFLLive({
           </Card>
         )}
 
-        {/* Quarter sparkline for finished games — sits under leaders */}
-        {game.lineScores && game.lineScores.home.length > 0 && (
+        {/* Quarter sparkline — only for finished games; live games show it in the hero ribbon */}
+        {!isLive && game.lineScores && game.lineScores.home.length > 0 && (
           <AFLQuarterSparkline game={game} />
         )}
 
@@ -766,8 +766,8 @@ export function AFLQuarterSparkline({ game }: { game: AFLDashboardProps["game"] 
   }
 
   const maxDiff = Math.max(...diffs.map(Math.abs), 1);
-  const W = 380, H = 56, LABEL_H = 14;
-  const chartH = H - LABEL_H;
+  // SVG only draws the chart lines — labels are HTML so they never get stretched
+  const W = 380, chartH = 52;
   const xStep = W / Math.max(diffs.length - 1, 1);
   const yMid  = chartH / 2;
   const pts   = diffs.map((d, i) => ({ x: i * xStep, y: yMid - (d / maxDiff) * (yMid - 5) }));
@@ -791,7 +791,8 @@ export function AFLQuarterSparkline({ game }: { game: AFLDashboardProps["game"] 
           </span>
         )}
       </div>
-      <svg width={W} height={H} className="w-full" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+      {/* Chart — pure shapes, no text, so preserveAspectRatio="none" is safe */}
+      <svg width={W} height={chartH} className="w-full" viewBox={`0 0 ${W} ${chartH}`} preserveAspectRatio="none">
         <defs>
           <filter id="afl-glow">
             <feGaussianBlur stdDeviation="1.5" result="blur" />
@@ -801,18 +802,17 @@ export function AFLQuarterSparkline({ game }: { game: AFLDashboardProps["game"] 
         <line x1="0" y1={yMid} x2={W} y2={yMid} stroke="white" strokeOpacity={0.1} strokeWidth={1} />
         <path d={areaPath} fill={leadColor} fillOpacity={0.25} />
         <path d={linePath} fill="none" stroke={leadColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" filter="url(#afl-glow)" />
-        {labels.map((label, i) => {
+        {/* Vertical divider lines only — no text */}
+        {labels.map((_, i) => {
           const x = (i + 1) * xStep;
-          const isLast = i === labels.length - 1;
-          return (
-            <g key={i}>
-              <line x1={x} y1={0} x2={x} y2={chartH} stroke="white" strokeOpacity={0.07} strokeWidth={1} strokeDasharray="2 2" />
-              <text x={x} y={H - 2} textAnchor={isLast ? "end" : "middle"} fill="var(--text-2)" fontSize={9} fontFamily="monospace">{label}</text>
-            </g>
-          );
+          return <line key={i} x1={x} y1={0} x2={x} y2={chartH} stroke="white" strokeOpacity={0.07} strokeWidth={1} strokeDasharray="2 2" />;
         })}
-        <text x={0} y={H - 2} textAnchor="start" fill="var(--text-2)" fontSize={9} fontFamily="monospace">Start</text>
       </svg>
+      {/* Axis labels as HTML — immune to SVG horizontal stretching */}
+      <div className="flex justify-between text-[9px] font-mono text-text-2 mt-0.5 mb-1">
+        <span>Start</span>
+        {labels.map(l => <span key={l}>{l}</span>)}
+      </div>
       {/* Compact quarter grid */}
       <div className="mt-2 grid gap-y-1" style={{ gridTemplateColumns: `auto repeat(${periods}, 1fr) auto` }}>
         <div />
