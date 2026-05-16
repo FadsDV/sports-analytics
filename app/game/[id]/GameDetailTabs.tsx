@@ -23,6 +23,7 @@ import type { KitchenSlip } from "@/lib/sports/afl/kitchen";
 import NBAKitchen from "@/components/nba/NBAKitchen";
 import type { NBAKitchenSlip } from "@/lib/sports/nba/kitchen";
 import SoccerPlayerList from "@/components/soccer/SoccerPlayerList";
+import { buildSlipColorMap, type SlipEntry } from "@/lib/sports/slipTracker";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -204,18 +205,40 @@ function CompactBoxScore({ boxScore, homeTeam, awayTeam }: {
   );
 }
 
-function AFLPlayerList({ 
-  rows, 
+// ─── Slip dot indicators ──────────────────────────────────────────────────────
+
+function SlipDots({ entries }: { entries: SlipEntry[] }) {
+  if (!entries.length) return null;
+  return (
+    <div className="flex items-center gap-0.5 shrink-0">
+      {entries.map(e => (
+        <span
+          key={e.type}
+          className="text-[8px] font-black px-0.5 rounded leading-none"
+          style={{ color: e.color, backgroundColor: `${e.color}22`, border: `1px solid ${e.color}44` }}
+          title={e.type}
+        >
+          {e.abbr}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function AFLPlayerList({
+  rows,
   headers,
   teamId,
   opponent,
-  matchContext
-}: { 
-  rows: BoxScoreRow[]; 
+  matchContext,
+  slipColorMap,
+}: {
+  rows: BoxScoreRow[];
   headers: string[];
   teamId?: string;
   opponent?: string;
   matchContext?: "home" | "away";
+  slipColorMap?: Map<string, SlipEntry[]>;
 }) {
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; name: string; position?: string; jersey?: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -267,9 +290,11 @@ function AFLPlayerList({
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr 
-              key={i} 
+          {rows.map((r, i) => {
+            const slipEntries = slipColorMap?.get(r.player) ?? [];
+            return (
+            <tr
+              key={i}
               className={`border-b border-border last:border-0 hover:bg-surface2 transition-colors ${r.playerId ? "cursor-pointer" : ""}`}
               onClick={() => handlePlayerClick(r)}
             >
@@ -280,8 +305,9 @@ function AFLPlayerList({
                     name={r.player}
                     size={20}
                   />
-                  <span className="text-text-1 truncate max-w-[120px] font-medium group-hover:text-primary">{r.player}</span>
-                  {r.playerId && <span className="text-[10px] text-primary">INTEL</span>}
+                  <span className="text-text-1 truncate max-w-[90px] font-medium group-hover:text-primary">{r.player}</span>
+                  {slipEntries.length > 0 && <SlipDots entries={slipEntries} />}
+                  {r.playerId && <span className="text-[10px] text-primary ml-auto">INTEL</span>}
                 </div>
               </td>
               {showHeaders.map(h => {
@@ -294,7 +320,8 @@ function AFLPlayerList({
                 );
               })}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
 
@@ -338,12 +365,14 @@ function NBAPlayerList({
   teamId,
   opponent,
   matchContext,
+  slipColorMap,
 }: {
   rows:          BoxScoreRow[];
   headers:       string[];
   teamId?:       string;
   opponent?:     string;
   matchContext?: "home" | "away";
+  slipColorMap?: Map<string, SlipEntry[]>;
 }) {
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; name: string } | null>(null);
   const [loading, setLoading]               = useState(false);
@@ -409,7 +438,9 @@ function NBAPlayerList({
                   </td>
                 </tr>
               )}
-              {groupRows.map((r, i) => (
+              {groupRows.map((r, i) => {
+                const slipEntries = slipColorMap?.get(r.player) ?? [];
+                return (
                 <tr
                   key={`${label}-${i}`}
                   className={`border-b border-border last:border-0 hover:bg-surface2 transition-colors ${r.playerId && teamId ? "cursor-pointer" : ""}`}
@@ -419,11 +450,12 @@ function NBAPlayerList({
                     <div className="flex items-center gap-1.5">
                       <PlayerAvatar src={r.headshot} name={r.player} size={22} />
                       <div className="min-w-0">
-                        <span className="text-text-1 truncate max-w-[110px] font-medium block text-[11px] leading-tight">{r.player}</span>
+                        <span className="text-text-1 truncate max-w-[80px] font-medium block text-[11px] leading-tight">{r.player}</span>
                         {r.position && <span className="text-[9px] text-text-2 leading-tight">{r.position}</span>}
                       </div>
+                      {slipEntries.length > 0 && <SlipDots entries={slipEntries} />}
                       {r.playerId && teamId && (
-                        <span className="text-[9px] text-primary ml-1 shrink-0">INTEL</span>
+                        <span className="text-[9px] text-primary ml-auto shrink-0">INTEL</span>
                       )}
                     </div>
                   </td>
@@ -442,7 +474,8 @@ function NBAPlayerList({
                     );
                   })}
                 </tr>
-              ))}
+                );
+              })}
             </>
           ))}
         </tbody>
@@ -1861,6 +1894,12 @@ export default function GameDetailTabs({
   const { homeTeam, awayTeam, boxScore } = game;
   const sport = game.sport;
 
+  // Build slip color map for player row indicators
+  const slipColorMap = (() => {
+    const allSlips = [...(kitchenSlips ?? []), ...(nbaKitchenSlips ?? [])];
+    return allSlips.length > 0 ? buildSlipColorMap(allSlips) : undefined;
+  })();
+
   return (
     <>
       {/* Tab bar — visually continues the hero card */}
@@ -1931,6 +1970,7 @@ export default function GameDetailTabs({
                   teamId={homeTeam.espnId}
                   opponent={awayTeam.name}
                   matchContext="home"
+                  slipColorMap={slipColorMap}
                 />
               ) : isBasketball && boxScore ? (
                 <NBAPlayerList
@@ -1939,6 +1979,7 @@ export default function GameDetailTabs({
                   teamId={homeTeam.espnId}
                   opponent={awayTeam.name}
                   matchContext="home"
+                  slipColorMap={slipColorMap}
                 />
               ) : isBasketball ? (
                 <SquadList
@@ -1988,6 +2029,7 @@ export default function GameDetailTabs({
                   teamId={awayTeam.espnId}
                   opponent={homeTeam.name}
                   matchContext="away"
+                  slipColorMap={slipColorMap}
                 />
               ) : isBasketball && boxScore ? (
                 <NBAPlayerList
@@ -1996,6 +2038,7 @@ export default function GameDetailTabs({
                   teamId={awayTeam.espnId}
                   opponent={homeTeam.name}
                   matchContext="away"
+                  slipColorMap={slipColorMap}
                 />
               ) : isBasketball ? (
                 <SquadList
@@ -2084,7 +2127,7 @@ export default function GameDetailTabs({
       {/* ── Kitchen ──────────────────────────────────────────────────────── */}
       {tab === "kitchen" && isAFL && (
         kitchenSlips && kitchenSlips.some(s => s.legs.length > 0)
-          ? <AFLKitchen slips={kitchenSlips} />
+          ? <AFLKitchen slips={kitchenSlips} boxScore={boxScore} />
           : <div className="bg-surface rounded-xl p-8 border border-border text-center">
               <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
               <p className="text-[10px] text-text-2">Requires at least 3 completed games per team.</p>
@@ -2092,7 +2135,7 @@ export default function GameDetailTabs({
       )}
       {tab === "kitchen" && isBasketball && (
         nbaKitchenSlips && nbaKitchenSlips.some(s => s.legs.length > 0)
-          ? <NBAKitchen slips={nbaKitchenSlips} />
+          ? <NBAKitchen slips={nbaKitchenSlips} boxScore={boxScore} />
           : <div className="bg-surface rounded-xl p-8 border border-border text-center">
               <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
               <p className="text-[10px] text-text-2">Requires at least 3 completed games per team.</p>

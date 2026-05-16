@@ -12,6 +12,7 @@ import {
   fetchNBABoxScoreForPicks, type NBAGamePlayerStats,
 } from "@/lib/sports/espn";
 import { computeAFLPlayerPicks, type AFLPlayerPick, type AFLPickStat } from "@/lib/sports/afl/picks";
+import { checkLegHit } from "@/lib/sports/slipTracker";
 import { computeAFLKitchen, type KitchenSlip } from "@/lib/sports/afl/kitchen";
 import { computeNBAPlayerPicks, type NBAPlayerPick } from "@/lib/sports/nba/picks";
 import { computeNBAKitchen, type NBAKitchenSlip } from "@/lib/sports/nba/kitchen";
@@ -1024,17 +1025,23 @@ export default async function GameDetailPage({
                         pick.confidence === "medium" ? "text-[#F59E0B]" : "text-text-2";
                       const dirColor = pick.direction === "over" ? "text-primary" : "text-text-2";
                       const pct = Math.round(pick.hitRate * 100);
-                      // Try exact full-name match, then first-name variations
                       const propKey = `${pick.player}|${pick.stat}`;
                       const prop = aflPropOdds.get(propKey);
+                      const isHit = game.boxScore ? checkLegHit(
+                        { player: pick.player, side: pick.side, stat: pick.stat, threshold: pick.threshold },
+                        game.boxScore
+                      ) : false;
                       return (
-                        <div key={i} className="border-b border-border last:border-0 pb-1.5 last:pb-0">
+                        <div key={i} className={`border-b border-border last:border-0 pb-1.5 last:pb-0 ${isHit ? "bg-[#22C55E]/5 rounded px-1" : ""}`}>
                           <div className="flex items-start justify-between gap-1">
                             <div className="min-w-0">
-                              <span className="text-[10px] text-text-1 font-medium leading-tight block truncate">
-                                {pickDisplayName(pick)}
-                              </span>
-                              <span className={`text-[10px] font-bold ${dirColor}`}>
+                              <div className="flex items-center gap-1">
+                                {isHit && <span className="text-sm leading-none shrink-0">✅</span>}
+                                <span className={`text-[10px] font-medium leading-tight truncate ${isHit ? "text-[#22C55E]" : "text-text-1"}`}>
+                                  {pickDisplayName(pick)}
+                                </span>
+                              </div>
+                              <span className={`text-[10px] font-bold ${isHit ? "text-[#22C55E]" : dirColor}`}>
                                 {pick.direction === "over" ? "↑" : "↓"} {pick.threshold}+ {pick.statLabel}
                               </span>
                               {pick.isValue && pick.valueNote && (

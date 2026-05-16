@@ -3,12 +3,14 @@
 
 import { useState } from "react";
 import type { NBAKitchenSlip, NBAKitchenLeg, NBAKitchenSlipType } from "@/lib/sports/nba/kitchen";
+import type { BoxScore } from "@/lib/types";
 import {
   getConfidenceTier,
   CONFIDENCE_LABEL,
   CONFIDENCE_COLORS,
   CONFIDENCE_HEX,
 } from "@/lib/sports/reliability/labels";
+import { checkSlipHits } from "@/lib/sports/slipTracker";
 
 // ─── Slip display config ──────────────────────────────────────────────────────
 
@@ -143,23 +145,24 @@ function BreakdownTooltip({ leg, onClose }: { leg: NBAKitchenLeg; onClose: () =>
 
 // ─── Single leg row ───────────────────────────────────────────────────────────
 
-function LegRow({ leg }: { leg: NBAKitchenLeg }) {
+function LegRow({ leg, isHit }: { leg: NBAKitchenLeg; isHit?: boolean }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   return (
-    <div className="py-2 border-b border-border last:border-0">
+    <div className={`py-2 border-b border-border last:border-0 transition-colors ${isHit ? "bg-[#22C55E]/5" : ""}`}>
       {/* Top row: player + confidence badge */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0 pt-0.5">
-          {leg.isOnForm && (
+          {isHit && <span className="text-base leading-none shrink-0" title="Leg hit!">✅</span>}
+          {!isHit && leg.isOnForm && (
             <span title="On form — last 3 games above season average"
               className="text-[#22C55E] text-[10px] shrink-0 leading-none font-black">▲</span>
           )}
-          {leg.isBounceBack && !leg.isOnForm && (
+          {!isHit && leg.isBounceBack && !leg.isOnForm && (
             <span title="Bounce-back candidate — below-average last game"
               className="text-[#F59E0B] text-xs shrink-0 leading-none">↺</span>
           )}
-          <span className="text-xs font-semibold text-text-1 truncate">{lastName(leg.player)}</span>
+          <span className={`text-xs font-semibold truncate ${isHit ? "text-[#22C55E]" : "text-text-1"}`}>{lastName(leg.player)}</span>
           <span className="text-[11px] text-text-2 shrink-0 font-medium">{leg.teamAbbr}</span>
         </div>
         <div className="relative shrink-0">
@@ -171,7 +174,7 @@ function LegRow({ leg }: { leg: NBAKitchenLeg }) {
       </div>
       {/* Threshold + odds */}
       <div className="flex items-center justify-between gap-2 mt-1">
-        <span className="text-[11px] text-primary font-semibold">
+        <span className={`text-[11px] font-semibold ${isHit ? "text-[#22C55E]" : "text-primary"}`}>
           ↑ {leg.threshold}+ {leg.statLabel}
         </span>
         {leg.prop ? (
@@ -239,19 +242,34 @@ function CombinedHitChance({ legs }: { legs: NBAKitchenLeg[] }) {
 
 // ─── Slip card ────────────────────────────────────────────────────────────────
 
-function SlipCard({ slip }: { slip: NBAKitchenSlip }) {
-  const cfg = SLIP_CONFIG[slip.type];
+function SlipCard({ slip, boxScore }: { slip: NBAKitchenSlip; boxScore: BoxScore | null }) {
+  const cfg  = SLIP_CONFIG[slip.type];
+  const hits = slip.legs.length > 0 ? checkSlipHits(slip.legs, boxScore) : [];
+  const allHit  = hits.length > 0 && hits.every(Boolean);
+  const someHit = hits.some(Boolean);
 
   return (
-    <div className={`rounded-xl border ${cfg.border} ${cfg.bg} flex flex-col`}>
+    <div className={`rounded-xl border ${allHit ? "border-[#22C55E]/40" : cfg.border} ${allHit ? "bg-[#22C55E]/5" : cfg.bg} flex flex-col`}>
       {/* Header */}
       <div className="px-3 py-2.5 border-b border-border/50 rounded-t-xl">
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-1.5">
             <span className="text-base leading-none">{cfg.emoji}</span>
             <span className={`text-xs font-bold uppercase tracking-wider ${cfg.color}`}>{cfg.title}</span>
+            {someHit && !allHit && (
+              <span className="text-[10px] text-[#22C55E] font-medium">
+                {hits.filter(Boolean).length}/{hits.length} hit
+              </span>
+            )}
           </div>
-          <span className="text-[11px] text-text-2 font-medium">{slip.legs.length} leg{slip.legs.length !== 1 ? "s" : ""}</span>
+          <div className="flex items-center gap-2">
+            {allHit && (
+              <span className="text-xl leading-none shake" title="All legs hit!">
+                🫱🏼‍🫲🏻
+              </span>
+            )}
+            <span className="text-[11px] text-text-2 font-medium">{slip.legs.length} leg{slip.legs.length !== 1 ? "s" : ""}</span>
+          </div>
         </div>
         <p className="text-[11px] text-text-2 leading-snug">{cfg.desc}</p>
       </div>
@@ -264,7 +282,7 @@ function SlipCard({ slip }: { slip: NBAKitchenSlip }) {
             <p className="text-[10px] text-text-2/60">Need more game history or higher consistency</p>
           </div>
         ) : (
-          slip.legs.map((leg, i) => <LegRow key={i} leg={leg} />)
+          slip.legs.map((leg, i) => <LegRow key={i} leg={leg} isHit={hits[i]} />)
         )}
       </div>
 
@@ -280,25 +298,26 @@ function SlipCard({ slip }: { slip: NBAKitchenSlip }) {
 
 // ─── Value picks section ──────────────────────────────────────────────────────
 
-function ValuePickCard({ leg }: { leg: NBAKitchenLeg }) {
+function ValuePickCard({ leg, isHit }: { leg: NBAKitchenLeg; isHit?: boolean }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
   const tier   = getConfidenceTier(leg.reliability);
   const colors = CONFIDENCE_COLORS[tier];
   const hex    = CONFIDENCE_HEX[tier];
 
   return (
-    <div className="p-3 border-b border-r border-border/30 last:border-r-0 flex flex-col gap-2">
+    <div className={`p-3 border-b border-r border-border/30 last:border-r-0 flex flex-col gap-2 ${isHit ? "bg-[#22C55E]/5" : ""}`}>
       {/* Player header */}
       <div className="flex items-start justify-between gap-1">
         <div className="min-w-0">
           <div className="flex items-center gap-1 flex-wrap">
-            {leg.isOnForm && (
+            {isHit && <span className="text-sm leading-none">✅</span>}
+            {!isHit && leg.isOnForm && (
               <span title="On form" className="text-[#22C55E] text-[10px] font-black leading-none">▲</span>
             )}
-            {leg.isBounceBack && !leg.isOnForm && (
+            {!isHit && leg.isBounceBack && !leg.isOnForm && (
               <span title="Bounce-back candidate" className="text-[#F59E0B] text-xs leading-none">↺</span>
             )}
-            <span className="text-xs font-bold text-text-1 truncate">{lastName(leg.player)}</span>
+            <span className={`text-xs font-bold truncate ${isHit ? "text-[#22C55E]" : "text-text-1"}`}>{lastName(leg.player)}</span>
             <span className="text-[11px] text-text-2 font-medium">{leg.teamAbbr}</span>
           </div>
         </div>
@@ -353,7 +372,7 @@ function ValuePickCard({ leg }: { leg: NBAKitchenLeg }) {
   );
 }
 
-function ValuePicks({ legs }: { legs: NBAKitchenLeg[] }) {
+function ValuePicks({ legs, boxScore }: { legs: NBAKitchenLeg[]; boxScore: BoxScore | null }) {
   const cfg = SLIP_CONFIG.value;
   if (legs.length === 0) return null;
 
@@ -369,9 +388,10 @@ function ValuePicks({ legs }: { legs: NBAKitchenLeg[] }) {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10">
-        {legs.map((leg, i) => (
-          <ValuePickCard key={i} leg={leg} />
-        ))}
+        {legs.map((leg, i) => {
+          const isHit = checkSlipHits([leg], boxScore)[0] ?? false;
+          return <ValuePickCard key={i} leg={leg} isHit={isHit} />;
+        })}
       </div>
     </div>
   );
@@ -379,11 +399,12 @@ function ValuePicks({ legs }: { legs: NBAKitchenLeg[] }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function NBAKitchen({ slips }: { slips: NBAKitchenSlip[] }) {
+export default function NBAKitchen({ slips, boxScore }: { slips: NBAKitchenSlip[]; boxScore?: BoxScore | null }) {
   const mainSlips = slips.filter(s => s.type !== "value");
   const valueSlip = slips.find(s => s.type === "value");
   const allLegs   = slips.flatMap(s => s.legs);
   const maxGames  = allLegs.length ? Math.max(...allLegs.map(l => l.gamesAnalyzed)) : 0;
+  const bs        = boxScore ?? null;
 
   return (
     <div className="space-y-4 pb-4">
@@ -416,12 +437,12 @@ export default function NBAKitchen({ slips }: { slips: NBAKitchenSlip[] }) {
       {/* 5 main slips */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
         {mainSlips.map(slip => (
-          <SlipCard key={slip.type} slip={slip} />
+          <SlipCard key={slip.type} slip={slip} boxScore={bs} />
         ))}
       </div>
 
       {/* Value picks */}
-      {valueSlip && <ValuePicks legs={valueSlip.legs} />}
+      {valueSlip && <ValuePicks legs={valueSlip.legs} boxScore={bs} />}
 
     </div>
   );
