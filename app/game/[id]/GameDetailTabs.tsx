@@ -23,16 +23,18 @@ import type { KitchenSlip } from "@/lib/sports/afl/kitchen";
 import NBAKitchen from "@/components/nba/NBAKitchen";
 import type { NBAKitchenSlip } from "@/lib/sports/nba/kitchen";
 import SoccerPlayerList from "@/components/soccer/SoccerPlayerList";
+import SoccerPlayerIntel from "@/components/soccer/SoccerPlayerIntel";
 import { buildSlipColorMap, type SlipEntry } from "@/lib/sports/slipTracker";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { key: "overview", label: "Overview",     kitchenOnly: false },
-  { key: "players",  label: "Players",      kitchenOnly: false },
-  { key: "stats",    label: "Stats",        kitchenOnly: false },
-  { key: "h2h",      label: "H2H",          kitchenOnly: false },
-  { key: "kitchen",  label: "🍳 Kitchen",   kitchenOnly: true  },
+  { key: "overview", label: "Overview",     kitchenOnly: false, soccerOnly: false },
+  { key: "players",  label: "Players",      kitchenOnly: false, soccerOnly: false },
+  { key: "intel",    label: "⚡ Intel",     kitchenOnly: false, soccerOnly: true  },
+  { key: "stats",    label: "Stats",        kitchenOnly: false, soccerOnly: false },
+  { key: "h2h",      label: "H2H",          kitchenOnly: false, soccerOnly: false },
+  { key: "kitchen",  label: "🍳 Kitchen",   kitchenOnly: true,  soccerOnly: false },
 ] as const;
 
 const WEATHER_ICON: Record<string, string> = {
@@ -1922,9 +1924,9 @@ export default function GameDetailTabs({
   initialTab, initialH2hFilter, initialHistoryFilter,
 }: GameDetailTabsProps) {
   const hasKitchen = isAFL || isBasketball;
-  const VALID_TABS = ["overview","players","stats","h2h", ...(hasKitchen ? ["kitchen"] : [])] as const;
-  const [tab, setTab] = useState<"overview"|"players"|"stats"|"h2h"|"kitchen">(
-    (VALID_TABS.includes(initialTab as any) ? initialTab : "overview") as "overview"|"players"|"stats"|"h2h"|"kitchen"
+  const VALID_TABS = ["overview","players","intel","stats","h2h", ...(hasKitchen ? ["kitchen"] : [])] as const;
+  const [tab, setTab] = useState<"overview"|"players"|"intel"|"stats"|"h2h"|"kitchen">(
+    (VALID_TABS.includes(initialTab as any) ? initialTab : "overview") as "overview"|"players"|"intel"|"stats"|"h2h"|"kitchen"
   );
   const [h2hFilter, setH2hFilter] = useState<VenueFilter>(initialH2hFilter);
   const [historyFilter, setHistoryFilter] = useState<VenueFilter>(initialHistoryFilter);
@@ -1948,7 +1950,7 @@ export default function GameDetailTabs({
       {/* Tab bar — visually continues the hero card */}
       <div className="bg-surface rounded-b-2xl overflow-hidden mb-4">
         <div className="flex border-t border-white/5">
-          {TABS.filter(t => !t.kitchenOnly || hasKitchen).map(t => (
+          {TABS.filter(t => (!t.kitchenOnly || hasKitchen) && (!t.soccerOnly || isSoccer)).map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key as any)}
@@ -2127,6 +2129,20 @@ export default function GameDetailTabs({
 
           </div>
         </div>
+      )}
+
+      {/* ── Intel (soccer only) ──────────────────────────────────────────── */}
+      {tab === "intel" && isSoccer && (
+        sofascore?.lineups
+          ? <SoccerPlayerIntel
+              lineups={sofascore.lineups}
+              homeTeam={homeTeam}
+              awayTeam={awayTeam}
+              status={game.status}
+            />
+          : <div className="text-center py-10 text-sm text-text-2">
+              No lineup data available yet.
+            </div>
       )}
 
       {/* ── Stats ────────────────────────────────────────────────────────── */}

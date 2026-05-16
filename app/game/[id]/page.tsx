@@ -32,6 +32,7 @@ import LiveScorePanel from "@/components/LiveScorePanel";
 import AFLTeamCard from "@/components/afl/AFLTeamCard";
 import { AFLQuarterSparkline } from "@/components/afl/AFLDashboard";
 import GameDetailTabs, { HistoryVariants, H2HVariants } from "./GameDetailTabs";
+import SofaPlayerPhoto from "@/components/soccer/SofaPlayerPhoto";
 
 // ─── AFL Player Prop Odds (server-side, 6h cache) ────────────────────────────
 
@@ -1310,22 +1311,37 @@ export default async function GameDetailPage({
                         {t.logoUrl && <img src={t.logoUrl} alt="" className="w-3.5 h-3.5 object-contain" />}
                         <span className="text-[9px] text-text-2">{t.shortName}</span>
                       </div>
-                      {players.map((p, i) => (
-                        <div key={i} className="flex items-center gap-1 py-1 border-b border-border last:border-0">
-                          <span className="text-[10px] text-text-1 flex-1 truncate min-w-0">{p.shortName}</span>
-                          <span className="text-[9px] text-text-2 shrink-0">{p.position}</span>
-                          {p.rating != null && (
-                            <span className={`text-[9px] px-1 py-px rounded font-bold shrink-0 ml-1 ${
-                              p.rating >= 7.5 ? "bg-[#22C55E]/20 text-[#22C55E]" :
-                              p.rating >= 6.5 ? "bg-[#F59E0B]/20 text-[#F59E0B]" :
-                              "bg-[#EF4444]/20 text-[#EF4444]"
-                            }`}>{p.rating.toFixed(1)}</span>
-                          )}
-                          {(p.stats.goals as number) > 0 && (
-                            <span className="text-sm shrink-0">⚽</span>
-                          )}
-                        </div>
-                      ))}
+                      {players.map((p, i) => {
+                        const goals   = Number(p.stats.goals ?? 0);
+                        const assists = Number(p.stats.goalAssist ?? 0);
+                        const xg      = typeof p.stats.expectedGoals === "number" ? p.stats.expectedGoals : null;
+                        return (
+                          <div key={i} className="flex items-center gap-2 py-1.5 border-b border-border last:border-0">
+                            {/* Sofascore photo */}
+                            <div className="shrink-0">
+                              <SofaPlayerPhoto id={p.id} name={p.name} size={28} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] text-text-1 font-medium truncate">{p.shortName}</span>
+                                {goals > 0 && <span className="text-xs shrink-0">⚽</span>}
+                                {assists > 0 && <span className="text-xs shrink-0">🎯</span>}
+                              </div>
+                              {xg != null && xg > 0.1 && (
+                                <div className="text-[9px] text-text-2">xG {xg.toFixed(2)}</div>
+                              )}
+                            </div>
+                            {p.rating != null && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded border font-black shrink-0 tabular-nums ${
+                                p.rating >= 8.0 ? "bg-[#22C55E]/20 text-[#22C55E] border-[#22C55E]/30" :
+                                p.rating >= 7.5 ? "bg-[#22C55E]/10 text-[#22C55E] border-[#22C55E]/20" :
+                                p.rating >= 6.5 ? "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" :
+                                "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20"
+                              }`}>{p.rating.toFixed(1)}</span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : null
                 ))}

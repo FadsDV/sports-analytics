@@ -16,24 +16,27 @@ interface StatCol {
 }
 
 const STAT_COLS: StatCol[] = [
-  { key: "minutesPlayed",    label: "MIN" },
-  { key: "goals",            label: "G",   hi: v => v >= 1 },
-  { key: "goalAssist",       label: "A",   hi: v => v >= 1 },
-  { key: "totalShot",        label: "SH" },
-  { key: "onTargetScoringAttempt", label: "ST",  hi: v => v >= 2 },
-  { key: "bigChanceCreated", label: "BC" },
-  { key: "keyPass",          label: "KP",  hi: v => v >= 2 },
-  { key: "totalTackle",      label: "TKL" },
-  { key: "interceptionWon",  label: "INT", hi: v => v >= 2 },
-  { key: "passAccuracy",     label: "PS%", fmt: v => `${Math.round(v)}%`, hi: v => v >= 90 },
-  { key: "accuratePass",     label: "PSS" },
-  { key: "aerialLost",       label: "AER" },  // We use aerialLost but show as aerial duels
-  { key: "duelWon",          label: "DW",  hi: v => v >= 5 },
-  { key: "rating",           label: "RTG", fmt: v => v.toFixed(1), hi: v => v >= 7.5 },
+  { key: "minutesPlayed",              label: "MIN" },
+  { key: "goals",                      label: "G",   hi: v => v >= 1 },
+  { key: "goalAssist",                 label: "A",   hi: v => v >= 1 },
+  { key: "expectedGoals",              label: "xG",  fmt: v => v.toFixed(2), hi: v => v >= 0.5 },
+  { key: "expectedAssists",            label: "xA",  fmt: v => v.toFixed(2), hi: v => v >= 0.3 },
+  { key: "totalShots",                 label: "SH" },
+  { key: "totalShot",                  label: "SH" },  // fallback key variant
+  { key: "onTargetScoringAttempt",     label: "ST",  hi: v => v >= 2 },
+  { key: "keyPass",                    label: "KP",  hi: v => v >= 2 },
+  { key: "progressiveBallCarriesCount",label: "PRC", hi: v => v >= 3 },
+  { key: "totalTackle",                label: "TKL" },
+  { key: "interceptionWon",            label: "INT", hi: v => v >= 2 },
+  { key: "passAccuracy",               label: "PS%", fmt: v => `${Math.round(v)}%`, hi: v => v >= 90 },
+  { key: "accuratePassesPercentage",   label: "PS%", fmt: v => `${Math.round(v)}%`, hi: v => v >= 90 },
+  { key: "accuratePass",               label: "PSS" },
+  { key: "duelWon",                    label: "DW",  hi: v => v >= 5 },
+  { key: "rating",                     label: "RTG", fmt: v => v.toFixed(1), hi: v => v >= 7.5 },
 ];
 
-// Default visible columns — compact but informative
-const DEFAULT_COLS = ["minutesPlayed", "goals", "goalAssist", "totalShot", "onTargetScoringAttempt", "keyPass", "totalTackle", "interceptionWon", "passAccuracy", "rating"];
+// Default visible columns — includes xG, xA, progressive carries
+const DEFAULT_COLS = ["minutesPlayed", "goals", "goalAssist", "expectedGoals", "expectedAssists", "totalShots", "totalShot", "onTargetScoringAttempt", "keyPass", "progressiveBallCarriesCount", "totalTackle", "interceptionWon", "rating"];
 
 // ─── Name matching ────────────────────────────────────────────────────────────
 
@@ -87,11 +90,25 @@ function RatingBadge({ rating }: { rating: number }) {
 
 // ─── Player photo ─────────────────────────────────────────────────────────────
 
-function PlayerPhoto({ src, name, size = 28 }: { src?: string; name: string; size?: number }) {
-  const [err, setErr] = useState(false);
+function PlayerPhoto({ sofaId, espnSrc, name, size = 28 }: { sofaId?: number; espnSrc?: string; name: string; size?: number }) {
+  // Try Sofascore CDN first, fall back to ESPN, then initials
+  const sofaUrl = sofaId ? `https://img.sofascore.com/api/v1/player/${sofaId}/image` : null;
+  const [src, setSrc]   = useState<string | null>(sofaUrl ?? espnSrc ?? null);
+  const [tried, setTried] = useState<"sofa" | "espn" | "none">(sofaUrl ? "sofa" : espnSrc ? "espn" : "none");
+
   const initials = name.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
 
-  if (!src || err) {
+  const handleError = () => {
+    if (tried === "sofa" && espnSrc) {
+      setSrc(espnSrc);
+      setTried("espn");
+    } else {
+      setSrc(null);
+      setTried("none");
+    }
+  };
+
+  if (!src) {
     return (
       <div
         className="rounded-full bg-surface2 border border-border flex items-center justify-center shrink-0 text-text-2 font-bold"
@@ -108,7 +125,7 @@ function PlayerPhoto({ src, name, size = 28 }: { src?: string; name: string; siz
       alt={name}
       width={size}
       height={size}
-      onError={() => setErr(true)}
+      onError={handleError}
       className="rounded-full object-cover shrink-0 bg-surface2"
       style={{ width: size, height: size }}
     />
@@ -129,6 +146,7 @@ function PlayerRow({
   isSubstitute: boolean;
 }) {
   const headshot = espnPlayer?.headshot;
+  const sofaId   = player.id || undefined;
   const mins = player.stats.minutesPlayed ?? (
     player.stats.secondsPlayed != null ? Math.round(player.stats.secondsPlayed as number / 60) : null
   );
@@ -138,7 +156,7 @@ function PlayerRow({
       {/* Player cell */}
       <td className="py-2 pr-2 sticky left-0 bg-surface">
         <div className="flex items-center gap-2 min-w-0">
-          <PlayerPhoto src={headshot} name={player.name} size={26} />
+          <PlayerPhoto sofaId={sofaId} espnSrc={headshot} name={player.name} size={26} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <span className="text-[11px] font-medium text-text-1 truncate leading-tight">
@@ -213,13 +231,15 @@ export default function SoccerPlayerList({ players, espnSquad, formation }: Socc
   // Build stat header labels
   const cols = STAT_COLS.filter(c => activeCols.includes(c.key));
 
-  // Check which cols actually have data
-  const colsWithData = cols.filter(col =>
-    [...starters, ...subs].some(p => {
-      const key = col.key === "minutesPlayed" ? "minutesPlayed" : col.key;
-      return p.stats[key] != null;
-    })
-  );
+  // Check which cols actually have data, deduplicate by label (keep first with data)
+  const seenLabels = new Set<string>();
+  const colsWithData = cols.filter(col => {
+    const hasData = [...starters, ...subs].some(p => p.stats[col.key] != null);
+    if (!hasData) return false;
+    if (seenLabels.has(col.label)) return false;
+    seenLabels.add(col.label);
+    return true;
+  });
 
   const displayCols = colsWithData.length > 0 ? colsWithData.map(c => c.key) : DEFAULT_COLS.slice(0, 5);
 
