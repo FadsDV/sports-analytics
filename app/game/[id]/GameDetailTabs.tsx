@@ -25,6 +25,7 @@ import type { NBAKitchenSlip } from "@/lib/sports/nba/kitchen";
 import SoccerPlayerList from "@/components/soccer/SoccerPlayerList";
 import SoccerPlayerIntel from "@/components/soccer/SoccerPlayerIntel";
 import SoccerPlayerDrawer from "@/components/soccer/SoccerPlayerDrawer";
+import SoccerMatchInsights from "@/components/soccer/SoccerMatchInsights";
 import type { SofascorePlayer } from "@/lib/sports/sofascore";
 import { buildSlipColorMap, type SlipEntry } from "@/lib/sports/slipTracker";
 
@@ -1051,21 +1052,21 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
             )}
           </Section>
 
-          {weather && weather.condition !== "Indoor" && (
-            <Section title="Weather">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-xl">{WEATHER_ICON[weather.condition] ?? "🌤"}</span>
-                <div>
-                  <span className={weather.windKph > 40 || ["Storm","Rain"].includes(weather.condition) ? "text-[#F59E0B]" : "text-text-1"}>
-                    {weather.condition}
-                  </span>
-                  <div className="text-xs text-text-2">{weather.tempC}°C · {weather.windKph}km/h</div>
-                </div>
-              </div>
-            </Section>
-          )}
         </div>
       </div>
+
+      {/* ── Match Intelligence ───────────────────────────────────────────── */}
+      {(sofascore?.homeTeamStats || sofascore?.awayTeamStats || (sofascore?.topScorers?.length ?? 0) > 0) && (
+        <SoccerMatchInsights
+          homeTeam={homeTeam}
+          awayTeam={awayTeam}
+          homeTeamStats={sofascore?.homeTeamStats}
+          awayTeamStats={sofascore?.awayTeamStats}
+          topScorers={sofascore?.topScorers ?? []}
+          homeHistory={homeHistory}
+          awayHistory={awayHistory}
+        />
+      )}
     </div>
   );
 }
@@ -1932,7 +1933,7 @@ export default function GameDetailTabs({
   );
   const [h2hFilter, setH2hFilter] = useState<VenueFilter>(initialH2hFilter);
   const [historyFilter, setHistoryFilter] = useState<VenueFilter>(initialHistoryFilter);
-  const [soccerPlayer, setSoccerPlayer] = useState<{ player: SofascorePlayer; teamName: string } | null>(null);
+  const [soccerPlayer, setSoccerPlayer] = useState<{ player: SofascorePlayer; teamName: string; side: "home" | "away" } | null>(null);
 
   const currentHomeHistory = homeHistories[historyFilter];
   const currentAwayHistory = awayHistories[historyFilter];
@@ -2045,7 +2046,7 @@ export default function GameDetailTabs({
                   players={sofascore.lineups.home}
                   espnSquad={homeSquad}
                   formation={sofascore.lineups.homeFormation}
-                  onPlayerClick={p => setSoccerPlayer({ player: p, teamName: homeTeam.name })}
+                  onPlayerClick={p => setSoccerPlayer({ player: p, teamName: homeTeam.name, side: "home" })}
                 />
               ) : isSoccer ? (
                 <SquadList
@@ -2105,7 +2106,7 @@ export default function GameDetailTabs({
                   players={sofascore.lineups.away}
                   espnSquad={awaySquad}
                   formation={sofascore.lineups.awayFormation}
-                  onPlayerClick={p => setSoccerPlayer({ player: p, teamName: awayTeam.name })}
+                  onPlayerClick={p => setSoccerPlayer({ player: p, teamName: awayTeam.name, side: "away" })}
                 />
               ) : isSoccer ? (
                 <SquadList
@@ -2212,6 +2213,8 @@ export default function GameDetailTabs({
         <SoccerPlayerDrawer
           player={soccerPlayer.player}
           teamName={soccerPlayer.teamName}
+          sport={game.sport}
+          opponentTeamId={soccerPlayer.side === "home" ? sofascore?.awayTeamId : sofascore?.homeTeamId}
           onClose={() => setSoccerPlayer(null)}
         />
       )}
