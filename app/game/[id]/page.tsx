@@ -23,8 +23,9 @@ import {
 import { fetchWeather } from "@/lib/sports/weather";
 import { calcBetRisk } from "@/lib/sports/betRisk";
 import { formatKickoffFull, formatAFLKickoff } from "@/lib/utils";
-import { fetchSofascoreMatchData } from "@/lib/sports/sofascore";
+import { fetchSofascoreMatchData, fetchPlayerRecentGames, fetchPlayerSeasonStats } from "@/lib/sports/sofascore";
 import type { SofascorePlayer } from "@/lib/sports/sofascore";
+import { computeSoccerKitchen, type SoccerKitchenSlip, type SoccerPlayerProfile } from "@/lib/sports/soccer/kitchen";
 import { computeAFLMatchAnalytics, type LadderEntry } from "@/lib/sports/afl/analytics";
 import { generateAFLInsights, type AFLInsight } from "@/lib/sports/afl/insights";
 import { fetchAFLStandings } from "@/lib/sports/squiggle";
@@ -366,6 +367,40 @@ export default async function GameDetailPage({
       awayAbbr:   game.awayTeam.shortName,
       propOdds:   nbaPropOdds,
     });
+  }
+
+  // Soccer kitchen — fetch key player game logs and compute slips
+  let soccerKitchenSlips: SoccerKitchenSlip[] = [];
+  if (isSoccer && sofascore) {
+    // Pick top outfield starters (FWD + MID) — max 5 per team, skip GK
+    const pickPlayers = (players: SofascorePlayer[], side: "home" | "away", teamName: string, teamAbbr: string): SoccerPlayerProfile[] =>
+      players
+        .filter(p => p.starter && !["G", "GK", "GL"].includes(p.position.toUpperCase()))
+        .slice(0, 6)
+        .map(p => ({ sofaId: p.id, name: p.name, shortName: p.shortName, position: p.position, side, teamAbbr, teamName, games: [] }));
+
+    const homePlayers = pickPlayers(sofascore.lineups?.home ?? [], "home", game.homeTeam.name, game.homeTeam.shortName);
+    const awayPlayers = pickPlayers(sofascore.lineups?.away ?? [], "away", game.awayTeam.name, game.awayTeam.shortName);
+    const allKitchenPlayers = [...homePlayers, ...awayPlayers];
+
+    if (allKitchenPlayers.length > 0) {
+      const gameResults = await Promise.all(
+        allKitchenPlayers.map(p => fetchPlayerRecentGames(p.sofaId).catch(() => ({ recentGames: [], vsOpponent: null })))
+      );
+      gameResults.forEach((r, i) => { allKitchenPlayers[i].games = r.recentGames; });
+
+      soccerKitchenSlips = computeSoccerKitchen({
+        homeAbbr:      game.homeTeam.shortName,
+        awayAbbr:      game.awayTeam.shortName,
+        homeTeamName:  game.homeTeam.name,
+        awayTeamName:  game.awayTeam.name,
+        homeHistory:   homeHistories.home,
+        awayHistory:   awayHistories.away,
+        homeTeamStats: sofascore.homeTeamStats ?? null,
+        awayTeamStats: sofascore.awayTeamStats ?? null,
+        players:       allKitchenPlayers,
+      });
+    }
   }
 
   const aflAnalytics = isAFL
@@ -1291,6 +1326,7 @@ export default async function GameDetailPage({
               isSoccer={true}
               isBasketball={false}
               isAFL={false}
+              soccerKitchenSlips={soccerKitchenSlips}
               initialTab={activeTab}
               initialH2hFilter={h2hFilter as VenueFilter}
               initialHistoryFilter={historyFilter as VenueFilter}

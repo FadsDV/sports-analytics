@@ -26,7 +26,9 @@ import SoccerPlayerList from "@/components/soccer/SoccerPlayerList";
 import SoccerPlayerIntel from "@/components/soccer/SoccerPlayerIntel";
 import SoccerPlayerDrawer from "@/components/soccer/SoccerPlayerDrawer";
 import SoccerMatchInsights from "@/components/soccer/SoccerMatchInsights";
+import SoccerKitchen from "@/components/soccer/SoccerKitchen";
 import type { SofascorePlayer } from "@/lib/sports/sofascore";
+import type { SoccerKitchenSlip } from "@/lib/sports/soccer/kitchen";
 import { buildSlipColorMap, type SlipEntry } from "@/lib/sports/slipTracker";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -76,8 +78,9 @@ export interface GameDetailTabsProps {
   isSoccer:           boolean;
   isBasketball:       boolean;
   isAFL:              boolean;
-  kitchenSlips?:      KitchenSlip[];
-  nbaKitchenSlips?:   NBAKitchenSlip[];
+  kitchenSlips?:        KitchenSlip[];
+  nbaKitchenSlips?:     NBAKitchenSlip[];
+  soccerKitchenSlips?:  SoccerKitchenSlip[];
   initialTab:         string;
   initialH2hFilter:   VenueFilter;
   initialHistoryFilter: VenueFilter;
@@ -1923,10 +1926,10 @@ export default function GameDetailTabs({
   game, id, homeSquad, awaySquad, homeInjuries, awayInjuries,
   homeHistories, awayHistories, h2hVariants, aflAnalytics, sofascore,
   insights, isSoccer, isBasketball, isAFL,
-  kitchenSlips, nbaKitchenSlips,
+  kitchenSlips, nbaKitchenSlips, soccerKitchenSlips,
   initialTab, initialH2hFilter, initialHistoryFilter,
 }: GameDetailTabsProps) {
-  const hasKitchen = isAFL || isBasketball;
+  const hasKitchen = isAFL || isBasketball || (isSoccer && (soccerKitchenSlips?.some(s => s.legs.length > 0) ?? false));
   const VALID_TABS = ["overview","players","intel","stats","h2h", ...(hasKitchen ? ["kitchen"] : [])] as const;
   const [tab, setTab] = useState<"overview"|"players"|"intel"|"stats"|"h2h"|"kitchen">(
     (VALID_TABS.includes(initialTab as any) ? initialTab : "overview") as "overview"|"players"|"intel"|"stats"|"h2h"|"kitchen"
@@ -2205,6 +2208,14 @@ export default function GameDetailTabs({
           : <div className="bg-surface rounded-xl p-8 border border-border text-center">
               <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
               <p className="text-[10px] text-text-2">Requires at least 3 completed games per team.</p>
+            </div>
+      )}
+      {tab === "kitchen" && isSoccer && (
+        soccerKitchenSlips && soccerKitchenSlips.some(s => s.legs.length > 0)
+          ? <SoccerKitchen slips={soccerKitchenSlips} />
+          : <div className="bg-surface rounded-xl p-8 border border-border text-center">
+              <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
+              <p className="text-[10px] text-text-2">Requires lineup data and at least 3 recent games per player.</p>
             </div>
       )}
 
