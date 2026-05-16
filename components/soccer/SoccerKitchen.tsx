@@ -24,10 +24,10 @@ const SLIP_CONFIG: Record<SoccerSlipType, {
     desc: "Best goal-scoring trends this season. Goals only.",
     color: "text-[#F97316]", border: "border-[#F97316]/25", bg: "bg-[#F97316]/5",
   },
-  creators: {
-    emoji: "🎯", title: "Creators",
-    desc: "Assist and key pass leaders. Set up merchants.",
-    color: "text-[#14B8A6]", border: "border-[#14B8A6]/25", bg: "bg-[#14B8A6]/5",
+  shots: {
+    emoji: "🏹", title: "Shots",
+    desc: "Player Shots and Shots on Target props.",
+    color: "text-[#A78BFA]", border: "border-[#A78BFA]/25", bg: "bg-[#A78BFA]/5",
   },
   cards: {
     emoji: "🟨", title: "Cards",
@@ -42,9 +42,12 @@ const SLIP_CONFIG: Record<SoccerSlipType, {
 };
 
 const STAT_ICONS: Record<string, string> = {
-  goals: "⚽", assists: "🎯", shots: "🏹", shotsOnTarget: "🎯",
+  goals: "⚽", assists: "🎯", scoreOrAssist: "⚽🎯",
+  shots: "🏹", shotsOnTarget: "🎯",
   keyPasses: "🔑", yellowCards: "🟨", xG: "📊",
-  teamGoals: "⚽", matchGoals: "📊", btts: "🔄", totalCards: "🟨", teamCards: "🟨",
+  tackles: "💪", foulsCommitted: "🟥", saves: "🧤",
+  teamGoals: "⚽", matchGoals: "📊", btts: "🔄",
+  totalCards: "🟨", teamCards: "🟨", corners: "📐",
 };
 
 // ─── Confidence colors ────────────────────────────────────────────────────────

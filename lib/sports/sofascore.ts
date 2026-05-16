@@ -176,6 +176,8 @@ export interface SofascoreGameLog {
   tackles:       number | null;
   interceptions: number | null;
   yellowCards:   number | null;
+  foulsCommitted:number | null;
+  saves:         number | null;
   xG:            number | null;
   xA:            number | null;
 }
@@ -594,11 +596,13 @@ export async function fetchPlayerRecentGames(
       keyPasses:     n("keyPass"),
       passes:        n("accuratePass"),
       passAccuracy:  n("accuratePassesPercentage"),
-      tackles:       n("totalTackle") ?? n("tackles"),
-      interceptions: n("interceptionWon") ?? n("interceptions"),
-      yellowCards:   n("yellowCard"),
-      xG:            n("expectedGoals"),
-      xA:            n("expectedAssists"),
+      tackles:        n("totalTackle") ?? n("tackles"),
+      interceptions:  n("interceptionWon") ?? n("interceptions"),
+      yellowCards:    n("yellowCard"),
+      foulsCommitted: n("foulsCommitted") ?? n("foulCommit"),
+      saves:          n("saves") ?? n("totalSave"),
+      xG:             n("expectedGoals"),
+      xA:             n("expectedAssists"),
     };
   };
 
