@@ -139,11 +139,13 @@ function PlayerRow({
   espnPlayer,
   activeCols,
   isSubstitute,
+  onClick,
 }: {
   player:      SofascorePlayer;
   espnPlayer?: ESPNPlayer;
   activeCols:  string[];
   isSubstitute: boolean;
+  onClick:     () => void;
 }) {
   const headshot = espnPlayer?.headshot;
   const sofaId   = player.id || undefined;
@@ -152,7 +154,10 @@ function PlayerRow({
   );
 
   return (
-    <tr className={`border-b border-border last:border-0 hover:bg-surface2 transition-colors ${isSubstitute ? "opacity-70" : ""}`}>
+    <tr
+      className={`border-b border-border last:border-0 hover:bg-surface2 transition-colors cursor-pointer ${isSubstitute ? "opacity-70" : ""}`}
+      onClick={onClick}
+    >
       {/* Player cell */}
       <td className="py-2 pr-2 sticky left-0 bg-surface">
         <div className="flex items-center gap-2 min-w-0">
@@ -205,12 +210,13 @@ function PlayerRow({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface SoccerPlayerListProps {
-  players:    SofascorePlayer[];
-  espnSquad:  ESPNPlayer[];
-  formation?: string;
+  players:       SofascorePlayer[];
+  espnSquad:     ESPNPlayer[];
+  formation?:    string;
+  onPlayerClick?: (player: SofascorePlayer) => void;
 }
 
-export default function SoccerPlayerList({ players, espnSquad, formation }: SoccerPlayerListProps) {
+export default function SoccerPlayerList({ players, espnSquad, formation, onPlayerClick }: SoccerPlayerListProps) {
   const activeCols = DEFAULT_COLS;
 
   const starters = players.filter(p => p.starter);
@@ -278,6 +284,7 @@ export default function SoccerPlayerList({ players, espnSquad, formation }: Socc
                   espnPlayer={esp}
                   activeCols={displayCols}
                   isSubstitute={false}
+                  onClick={() => onPlayerClick?.(p)}
                 />
               );
             })}
@@ -298,6 +305,7 @@ export default function SoccerPlayerList({ players, espnSquad, formation }: Socc
                       espnPlayer={esp}
                       activeCols={displayCols}
                       isSubstitute={true}
+                      onClick={() => onPlayerClick?.(p)}
                     />
                   );
                 })}

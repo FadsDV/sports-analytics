@@ -119,13 +119,33 @@ export interface SofascoreMatchData {
 
 // ─── Name normalisation ───────────────────────────────────────────────────────
 
+// English city name → canonical form used in original-language names
+const CITY_ALIASES: [RegExp, string][] = [
+  [/\bcologne\b/g,    "koln"],      // FC Cologne → Köln
+  [/\bmunich\b/g,     "munchen"],   // Bayern Munich → München
+  [/\bmuenchen\b/g,   "munchen"],
+  [/\bmoenchengladbach\b/g, "monchengladbach"],
+  [/\bathens\b/g,     "athen"],
+  [/\brome\b/g,       "roma"],
+  [/\bmilan\b/g,      "milano"],    // AC Milan → Milano
+  [/\blyon\b/g,       "lyon"],
+  [/\bmarseille\b/g,  "marseille"],
+];
+
 function normalizeName(name: string): string {
-  return name
+  let s = name
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "") // strip combining/accent chars
-    .toLowerCase()
-    .replace(/\bfc\b|\bcf\b|\bafc\b|\bsc\b|\bac\b|\bas\b|\bss\b|\brc\b|\bcd\b|\bud\b|\bsd\b/g, "")
-    .replace(/\b(real|atletico|atletico|sporting|united|city)\b/g, "")
+    .toLowerCase();
+
+  // Apply city/locale aliases before stripping
+  for (const [pattern, replacement] of CITY_ALIASES) {
+    s = s.replace(pattern, replacement);
+  }
+
+  return s
+    .replace(/\bfc\b|\bcf\b|\bafc\b|\bsc\b|\bac\b|\bas\b|\bss\b|\brc\b|\bcd\b|\bud\b|\bsd\b|\bsv\b|\bfsv\b|\bssv\b|\bvfl\b|\bvfb\b|\brb\b|\btsg\b|\bbsc\b|\btsv\b|\bfk\b|\bsk\b|\bif\b|\bbk\b|\bgif\b/g, "")
+    .replace(/\b(real|atletico|sporting|united|city|borussia|dynamo|lokomotiv|spartak)\b/g, "")
     .replace(/[^a-z0-9]/g, "")
     .trim();
 }

@@ -24,6 +24,8 @@ import NBAKitchen from "@/components/nba/NBAKitchen";
 import type { NBAKitchenSlip } from "@/lib/sports/nba/kitchen";
 import SoccerPlayerList from "@/components/soccer/SoccerPlayerList";
 import SoccerPlayerIntel from "@/components/soccer/SoccerPlayerIntel";
+import SoccerPlayerDrawer from "@/components/soccer/SoccerPlayerDrawer";
+import type { SofascorePlayer } from "@/lib/sports/sofascore";
 import { buildSlipColorMap, type SlipEntry } from "@/lib/sports/slipTracker";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1930,6 +1932,7 @@ export default function GameDetailTabs({
   );
   const [h2hFilter, setH2hFilter] = useState<VenueFilter>(initialH2hFilter);
   const [historyFilter, setHistoryFilter] = useState<VenueFilter>(initialHistoryFilter);
+  const [soccerPlayer, setSoccerPlayer] = useState<{ player: SofascorePlayer; teamName: string } | null>(null);
 
   const currentHomeHistory = homeHistories[historyFilter];
   const currentAwayHistory = awayHistories[historyFilter];
@@ -2042,6 +2045,7 @@ export default function GameDetailTabs({
                   players={sofascore.lineups.home}
                   espnSquad={homeSquad}
                   formation={sofascore.lineups.homeFormation}
+                  onPlayerClick={p => setSoccerPlayer({ player: p, teamName: homeTeam.name })}
                 />
               ) : isSoccer ? (
                 <SquadList
@@ -2101,6 +2105,7 @@ export default function GameDetailTabs({
                   players={sofascore.lineups.away}
                   espnSquad={awaySquad}
                   formation={sofascore.lineups.awayFormation}
+                  onPlayerClick={p => setSoccerPlayer({ player: p, teamName: awayTeam.name })}
                 />
               ) : isSoccer ? (
                 <SquadList
@@ -2200,6 +2205,15 @@ export default function GameDetailTabs({
               <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
               <p className="text-[10px] text-text-2">Requires at least 3 completed games per team.</p>
             </div>
+      )}
+
+      {/* ── Soccer player drawer ──────────────────────────────────────── */}
+      {soccerPlayer && (
+        <SoccerPlayerDrawer
+          player={soccerPlayer.player}
+          teamName={soccerPlayer.teamName}
+          onClose={() => setSoccerPlayer(null)}
+        />
       )}
     </>
   );
