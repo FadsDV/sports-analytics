@@ -2171,7 +2171,7 @@ export default function GameDetailTabs({
       {/* ── Kitchen ──────────────────────────────────────────────────────── */}
       {tab === "kitchen" && isAFL && (
         kitchenSlips && kitchenSlips.some(s => s.legs.length > 0)
-          ? <AFLKitchen slips={kitchenSlips} boxScore={boxScore} />
+          ? <AFLKitchen slips={kitchenSlips} boxScore={boxScore} isUpcoming={game.status === "upcoming"} />
           : <div className="bg-surface rounded-xl p-8 border border-border text-center">
               <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
               <p className="text-[10px] text-text-2">Requires at least 3 completed games per team.</p>

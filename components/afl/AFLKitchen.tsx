@@ -398,7 +398,7 @@ function ValuePicks({ legs, boxScore }: { legs: KitchenLeg[]; boxScore: BoxScore
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function AFLKitchen({ slips, boxScore }: { slips: KitchenSlip[]; boxScore?: BoxScore | null }) {
+export default function AFLKitchen({ slips, boxScore, isUpcoming }: { slips: KitchenSlip[]; boxScore?: BoxScore | null; isUpcoming?: boolean }) {
   const mainSlips = slips.filter(s => s.type !== "value");
   const valueSlip = slips.find(s => s.type === "value");
   const allLegs   = slips.flatMap(s => s.legs);
@@ -411,7 +411,7 @@ export default function AFLKitchen({ slips, boxScore }: { slips: KitchenSlip[]; 
       {/* Header */}
       <div className="flex items-center gap-3 pt-1">
         <span className="text-2xl">🍳</span>
-        <div>
+        <div className="flex-1 min-w-0">
           <h2 className="text-sm font-bold text-text-1 tracking-wide">The Kitchen</h2>
           <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5">
             <p className="text-xs text-text-2">
@@ -431,6 +431,15 @@ export default function AFLKitchen({ slips, boxScore }: { slips: KitchenSlip[]; 
             </span>
           </div>
         </div>
+        {isUpcoming && (
+          <a
+            href="/betslip"
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all
+              bg-primary/10 border border-primary/40 text-primary hover:bg-primary hover:text-white hover:border-primary"
+          >
+            🔍 Slip Checker
+          </a>
+        )}
       </div>
 
       {/* 5 main slips */}
