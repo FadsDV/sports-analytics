@@ -1,12 +1,14 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import type { Game, Team, H2HGame } from "@/lib/types";
 import type { AFLInsight } from "@/lib/sports/afl/insights";
 import type { ESPNPlayer, ESPNInjury } from "@/lib/sports/espnPlayers";
 import type { AFLMatchAnalytics } from "@/lib/sports/afl/analytics";
 import type { TeamHistoryGame, VenueFilter } from "@/lib/sports/espn";
+import type { SlipEntry } from "@/lib/sports/slipTracker";
 import FormPills from "@/components/FormPills";
 import PlayerAvatar from "@/components/afl/PlayerAvatar";
 import AFLUpcomingOdds from "./AFLUpcomingOdds";
@@ -24,7 +26,43 @@ export interface AFLDashboardProps {
   insights:             AFLInsight[];
   historyFilter:        VenueFilter;
   onHistoryFilterChange:(f: VenueFilter) => void;
+  slipColorMap?:        Map<string, SlipEntry[]>;
 }
+
+// ─── Slip dot indicators ──────────────────────────────────────────────────────
+
+function SlipDots({ entries }: { entries: SlipEntry[] }) {
+  if (!entries.length) return null;
+  return (
+    <div className="flex items-center gap-0.5 shrink-0">
+      {entries.map(e => (
+        <span
+          key={e.type}
+          className="text-[8px] font-black px-0.5 rounded leading-none"
+          style={{ color: e.color, backgroundColor: `${e.color}22`, border: `1px solid ${e.color}44` }}
+          title={e.type}
+        >
+          {e.abbr}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ─── AFL stat legend ──────────────────────────────────────────────────────────
+
+const AFL_STAT_LEGEND: Record<string, string> = {
+  D:  "Disposals",
+  K:  "Kicks",
+  HB: "Handballs",
+  G:  "Goals",
+  B:  "Behinds",
+  T:  "Tackles",
+  M:  "Marks",
+  HO: "Hitouts",
+  FF: "Free Kicks For",
+  FA: "Free Kicks Against",
+};
 
 // ─── Shared atoms ─────────────────────────────────────────────────────────────
 
@@ -437,12 +475,14 @@ function AFLPreMatch({
 function AFLLive({
   game, homeInjuries, awayInjuries,
   homeHistory, awayHistory, h2h, analytics, insights,
-  historyFilter, onHistoryFilterChange,
+  historyFilter, onHistoryFilterChange, slipColorMap,
 }: AFLDashboardProps) {
   const { homeTeam, awayTeam, boxScore, weather, status } = game;
   const ha = analytics?.home;
   const aa = analytics?.away;
   const isLive = status === "live";
+
+  const [sortBy, setSortBy] = useState<string | null>(null);
 
   const KEY_STATS = ["D", "G", "T", "M", "HO"] as const;
   const topHome = boxScore?.home.slice(0, 10) ?? [];
@@ -474,11 +514,15 @@ function AFLLive({
                     {sorted.map((row, i) => {
                       const d     = Number(row.stats["D"] ?? 0);
                       const elite = d >= 25;
+                      const slipEntries = slipColorMap?.get(row.player) ?? [];
                       return (
                         <div key={i} className="flex items-center py-1.5 border-b border-border last:border-0 gap-2">
                           <span className="text-[10px] text-text-2 tabular-nums w-3 shrink-0 text-center">{i + 1}</span>
                           <PlayerAvatar src={row.headshot} name={row.player} size={22} />
-                          <span className="text-xs text-text-1 font-medium flex-1 truncate">{row.player}</span>
+                          <div className="flex items-center gap-1 flex-1 min-w-0">
+                            <span className="text-xs text-text-1 font-medium truncate">{row.player}</span>
+                            {slipEntries.length > 0 && <SlipDots entries={slipEntries} />}
+                          </div>
                           <div className="flex items-center gap-2 shrink-0">
                             {KEY_STATS.filter(k => row.stats[k] != null).slice(0, 3).map(k => (
                               <span key={k} className="text-xs tabular-nums">
@@ -569,9 +613,20 @@ function AFLLive({
         {/* Full Box Score */}
         {hasBoxScore && boxScore && (
           <Card title="Player Stats">
+            {/* Stat legend */}
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mb-3 pb-2 border-b border-border">
+              {boxScore.statHeaders.slice(0, 7).filter(h => AFL_STAT_LEGEND[h]).map(h => (
+                <span key={h} className="text-[10px] text-text-2">
+                  <span className="font-bold text-text-1">{h}</span> {AFL_STAT_LEGEND[h]}
+                </span>
+              ))}
+            </div>
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
               {([{ t: homeTeam, rows: boxScore.home }, { t: awayTeam, rows: boxScore.away }] as const).map(({ t, rows }) => {
                 const showHeaders = boxScore.statHeaders.slice(0, 6);
+                const sortedRows = sortBy
+                  ? [...rows].sort((a, b) => Number(b.stats[sortBy] ?? 0) - Number(a.stats[sortBy] ?? 0))
+                  : rows;
                 return (
                   <div key={t.name}>
                     <div className="flex items-center gap-1.5 mb-2">
@@ -584,32 +639,45 @@ function AFLLive({
                           <tr className="border-b border-border">
                             <th className="text-left py-1.5 pr-2 text-text-2 font-medium">Player</th>
                             {showHeaders.map(h => (
-                              <th key={h} className="text-right py-1.5 px-1 text-text-2 font-medium">{h}</th>
+                              <th
+                                key={h}
+                                className={`text-right py-1.5 px-1 font-medium cursor-pointer select-none transition-colors ${
+                                  sortBy === h ? "text-primary" : "text-text-2 hover:text-text-1"
+                                }`}
+                                title={AFL_STAT_LEGEND[h] ?? h}
+                                onClick={() => setSortBy(prev => prev === h ? null : h)}
+                              >
+                                {h}{sortBy === h ? " ↓" : ""}
+                              </th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((r, i) => (
-                            <tr key={i} className="border-b border-border last:border-0 hover:bg-surface2">
-                              <td className="py-1.5 pr-2">
-                                <div className="flex items-center gap-1.5">
-                                  <PlayerAvatar src={r.headshot} name={r.player} size={20} />
-                                  <span className="text-text-1 truncate max-w-[80px]">{r.player}</span>
-                                </div>
-                              </td>
-                              {showHeaders.map(h => {
-                                const v  = r.stats[h];
-                                const hi = h === "D" && Number(v) >= 25;
-                                return (
-                                  <td key={h} className={`py-1.5 px-1 text-right tabular-nums ${
-                                    hi ? "text-primary font-bold" : "text-text-2"
-                                  }`}>
-                                    {v ?? "—"}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          ))}
+                          {sortedRows.map((r, i) => {
+                            const slipEntries = slipColorMap?.get(r.player) ?? [];
+                            return (
+                              <tr key={i} className="border-b border-border last:border-0 hover:bg-surface2">
+                                <td className="py-1.5 pr-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <PlayerAvatar src={r.headshot} name={r.player} size={20} />
+                                    <span className="text-text-1 truncate max-w-[80px]">{r.player}</span>
+                                    {slipEntries.length > 0 && <SlipDots entries={slipEntries} />}
+                                  </div>
+                                </td>
+                                {showHeaders.map(h => {
+                                  const v  = r.stats[h];
+                                  const hi = h === "D" && Number(v) >= 25;
+                                  return (
+                                    <td key={h} className={`py-1.5 px-1 text-right tabular-nums ${
+                                      hi ? "text-primary font-bold" : "text-text-2"
+                                    }`}>
+                                      {v ?? "—"}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

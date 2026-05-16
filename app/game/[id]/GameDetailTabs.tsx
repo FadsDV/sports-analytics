@@ -244,9 +244,19 @@ function AFLPlayerList({
   const [loading, setLoading] = useState(false);
   const [drawerData, setDrawerData] = useState<AFLPlayerAnalyticsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<string | null>(null);
+
+  const AFL_STAT_LEGEND: Record<string, string> = {
+    D:"Disposals", K:"Kicks", HB:"Handballs", G:"Goals", B:"Behinds",
+    T:"Tackles", M:"Marks", HO:"Hitouts", FF:"Free For", FA:"Free Against",
+  };
 
   const showHeaders = headers.slice(0, 7);
   if (!rows.length) return <p className="text-xs text-text-2">No data available.</p>;
+
+  const sortedRows = sortBy
+    ? [...rows].sort((a, b) => Number(b.stats[sortBy] ?? 0) - Number(a.stats[sortBy] ?? 0))
+    : rows;
 
   async function handlePlayerClick(row: BoxScoreRow) {
     if (!row.playerId) return;
@@ -282,15 +292,34 @@ function AFLPlayerList({
 
   return (
     <div className="overflow-x-auto">
+      {/* Stat legend */}
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mb-2 pb-2 border-b border-border">
+        {showHeaders.filter(h => AFL_STAT_LEGEND[h]).map(h => (
+          <span key={h} className="text-[10px] text-text-2">
+            <span className="font-bold text-text-1">{h}</span> {AFL_STAT_LEGEND[h]}
+          </span>
+        ))}
+      </div>
       <table className="w-full text-xs min-w-[360px]">
         <thead>
           <tr className="border-b border-white/5">
             <th className="text-left py-1.5 pr-2 text-text-2">Player</th>
-            {showHeaders.map(h => <th key={h} className="text-right py-1.5 px-1 text-text-2">{h}</th>)}
+            {showHeaders.map(h => (
+              <th
+                key={h}
+                className={`text-right py-1.5 px-1 cursor-pointer select-none transition-colors ${
+                  sortBy === h ? "text-primary" : "text-text-2 hover:text-text-1"
+                }`}
+                title={AFL_STAT_LEGEND[h] ?? h}
+                onClick={() => setSortBy(prev => prev === h ? null : h)}
+              >
+                {h}{sortBy === h ? " ↓" : ""}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => {
+          {sortedRows.map((r, i) => {
             const slipEntries = slipColorMap?.get(r.player) ?? [];
             return (
             <tr
@@ -378,6 +407,7 @@ function NBAPlayerList({
   const [loading, setLoading]               = useState(false);
   const [drawerData, setDrawerData]         = useState<NBAPlayerAnalyticsResult | null>(null);
   const [error, setError]                   = useState<string | null>(null);
+  const [sortBy, setSortBy]                 = useState<string | null>(null);
 
   const PREFERRED = ["MIN", "PTS", "REB", "AST", "STL", "BLK", "TO", "FG", "3PT", "+/-"];
   const displayHeaders = PREFERRED.filter(h => headers.includes(h))
@@ -385,12 +415,17 @@ function NBAPlayerList({
 
   if (!rows.length) return <p className="text-xs text-text-2">No data available.</p>;
 
-  const starters = rows.filter(r => r.starter !== false && rows.some(x => x.starter));
-  const bench    = rows.filter(r => r.starter === false);
-  const hasGroups = starters.length > 0 && bench.length > 0;
+  const rawStarters = rows.filter(r => r.starter !== false && rows.some(x => x.starter));
+  const rawBench    = rows.filter(r => r.starter === false);
+  const hasGroups = rawStarters.length > 0 && rawBench.length > 0;
+
+  function sortGroup(g: BoxScoreRow[]) {
+    return sortBy ? [...g].sort((a, b) => Number(b.stats[sortBy] ?? 0) - Number(a.stats[sortBy] ?? 0)) : g;
+  }
+
   const groups = hasGroups
-    ? [{ label: "STARTERS", rows: starters }, { label: "BENCH", rows: bench }]
-    : [{ label: "", rows }];
+    ? [{ label: "STARTERS", rows: sortGroup(rawStarters) }, { label: "BENCH", rows: sortGroup(rawBench) }]
+    : [{ label: "", rows: sortGroup(rows) }];
 
   async function handlePlayerClick(row: BoxScoreRow) {
     if (!row.playerId || !teamId) return;
@@ -424,7 +459,15 @@ function NBAPlayerList({
           <tr className="border-b border-white/5">
             <th className="text-left py-2 pr-2 text-text-2 sticky left-0 bg-surface">Player</th>
             {displayHeaders.map(h => (
-              <th key={h} className="text-right py-2 px-1.5 text-text-2 whitespace-nowrap font-medium">{h}</th>
+              <th
+                key={h}
+                className={`text-right py-2 px-1.5 whitespace-nowrap font-medium cursor-pointer select-none transition-colors ${
+                  sortBy === h ? "text-primary" : "text-text-2 hover:text-text-1"
+                }`}
+                onClick={() => setSortBy(prev => prev === h ? null : h)}
+              >
+                {h}{sortBy === h ? " ↓" : ""}
+              </th>
             ))}
           </tr>
         </thead>
@@ -1946,6 +1989,7 @@ export default function GameDetailTabs({
               homeInjuries={homeInjuries} awayInjuries={awayInjuries}
               h2h={h2hForOverview} analytics={aflAnalytics}
               historyFilter={historyFilter} onHistoryFilterChange={setHistoryFilter}
+              slipColorMap={slipColorMap}
             />
           : <GenericOverview
               game={game} insights={insights}
