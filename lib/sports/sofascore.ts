@@ -163,14 +163,21 @@ export interface SofascoreGameLog {
   awayScore:     number;
   homeTeamId:    number;
   awayTeamId:    number;
+  playerTeamId:  number | null;
   goals:         number | null;
   assists:       number | null;
   rating:        number | null;
   minutesPlayed: number | null;
   shots:         number | null;
   shotsOnTarget: number | null;
+  keyPasses:     number | null;
   passes:        number | null;
+  passAccuracy:  number | null;
+  tackles:       number | null;
+  interceptions: number | null;
+  yellowCards:   number | null;
   xG:            number | null;
+  xA:            number | null;
 }
 
 export interface SofascoreMatchData {
@@ -540,7 +547,7 @@ export async function fetchPlayerRecentGames(
     return status === "finished";
   });
 
-  const last5 = finished.slice(0, 5);
+  const last5 = finished.slice(0, 8);
 
   const vsEvent = opponentTeamId
     ? finished.find((e: unknown) => {
@@ -566,6 +573,8 @@ export async function fetchPlayerRecentGames(
     const ps = (statsData?.statistics ?? statsData ?? {}) as Record<string, unknown>;
     const n = (k: string) => (typeof ps[k] === "number" ? ps[k] as number : null);
 
+    const playerTeamId = (ev.homeTeam as Record<string, unknown>)?.id as number ?? null;
+
     return {
       eventId,
       date,
@@ -575,14 +584,21 @@ export async function fetchPlayerRecentGames(
       awayScore:     (as_?.current as number) ?? 0,
       homeTeamId:    (ht?.id as number) ?? 0,
       awayTeamId:    (at?.id as number) ?? 0,
+      playerTeamId:  null, // resolved client-side from homeTeamId/awayTeamId
       goals:         n("goals"),
       assists:       n("goalAssist") ?? n("assists"),
       rating:        n("rating"),
-      minutesPlayed: n("minutesPlayed"),
+      minutesPlayed: n("minutesPlayed") ?? n("secondsPlayed") !== null ? Math.round((n("secondsPlayed") ?? 0) / 60) || n("minutesPlayed") : null,
       shots:         n("totalShots") ?? n("totalShot"),
       shotsOnTarget: n("onTargetScoringAttempt"),
+      keyPasses:     n("keyPass"),
       passes:        n("accuratePass"),
+      passAccuracy:  n("accuratePassesPercentage"),
+      tackles:       n("totalTackle") ?? n("tackles"),
+      interceptions: n("interceptionWon") ?? n("interceptions"),
+      yellowCards:   n("yellowCard"),
       xG:            n("expectedGoals"),
+      xA:            n("expectedAssists"),
     };
   };
 

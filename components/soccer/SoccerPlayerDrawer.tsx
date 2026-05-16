@@ -69,32 +69,56 @@ function PlayerPhoto({ id, name, size = 72 }: { id: number; name: string; size?:
 
 // ─── Recent game row ──────────────────────────────────────────────────────────
 
-function GameLogRow({ game, playerId }: { game: SofascoreGameLog; playerId: number }) {
-  const isHome = game.homeTeamId === playerId; // not quite right - should use player team
-  const scored = (game.homeScore ?? 0) > (game.awayScore ?? 0)
-    ? "home" : (game.awayScore ?? 0) > (game.homeScore ?? 0)
-    ? "away" : "draw";
-  // Determine opponent name
-  const opponent = game.homeTeam.includes("Bayern") || game.homeTeam.includes("Arsenal") || game.homeTeam.length > 0
-    ? "" : "";
-  const dateStr = game.date.slice(5); // MM-DD
+function shortName(full: string) {
+  // Last word of team name (e.g. "FC Bayern München" → "München")
+  return full.split(" ").slice(-1)[0] ?? full;
+}
+
+function StatPill({ label, value, hi }: { label: string; value: number | null; hi?: boolean }) {
+  if (value == null) return null;
+  return (
+    <div className="flex flex-col items-center min-w-[28px]">
+      <span className={`text-[11px] font-bold tabular-nums leading-none ${hi ? "text-primary" : "text-text-1"}`}>{value}</span>
+      <span className="text-[8px] text-text-2 uppercase tracking-wide mt-0.5">{label}</span>
+    </div>
+  );
+}
+
+function GameLogRow({ game }: { game: SofascoreGameLog }) {
+  const dateStr = game.date.slice(5).replace("-", "/"); // MM/DD
 
   return (
-    <div className="flex items-center gap-2 py-2 border-b border-border/30 last:border-0 text-[11px]">
-      <span className="text-text-2 w-10 shrink-0 tabular-nums">{dateStr}</span>
-      <div className="flex-1 min-w-0">
-        <div className="truncate text-text-1">
-          {game.homeTeam.split(" ").slice(-1)[0]} {game.homeScore}–{game.awayScore} {game.awayTeam.split(" ").slice(-1)[0]}
+    <div className="py-2.5 border-b border-border/30 last:border-0">
+      {/* Match header */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-text-2 tabular-nums w-10 shrink-0">{dateStr}</span>
+          <span className="text-[11px] text-text-1 font-medium">
+            {shortName(game.homeTeam)} {game.homeScore}–{game.awayScore} {shortName(game.awayTeam)}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {game.minutesPlayed != null && (
+            <span className="text-[9px] text-text-2">{game.minutesPlayed}&apos;</span>
+          )}
+          {game.rating != null && (
+            <span className={`text-[10px] px-1.5 py-px rounded font-black border tabular-nums ${ratingColor(game.rating)}`}>
+              {game.rating.toFixed(1)}
+            </span>
+          )}
         </div>
       </div>
-      <div className="flex items-center gap-2 shrink-0 tabular-nums">
-        {game.goals != null && <span className={`text-[10px] ${(game.goals ?? 0) > 0 ? "text-primary font-bold" : "text-text-2"}`}>⚽{game.goals}</span>}
-        {game.assists != null && <span className={`text-[10px] ${(game.assists ?? 0) > 0 ? "text-[#60A5FA] font-bold" : "text-text-2"}`}>🎯{game.assists}</span>}
-        {game.rating != null && (
-          <span className={`text-[10px] px-1 py-px rounded font-black border ${ratingColor(game.rating)}`}>
-            {game.rating.toFixed(1)}
-          </span>
-        )}
+      {/* Per-game stats grid */}
+      <div className="flex items-start gap-3 pl-12 flex-wrap">
+        <StatPill label="G"   value={game.goals}         hi={(game.goals ?? 0) > 0} />
+        <StatPill label="A"   value={game.assists}       hi={(game.assists ?? 0) > 0} />
+        <StatPill label="xG"  value={game.xG != null ? parseFloat(game.xG.toFixed(2)) : null} hi={(game.xG ?? 0) >= 0.3} />
+        <StatPill label="SH"  value={game.shots} />
+        <StatPill label="SOT" value={game.shotsOnTarget} hi={(game.shotsOnTarget ?? 0) >= 2} />
+        <StatPill label="KP"  value={game.keyPasses}     hi={(game.keyPasses ?? 0) >= 2} />
+        <StatPill label="PSS" value={game.passes} />
+        <StatPill label="TKL" value={game.tackles} />
+        <StatPill label="INT" value={game.interceptions} hi={(game.interceptions ?? 0) >= 2} />
       </div>
     </div>
   );
@@ -261,9 +285,9 @@ export default function SoccerPlayerDrawer({ player, teamName, tournamentId, opp
           {/* Last 5 games */}
           {!loading && (data?.recentGames?.length ?? 0) > 0 && (
             <div className="bg-surface border border-border rounded-xl p-3">
-              <div className="text-[9px] font-black uppercase tracking-widest text-text-2 mb-2">Last 5 Games</div>
+              <div className="text-[9px] font-black uppercase tracking-widest text-text-2 mb-2">Last 8 Games This Season</div>
               {data!.recentGames.map(g => (
-                <GameLogRow key={g.eventId} game={g} playerId={player.id} />
+                <GameLogRow key={g.eventId} game={g} />
               ))}
             </div>
           )}
@@ -272,7 +296,7 @@ export default function SoccerPlayerDrawer({ player, teamName, tournamentId, opp
           {!loading && data?.vsOpponent && (
             <div className="bg-surface border border-border rounded-xl p-3">
               <div className="text-[9px] font-black uppercase tracking-widest text-text-2 mb-2">vs This Opponent</div>
-              <GameLogRow game={data.vsOpponent} playerId={player.id} />
+              <GameLogRow game={data.vsOpponent} />
             </div>
           )}
 
