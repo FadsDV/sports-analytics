@@ -817,33 +817,65 @@ function AFLLive({
 
 // ─── Quarter Sparkline ────────────────────────────────────────────────────────
 
+const QUARTER_SECS = 30 * 60; // 30 min cap per quarter for x-position normalisation
+
 export function AFLQuarterSparkline({ game }: { game: AFLDashboardProps["game"] }) {
-  const { lineScores, score, homeTeam, awayTeam } = game;
+  const { lineScores, scoringPlays, score, homeTeam, awayTeam } = game;
   if (!lineScores || !score) return null;
 
   const { home: hQ, away: aQ } = lineScores;
-  const periods = Math.max(hQ.length, aQ.length, 4);
-  const labels = Array.from({ length: periods }, (_, i) => `Q${i + 1}`);
+  const playedPeriods = Math.max(hQ.length, aQ.length);
+  const totalPeriods  = Math.max(playedPeriods, 4);
+  const labels = Array.from({ length: totalPeriods }, (_, i) => `Q${i + 1}`);
 
-  let hR = 0, aR = 0;
-  const diffs: number[] = [0];
-  for (let i = 0; i < periods; i++) {
-    hR += hQ[i] ?? 0;
-    aR += aQ[i] ?? 0;
-    diffs.push(hR - aR);
+  const W = 380, chartH = 52;
+  const xStep = W / totalPeriods;
+  const yMid  = chartH / 2;
+
+  // ── Build chart points ────────────────────────────────────────────
+  // If we have scoring plays, build a proper step-function.
+  // Otherwise fall back to quarter-end totals (straight line per quarter).
+
+  interface ChartPt { x: number; diff: number }
+  let pts: ChartPt[] = [{ x: 0, diff: 0 }];
+
+  if (scoringPlays && scoringPlays.length > 0) {
+    for (const ev of scoringPlays) {
+      const q   = Math.min(ev.quarter, totalPeriods);
+      // x: start of this quarter + fraction of quarter elapsed
+      const frac = Math.min(ev.clockSecs / QUARTER_SECS, 1);
+      const x    = (q - 1 + frac) * xStep;
+      pts.push({ x, diff: ev.homeScore - ev.awayScore });
+    }
+  } else {
+    // Quarter-end totals fallback
+    let hR = 0, aR = 0;
+    for (let i = 0; i < playedPeriods; i++) {
+      hR += hQ[i] ?? 0;
+      aR += aQ[i] ?? 0;
+      pts.push({ x: (i + 1) * xStep, diff: hR - aR });
+    }
   }
 
-  const maxDiff = Math.max(...diffs.map(Math.abs), 1);
-  // SVG only draws the chart lines — labels are HTML so they never get stretched
-  const W = 380, chartH = 52;
-  const xStep = W / Math.max(diffs.length - 1, 1);
-  const yMid  = chartH / 2;
-  const pts   = diffs.map((d, i) => ({ x: i * xStep, y: yMid - (d / maxDiff) * (yMid - 5) }));
-  const linePath = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-  const areaPath =
-    `M${pts[0].x.toFixed(1)},${yMid} ` +
-    pts.map(p => `L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") +
-    ` L${pts[pts.length - 1].x.toFixed(1)},${yMid} Z`;
+  const maxDiff = Math.max(...pts.map(p => Math.abs(p.diff)), 1);
+  const toY = (diff: number) => yMid - (diff / maxDiff) * (yMid - 5);
+
+  // Step-function path: for each new point, go horizontal first then the value jumps
+  // M start → for each event: horizontal to event x at previous diff, then vertical jump
+  let stepPath = `M${pts[0].x.toFixed(1)},${toY(pts[0].diff).toFixed(1)}`;
+  let areaPath = `M${pts[0].x.toFixed(1)},${yMid} L${pts[0].x.toFixed(1)},${toY(pts[0].diff).toFixed(1)}`;
+  for (let i = 1; i < pts.length; i++) {
+    const prev = pts[i - 1];
+    const cur  = pts[i];
+    // Horizontal step at previous value to current x
+    stepPath += ` H${cur.x.toFixed(1)}`;
+    areaPath += ` H${cur.x.toFixed(1)}`;
+    // Vertical jump to new value
+    stepPath += ` V${toY(cur.diff).toFixed(1)}`;
+    areaPath += ` V${toY(cur.diff).toFixed(1)}`;
+  }
+  // Close area path
+  areaPath += ` H${pts[pts.length - 1].x.toFixed(1)} V${yMid} Z`;
 
   const currentDiff = (score.home ?? 0) - (score.away ?? 0);
   const leadColor = currentDiff >= 0 ? "#60A5FA" : "#F87171";
@@ -868,10 +900,10 @@ export function AFLQuarterSparkline({ game }: { game: AFLDashboardProps["game"] 
           </filter>
         </defs>
         <line x1="0" y1={yMid} x2={W} y2={yMid} stroke="white" strokeOpacity={0.1} strokeWidth={1} />
-        <path d={areaPath} fill={leadColor} fillOpacity={0.25} />
-        <path d={linePath} fill="none" stroke={leadColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" filter="url(#afl-glow)" />
-        {/* Vertical divider lines only — no text */}
-        {labels.map((_, i) => {
+        <path d={areaPath} fill={leadColor} fillOpacity={0.18} />
+        <path d={stepPath} fill="none" stroke={leadColor} strokeWidth={1.5} strokeLinecap="square" strokeLinejoin="miter" filter="url(#afl-glow)" />
+        {/* Vertical divider lines — always 4Q */}
+        {Array.from({ length: totalPeriods }, (_, i) => {
           const x = (i + 1) * xStep;
           return <line key={i} x1={x} y1={0} x2={x} y2={chartH} stroke="white" strokeOpacity={0.07} strokeWidth={1} strokeDasharray="2 2" />;
         })}
@@ -882,7 +914,7 @@ export function AFLQuarterSparkline({ game }: { game: AFLDashboardProps["game"] 
         {labels.map(l => <span key={l}>{l}</span>)}
       </div>
       {/* Compact quarter grid */}
-      <div className="mt-2 grid gap-y-1" style={{ gridTemplateColumns: `auto repeat(${periods}, 1fr) auto` }}>
+      <div className="mt-2 grid gap-y-1" style={{ gridTemplateColumns: `auto repeat(${totalPeriods}, 1fr) auto` }}>
         <div />
         {labels.map(l => <div key={l} className="text-center text-[10px] text-text-2">{l}</div>)}
         <div className="text-[10px] text-text-2 text-right">TOT</div>
@@ -890,7 +922,7 @@ export function AFLQuarterSparkline({ game }: { game: AFLDashboardProps["game"] 
           {homeTeam.logoUrl && <img src={homeTeam.logoUrl} alt="" className="w-3 h-3 object-contain" />}
           <span className="text-xs text-text-2">{homeTeam.shortName}</span>
         </div>
-        {Array.from({ length: periods }, (_, i) => {
+        {Array.from({ length: totalPeriods }, (_, i) => {
           const v = hQ[i] ?? 0;
           return <div key={i} className="text-center"><span className={`text-xs tabular-nums ${v > (aQ[i] ?? 0) && v > 0 ? "text-white font-bold" : "text-text-2"}`}>{v || "—"}</span></div>;
         })}
@@ -899,7 +931,7 @@ export function AFLQuarterSparkline({ game }: { game: AFLDashboardProps["game"] 
           {awayTeam.logoUrl && <img src={awayTeam.logoUrl} alt="" className="w-3 h-3 object-contain" />}
           <span className="text-xs text-text-2">{awayTeam.shortName}</span>
         </div>
-        {Array.from({ length: periods }, (_, i) => {
+        {Array.from({ length: totalPeriods }, (_, i) => {
           const v = aQ[i] ?? 0;
           return <div key={i} className="text-center"><span className={`text-[10px] tabular-nums ${v > (hQ[i] ?? 0) && v > 0 ? "text-white font-bold" : "text-text-2"}`}>{v || "—"}</span></div>;
         })}

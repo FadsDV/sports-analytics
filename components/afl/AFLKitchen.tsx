@@ -10,7 +10,7 @@ import {
   CONFIDENCE_COLORS,
   CONFIDENCE_HEX,
 } from "@/lib/sports/reliability/labels";
-import { checkSlipHits } from "@/lib/sports/slipTracker";
+import { checkSlipHits, getLegCurrentValue } from "@/lib/sports/slipTracker";
 
 // ─── Slip display config ──────────────────────────────────────────────────────
 
@@ -142,8 +142,11 @@ function BreakdownTooltip({ leg, onClose }: { leg: KitchenLeg; onClose: () => vo
 
 // ─── Single leg row ───────────────────────────────────────────────────────────
 
-function LegRow({ leg, isHit }: { leg: KitchenLeg; isHit?: boolean }) {
+function LegRow({ leg, isHit, currentValue }: { leg: KitchenLeg; isHit?: boolean; currentValue?: number | null }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const showBar = currentValue != null;
+  const pct     = showBar ? Math.min((currentValue / leg.threshold) * 100, 100) : 0;
+  const barColor = isHit ? "#22C55E" : "var(--color-primary, #F97316)";
 
   return (
     <div className={`py-2 border-b border-border last:border-0 transition-colors ${isHit ? "bg-[#22C55E]/5" : ""}`}>
@@ -184,6 +187,24 @@ function LegRow({ leg, isHit }: { leg: KitchenLeg; isHit?: boolean }) {
       <div className="text-[10px] text-text-2 mt-0.5">
         avg {leg.avgStat} · {leg.gamesAnalyzed}g
       </div>
+      {/* Live progress bar with moving pill */}
+      {showBar && (
+        <div className="mt-3 relative h-[3px] bg-border/40 rounded-full" style={{ overflow: "visible" }}>
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{ width: `${pct}%`, backgroundColor: barColor }}
+          />
+          {/* Moving pill */}
+          <div
+            className="absolute -top-[11px] -translate-x-1/2 text-[9px] font-black px-1.5 py-0.5 rounded-full leading-none text-white transition-all duration-500 whitespace-nowrap"
+            style={{ left: `${Math.max(pct, 6)}%`, backgroundColor: barColor }}
+          >
+            {currentValue}
+          </div>
+          {/* Threshold tick */}
+          <div className="absolute right-0 -top-[3px] w-px h-[9px] rounded-full" style={{ backgroundColor: "rgba(150,150,150,0.35)" }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -241,10 +262,13 @@ function CombinedHitChance({ legs }: { legs: KitchenLeg[] }) {
 // ─── Slip card ────────────────────────────────────────────────────────────────
 
 function SlipCard({ slip, boxScore }: { slip: KitchenSlip; boxScore: BoxScore | null }) {
-  const cfg  = SLIP_CONFIG[slip.type];
-  const hits = slip.legs.length > 0 ? checkSlipHits(slip.legs, boxScore) : [];
+  const cfg    = SLIP_CONFIG[slip.type];
+  const hits   = slip.legs.length > 0 ? checkSlipHits(slip.legs, boxScore) : [];
   const allHit = hits.length > 0 && hits.every(Boolean);
   const someHit = hits.some(Boolean);
+  const currentValues = boxScore
+    ? slip.legs.map(leg => getLegCurrentValue(leg, boxScore))
+    : slip.legs.map(() => null);
 
   return (
     <div className={`rounded-xl border ${allHit ? "border-[#22C55E]/40" : cfg.border} ${allHit ? "bg-[#22C55E]/5" : cfg.bg} flex flex-col`}>
@@ -280,7 +304,7 @@ function SlipCard({ slip, boxScore }: { slip: KitchenSlip; boxScore: BoxScore | 
             <p className="text-[10px] text-text-2/60">Need more game history or higher consistency</p>
           </div>
         ) : (
-          slip.legs.map((leg, i) => <LegRow key={i} leg={leg} isHit={hits[i]} />)
+          slip.legs.map((leg, i) => <LegRow key={i} leg={leg} isHit={hits[i]} currentValue={currentValues[i]} />)
         )}
       </div>
 

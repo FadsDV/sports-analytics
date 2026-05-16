@@ -12,7 +12,7 @@ import {
   fetchNBABoxScoreForPicks, type NBAGamePlayerStats,
 } from "@/lib/sports/espn";
 import { computeAFLPlayerPicks, type AFLPlayerPick, type AFLPickStat } from "@/lib/sports/afl/picks";
-import { checkLegHit } from "@/lib/sports/slipTracker";
+import { checkLegHit, getLegCurrentValue } from "@/lib/sports/slipTracker";
 import { computeAFLKitchen, type KitchenSlip } from "@/lib/sports/afl/kitchen";
 import { computeNBAPlayerPicks, type NBAPlayerPick } from "@/lib/sports/nba/picks";
 import { computeNBAKitchen, type NBAKitchenSlip } from "@/lib/sports/nba/kitchen";
@@ -1031,15 +1031,24 @@ export default async function GameDetailPage({
                         { player: pick.player, side: pick.side, stat: pick.stat, threshold: pick.threshold },
                         game.boxScore
                       ) : false;
+                      const liveValue = game.boxScore ? getLegCurrentValue(
+                        { player: pick.player, side: pick.side, stat: pick.stat },
+                        game.boxScore
+                      ) : null;
                       return (
                         <div key={i} className={`border-b border-border last:border-0 pb-1.5 last:pb-0 ${isHit ? "bg-[#22C55E]/5 rounded px-1" : ""}`}>
                           <div className="flex items-start justify-between gap-1">
                             <div className="min-w-0">
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1.5">
                                 {isHit && <span className="text-sm leading-none shrink-0">✅</span>}
                                 <span className={`text-[10px] font-medium leading-tight truncate ${isHit ? "text-[#22C55E]" : "text-text-1"}`}>
                                   {pickDisplayName(pick)}
                                 </span>
+                                {liveValue != null && (
+                                  <span className={`text-[10px] font-black tabular-nums shrink-0 ${isHit ? "text-[#22C55E]" : "text-primary"}`}>
+                                    {liveValue}/{pick.threshold}
+                                  </span>
+                                )}
                               </div>
                               <span className={`text-[10px] font-bold ${isHit ? "text-[#22C55E]" : dirColor}`}>
                                 {pick.direction === "over" ? "↑" : "↓"} {pick.threshold}+ {pick.statLabel}
@@ -1542,7 +1551,7 @@ async function buildESPNGame(
   const weather  = summary.weather && !isIndoor ? summary.weather : await fetchWeather(weatherLoc, isIndoor);
   const betRisk  = calcBetRisk(base.homeTeam, base.awayTeam, weather, (summary.injuries ?? []).length, h2h.filter(g => g.winner === base.homeTeam.name).length, h2h.length);
 
-  const game = { ...base, h2h, weather, betRisk, boxScore: summary.boxScore, teamStats: summary.teamStats, lineScores: summary.lineScores } as Game;
+  const game = { ...base, h2h, weather, betRisk, boxScore: summary.boxScore, teamStats: summary.teamStats, lineScores: summary.lineScores, scoringPlays: summary.scoringPlays } as Game;
   return { game, homeSchedule, awaySchedule };
 }
 

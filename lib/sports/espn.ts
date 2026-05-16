@@ -4,7 +4,7 @@
  * Docs: undocumented but stable endpoint used by ESPN's own site.
  */
 
-import { FormResult, Game, Team, Player, BoxScore, H2HGame } from "@/lib/types";
+import { FormResult, Game, Team, Player, BoxScore, H2HGame, ScoringEvent } from "@/lib/types";
 import { getAFLFantasyMap, normalizeAFLName } from "./afl/fantasyMapper";
 import { getAFLCDNPortraitUrl } from "./afl/champIDImages";
 
@@ -230,6 +230,7 @@ export interface ESPNSummary {
     away: Record<string, string | number | null>;
   };
   lineScores?: { home: number[]; away: number[] };
+  scoringPlays?: import("@/lib/types").ScoringEvent[];
 }
 
 export async function fetchESPNSummary(sport: ESPNSport, eventId: string, revalidate: number = 30): Promise<ESPNSummary> {
@@ -425,6 +426,29 @@ function parseSummary(raw: any, sport: ESPNSport, fantasyMap: Map<string, number
   // For AFL, limit to 4 quarters (ESPN may return more for OT)
   if (homeLS.length > 0 && awayLS.length > 0) {
     result.lineScores = { home: homeLS.slice(0, 4), away: awayLS.slice(0, 4) };
+  }
+
+  // ── Scoring plays (step-function momentum chart) ─────────────────
+  // ESPN AFL uses raw.plays (all scoring events — goals & behinds)
+  const rawPlays: any[] = raw.plays ?? raw.scoringPlays ?? [];
+  if (rawPlays.length > 0 && homeComp && awayComp) {
+    const homeId = homeComp.team?.id;
+    result.scoringPlays = rawPlays
+      .filter((p: any) => p.period?.number >= 1 && p.period?.number <= 4
+        && (p.homeScore != null || p.awayScore != null))
+      .map((p: any): ScoringEvent => {
+        // ESPN clock for AFL is "MM:SS" elapsed in the quarter (counts up)
+        const [mm = "0", ss = "0"] = (p.clock?.displayValue ?? "0:00").split(":");
+        const clockSecs = Number(mm) * 60 + Number(ss);
+        const teamId    = p.team?.id ?? p.team?.uid?.split(":").pop();
+        return {
+          quarter:   p.period.number,
+          clockSecs,
+          homeScore: Number(p.homeScore ?? 0),
+          awayScore: Number(p.awayScore ?? 0),
+          team:      teamId === homeId ? "home" : "away",
+        };
+      });
   }
 
   // ── Injuries ──────────────────────────────────────────────────────

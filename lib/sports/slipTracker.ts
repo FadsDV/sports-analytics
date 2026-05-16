@@ -117,3 +117,20 @@ export function checkSlipHits(
 ): boolean[] {
   return legs.map(leg => checkLegHit(leg, boxScore));
 }
+
+/**
+ * Returns the player's current stat value from the box score, or null if unavailable.
+ */
+export function getLegCurrentValue(
+  leg:      { player: string; side: "home" | "away"; stat: string },
+  boxScore: BoxScore | null
+): number | null {
+  if (!boxScore) return null;
+  const rows = leg.side === "home" ? boxScore.home : boxScore.away;
+  const row  = findRow(leg.player, rows);
+  if (!row) return null;
+  const key = STAT_KEY_MAP[leg.stat] ?? leg.stat;
+  const raw = row.stats[key];
+  if (raw == null) return null;
+  return Number(raw);
+}

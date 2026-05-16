@@ -3,6 +3,14 @@ export type GameStatus = "upcoming" | "live" | "finished";
 export type FormResult = "W" | "L" | "D"; // D only for soccer
 export type RiskLevel = "Low" | "Medium" | "High";
 
+export interface ScoringEvent {
+  quarter: number;       // 1–4
+  clockSecs: number;     // seconds elapsed in the quarter
+  homeScore: number;
+  awayScore: number;
+  team: "home" | "away";
+}
+
 export interface Weather {
   condition: string; // e.g. "Clear", "Rain", "Windy"
   tempC: number;
@@ -73,6 +81,7 @@ export interface Game {
   awayTeam: Team;
   score?: { home: number; away: number }; // if live/finished
   lineScores?: { home: number[]; away: number[] }; // quarter/period scores for NBA and AFL
+  scoringPlays?: ScoringEvent[];
   liveMinute?: number; // if live
   weather: Weather;
   h2h: H2HGame[];
