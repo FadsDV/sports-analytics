@@ -466,33 +466,36 @@ export async function fetchTournamentTopScorers(
 }
 
 export async function fetchPlayerSeasonStats(
-  playerId: number,
-  sport:    string
+  playerId:          number,
+  tournamentIdHint?: number
 ): Promise<{ stats: SofascorePlayerSeasonStats; tournamentId: number; seasonId: number } | null> {
-  const SPORT_TOURNAMENT: Record<string, number> = {
-    soccer: 17, bundesliga: 35, laliga: 8, ucl: 7, uel: 679, aleague: 329,
-  };
-  const tournamentId = SPORT_TOURNAMENT[sport];
-  if (!tournamentId) return null;
-
   const seasonsUrl = `${BASE}/player/${playerId}/statistics/seasons`;
   const seasonsData = await sofaFetch(seasonsUrl, 3600) as Record<string, unknown> | null;
   if (!seasonsData) return null;
 
   const tournamentSeasons = (seasonsData.uniqueTournamentSeasons as unknown[]) ?? [];
+  let tournamentId: number | null = null;
   let seasonId: number | null = null;
-  for (const ts of tournamentSeasons) {
+
+  // If a hint is provided, try that tournament first
+  const orderedSeasons = tournamentIdHint
+    ? [
+        ...tournamentSeasons.filter(ts => ((ts as Record<string, unknown>).uniqueTournament as Record<string, unknown>)?.id === tournamentIdHint),
+        ...tournamentSeasons.filter(ts => ((ts as Record<string, unknown>).uniqueTournament as Record<string, unknown>)?.id !== tournamentIdHint),
+      ]
+    : tournamentSeasons;
+
+  for (const ts of orderedSeasons) {
     const tso = ts as Record<string, unknown>;
     const tid = ((tso.uniqueTournament as Record<string, unknown>)?.id as number);
-    if (tid === tournamentId) {
-      const seasons = (tso.seasons as unknown[]) ?? [];
-      if (seasons.length > 0) {
-        seasonId = ((seasons[0] as Record<string, unknown>).id as number);
-      }
+    const seasons = (tso.seasons as unknown[]) ?? [];
+    if (seasons.length > 0) {
+      tournamentId = tid;
+      seasonId = ((seasons[0] as Record<string, unknown>).id as number);
       break;
     }
   }
-  if (!seasonId) return null;
+  if (!tournamentId || !seasonId) return null;
 
   const statsUrl = `${BASE}/player/${playerId}/unique-tournament/${tournamentId}/season/${seasonId}/statistics/overall`;
   const statsData = await sofaFetch(statsUrl, 3600) as Record<string, unknown> | null;

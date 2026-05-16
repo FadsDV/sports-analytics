@@ -8,16 +8,17 @@ export async function GET(
   { params }: { params: { playerId: string } }
 ) {
   const playerId = Number(params.playerId);
-  const sport = req.nextUrl.searchParams.get("sport") ?? "soccer";
   const opponentTeamIdParam = req.nextUrl.searchParams.get("opponentTeamId");
+  const tournamentIdParam   = req.nextUrl.searchParams.get("tournamentId");
   const opponentTeamId = opponentTeamIdParam ? Number(opponentTeamIdParam) : undefined;
+  const tournamentIdHint    = tournamentIdParam   ? Number(tournamentIdParam)   : undefined;
 
   if (!playerId || isNaN(playerId)) {
     return NextResponse.json({ error: "Invalid playerId" }, { status: 400 });
   }
 
   const [seasonResult, gamesResult] = await Promise.all([
-    fetchPlayerSeasonStats(playerId, sport),
+    fetchPlayerSeasonStats(playerId, tournamentIdHint),
     fetchPlayerRecentGames(playerId, opponentTeamId),
   ]);
 

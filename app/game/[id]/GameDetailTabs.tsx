@@ -2213,7 +2213,7 @@ export default function GameDetailTabs({
         <SoccerPlayerDrawer
           player={soccerPlayer.player}
           teamName={soccerPlayer.teamName}
-          sport={game.sport}
+          tournamentId={sofascore?.tournamentId}
           opponentTeamId={soccerPlayer.side === "home" ? sofascore?.awayTeamId : sofascore?.homeTeamId}
           onClose={() => setSoccerPlayer(null)}
         />

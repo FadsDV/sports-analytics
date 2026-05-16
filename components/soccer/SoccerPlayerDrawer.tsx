@@ -105,7 +105,7 @@ function GameLogRow({ game, playerId }: { game: SofascoreGameLog; playerId: numb
 interface SoccerPlayerDrawerProps {
   player:          SofascorePlayer;
   teamName:        string;
-  sport:           string;
+  tournamentId?:   number;
   opponentTeamId?: number;
   onClose:         () => void;
 }
@@ -116,7 +116,7 @@ interface PlayerData {
   vsOpponent:   SofascoreGameLog | null;
 }
 
-export default function SoccerPlayerDrawer({ player, teamName, sport, opponentTeamId, onClose }: SoccerPlayerDrawerProps) {
+export default function SoccerPlayerDrawer({ player, teamName, tournamentId, opponentTeamId, onClose }: SoccerPlayerDrawerProps) {
   const [visible, setVisible]   = useState(false);
   const [loading, setLoading]   = useState(true);
   const [data, setData]         = useState<PlayerData | null>(null);
@@ -130,13 +130,14 @@ export default function SoccerPlayerDrawer({ player, teamName, sport, opponentTe
 
   useEffect(() => {
     if (!player.id) { setLoading(false); return; }
-    const params = new URLSearchParams({ sport });
+    const params = new URLSearchParams();
+    if (tournamentId)   params.set("tournamentId",   String(tournamentId));
     if (opponentTeamId) params.set("opponentTeamId", String(opponentTeamId));
     fetch(`/api/soccer/player/${player.id}?${params}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [player.id, sport, opponentTeamId]);
+  }, [player.id, tournamentId, opponentTeamId]);
 
   // Current match stats (if available from lineup data)
   const ms = player.stats;
