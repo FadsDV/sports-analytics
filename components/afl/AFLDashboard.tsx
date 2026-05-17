@@ -233,41 +233,6 @@ function AFLPreMatch({
           </Card>
         )}
 
-        {/* Key Edges */}
-        {insights.length > 0 && (
-          <Card title="Key Edges" accent>
-            <div className="space-y-0">
-              {insights.map((ins, i) => {
-                const dot = ins.severity === "high"
-                  ? "bg-[#EF4444]"
-                  : ins.severity === "medium"
-                  ? "bg-[#F59E0B]"
-                  : "bg-[#22C55E]";
-                const dirCls = ins.direction === "home"
-                  ? "text-primary bg-primary/10"
-                  : ins.direction === "away"
-                  ? "text-text-2 bg-surface2"
-                  : "";
-                return (
-                  <div key={ins.id || i} className="flex items-start gap-2 py-2 border-b border-border last:border-0">
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-[5px] ${dot}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-xs font-semibold text-text-1 leading-none">{ins.title}</span>
-                        {ins.direction !== "neutral" && (
-                          <span className={`text-[10px] font-bold px-1 py-px rounded uppercase tracking-wide ${dirCls}`}>
-                            {ins.direction}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-text-2 leading-snug">{ins.text}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        )}
       </div>
 
       {/* ══════════════════════════════════════════
@@ -398,8 +363,8 @@ function AFLPreMatch({
       ══════════════════════════════════════════ */}
       <div className="space-y-3 md:col-span-2 lg:col-span-1">
 
-        {/* Model Pick — upcoming only */}
-        {analytics?.predictedMargin != null && analytics.predictedMargin !== 0 && (
+        {/* Model Pick */}
+        {analytics?.predictedMargin != null && (
           <Card title="Model Pick" className="overflow-visible">
             <div className="flex items-center justify-between mb-1">
               <div className="text-xs text-primary font-bold">
@@ -437,6 +402,42 @@ function AFLPreMatch({
                 +{Math.abs(analytics.predictedMargin)} pts
               </div>
               <div className="text-[10px] text-text-2 mt-1">ladder · form · attack/defence · H2H</div>
+            </div>
+          </Card>
+        )}
+
+        {/* Key Edges */}
+        {insights.length > 0 && (
+          <Card title="Key Edges" accent>
+            <div className="space-y-0">
+              {insights.map((ins, i) => {
+                const dot = ins.severity === "high"
+                  ? "bg-[#EF4444]"
+                  : ins.severity === "medium"
+                  ? "bg-[#F59E0B]"
+                  : "bg-[#22C55E]";
+                const dirCls = ins.direction === "home"
+                  ? "text-primary bg-primary/10"
+                  : ins.direction === "away"
+                  ? "text-text-2 bg-surface2"
+                  : "";
+                return (
+                  <div key={ins.id || i} className="flex items-start gap-2 py-2 border-b border-border last:border-0">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-[5px] ${dot}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-xs font-semibold text-text-1 leading-none">{ins.title}</span>
+                        {ins.direction !== "neutral" && (
+                          <span className={`text-[10px] font-bold px-1 py-px rounded uppercase tracking-wide ${dirCls}`}>
+                            {ins.direction}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-text-2 leading-snug">{ins.text}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </Card>
         )}
