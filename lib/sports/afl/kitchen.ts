@@ -303,48 +303,66 @@ function buildValueLegs(
     if (seen.has(key)) continue;
 
     const prop = propOdds.get(key);
-    // Need a prop with price > 1.60 AND book line below player average
-    if (!prop || prop.price < 1.60) continue;
-    if (prop.line >= p.avg) continue;  // No edge — book line is at or above avg
 
-    // Hit rate at the actual book line (not a computed threshold)
-    const hitRate = calcHitRate(p.vals, prop.line);
-    if (hitRate < 0.65) continue;  // Player doesn't clear this line often enough
+    if (prop && prop.price >= 1.60 && prop.line < p.avg) {
+      // ── Live prop: use real bookmaker line ──────────────────────────────
+      const hitRate = calcHitRate(p.vals, prop.line);
+      if (hitRate < 0.65) continue;
 
-    const breakdown = computeReliability({
-      vals:      p.vals,
-      threshold: prop.line,
-      config:    AFL_CONFIG,
-    });
-    if (breakdown.finalReliability === 0) continue;
+      const breakdown = computeReliability({ vals: p.vals, threshold: prop.line, config: AFL_CONFIG });
+      if (breakdown.finalReliability === 0) continue;
 
-    seen.add(key);
+      seen.add(key);
+      const edge  = p.avg - prop.line;
+      const score = (edge / p.avg) * prop.price * breakdown.finalReliability;
 
-    // Edge = how far below average the book line sits (bigger = better value)
-    const edge = p.avg - prop.line;
-    // Score = edge as fraction of avg × odds × reliability
-    const score = (edge / p.avg) * prop.price * breakdown.finalReliability;
+      candidates.push({
+        score,
+        leg: {
+          player: p.name, side: p.side, teamAbbr: p.teamAbbr,
+          stat: p.stat, statLabel: STAT_LABELS[p.stat],
+          threshold: prop.line, hitRate,
+          reliability: breakdown.finalReliability, breakdown,
+          avgStat: Math.round(p.avg * 10) / 10,
+          gamesAnalyzed: p.gamesAnalyzed,
+          isBounceBack: p.isBounceBack, isOnForm: p.isOnForm,
+          prop,
+          edge: Math.round(edge * 10) / 10,
+        },
+      });
+    } else if (!prop) {
+      // ── Odds suspended (game live/finished): derive natural line from stats ─
+      // Book lines typically sit at 65–82% of a player's average.
+      // Find the highest threshold in that zone that still hits 65%+ of games.
+      const found = findBestThreshold(p.vals, p.avg, p.stat, 0.65, 0.85, 0.65, 0.82);
+      if (!found) continue;
+      if (found.hitRate < 0.65) continue;
 
-    candidates.push({
-      leg: {
-        player:        p.name,
-        side:          p.side,
-        teamAbbr:      p.teamAbbr,
-        stat:          p.stat,
-        statLabel:     STAT_LABELS[p.stat],
-        threshold:     prop.line,   // show the actual book line as the threshold
-        hitRate,
-        reliability:   breakdown.finalReliability,
-        breakdown,
-        avgStat:       Math.round(p.avg * 10) / 10,
-        gamesAnalyzed: p.gamesAnalyzed,
-        isBounceBack:  p.isBounceBack,
-        isOnForm:      p.isOnForm,
-        prop,
-        edge:          Math.round(edge * 10) / 10,
-      },
-      score,
-    });
+      const edge = p.avg - found.threshold;
+      if (edge <= 0) continue;
+
+      const breakdown = computeReliability({ vals: p.vals, threshold: found.threshold, config: AFL_CONFIG });
+      if (breakdown.finalReliability === 0) continue;
+
+      seen.add(key);
+      // Score without odds — use reliability × edge fraction
+      const score = (edge / p.avg) * breakdown.finalReliability;
+
+      candidates.push({
+        score,
+        leg: {
+          player: p.name, side: p.side, teamAbbr: p.teamAbbr,
+          stat: p.stat, statLabel: STAT_LABELS[p.stat],
+          threshold: found.threshold, hitRate: found.hitRate,
+          reliability: breakdown.finalReliability, breakdown,
+          avgStat: Math.round(p.avg * 10) / 10,
+          gamesAnalyzed: p.gamesAnalyzed,
+          isBounceBack: p.isBounceBack, isOnForm: p.isOnForm,
+          // No prop — odds suspended
+          edge: Math.round(edge * 10) / 10,
+        },
+      });
+    }
   }
 
   candidates.sort((a, b) => b.score - a.score);

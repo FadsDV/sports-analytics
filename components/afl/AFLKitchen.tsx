@@ -142,7 +142,7 @@ function BreakdownTooltip({ leg, onClose }: { leg: KitchenLeg; onClose: () => vo
 
 // ─── Single leg row ───────────────────────────────────────────────────────────
 
-function LegRow({ leg, isHit, currentValue }: { leg: KitchenLeg; isHit?: boolean; currentValue?: number | null }) {
+function LegRow({ leg, isHit, currentValue, onPlayerClick }: { leg: KitchenLeg; isHit?: boolean; currentValue?: number | null; onPlayerClick?: (name: string) => void }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
   const showBar = currentValue != null;
   const pct     = showBar ? Math.min((currentValue / leg.threshold) * 100, 100) : 0;
@@ -162,7 +162,10 @@ function LegRow({ leg, isHit, currentValue }: { leg: KitchenLeg; isHit?: boolean
             <span title="Bounce-back candidate — below-average last game"
               className="text-[#F59E0B] text-xs shrink-0 leading-none">↺</span>
           )}
-          <span className={`text-xs font-semibold truncate ${isHit ? "text-[#22C55E]" : "text-text-1"}`}>{lastName(leg.player)}</span>
+          <button
+            onClick={() => onPlayerClick?.(leg.player)}
+            className={`text-xs font-semibold truncate text-left hover:underline hover:text-primary transition-colors ${isHit ? "text-[#22C55E]" : "text-text-1"} ${onPlayerClick ? "cursor-pointer" : "cursor-default"}`}
+          >{lastName(leg.player)}</button>
           <span className="text-[11px] text-text-2 shrink-0 font-medium">{leg.teamAbbr}</span>
         </div>
         <div className="relative shrink-0">
@@ -261,7 +264,7 @@ function CombinedHitChance({ legs }: { legs: KitchenLeg[] }) {
 
 // ─── Slip card ────────────────────────────────────────────────────────────────
 
-function SlipCard({ slip, boxScore }: { slip: KitchenSlip; boxScore: BoxScore | null }) {
+function SlipCard({ slip, boxScore, onPlayerClick }: { slip: KitchenSlip; boxScore: BoxScore | null; onPlayerClick?: (name: string) => void }) {
   const cfg    = SLIP_CONFIG[slip.type];
   const hits   = slip.legs.length > 0 ? checkSlipHits(slip.legs, boxScore) : [];
   const allHit = hits.length > 0 && hits.every(Boolean);
@@ -304,7 +307,7 @@ function SlipCard({ slip, boxScore }: { slip: KitchenSlip; boxScore: BoxScore | 
             <p className="text-[10px] text-text-2/60">Need more game history or higher consistency</p>
           </div>
         ) : (
-          slip.legs.map((leg, i) => <LegRow key={i} leg={leg} isHit={hits[i]} currentValue={currentValues[i]} />)
+          slip.legs.map((leg, i) => <LegRow key={i} leg={leg} isHit={hits[i]} currentValue={currentValues[i]} onPlayerClick={onPlayerClick} />)
         )}
       </div>
 
@@ -320,7 +323,7 @@ function SlipCard({ slip, boxScore }: { slip: KitchenSlip; boxScore: BoxScore | 
 
 // ─── Value picks section ──────────────────────────────────────────────────────
 
-function ValuePickCard({ leg, index, isHit }: { leg: KitchenLeg; index: number; isHit?: boolean }) {
+function ValuePickCard({ leg, index, isHit, onPlayerClick }: { leg: KitchenLeg; index: number; isHit?: boolean; onPlayerClick?: (name: string) => void }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
   const tier   = getConfidenceTier(leg.reliability);
   const colors = CONFIDENCE_COLORS[tier];
@@ -339,7 +342,10 @@ function ValuePickCard({ leg, index, isHit }: { leg: KitchenLeg; index: number; 
             {!isHit && leg.isBounceBack && !leg.isOnForm && (
               <span title="Bounce-back candidate" className="text-[#F59E0B] text-xs leading-none">↺</span>
             )}
-            <span className={`text-xs font-bold truncate ${isHit ? "text-[#22C55E]" : "text-text-1"}`}>{lastName(leg.player)}</span>
+            <button
+              onClick={() => onPlayerClick?.(leg.player)}
+              className={`text-xs font-bold truncate text-left hover:underline hover:text-primary transition-colors ${isHit ? "text-[#22C55E]" : "text-text-1"} ${onPlayerClick ? "cursor-pointer" : "cursor-default"}`}
+            >{lastName(leg.player)}</button>
             <span className="text-[11px] text-text-2 font-medium">{leg.teamAbbr}</span>
           </div>
         </div>
@@ -395,7 +401,7 @@ function ValuePickCard({ leg, index, isHit }: { leg: KitchenLeg; index: number; 
   );
 }
 
-function ValuePicks({ legs, boxScore }: { legs: KitchenLeg[]; boxScore: BoxScore | null }) {
+function ValuePicks({ legs, boxScore, onPlayerClick }: { legs: KitchenLeg[]; boxScore: BoxScore | null; onPlayerClick?: (name: string) => void }) {
   const cfg = SLIP_CONFIG.value;
   if (legs.length === 0) return null;
 
@@ -410,10 +416,10 @@ function ValuePicks({ legs, boxScore }: { legs: KitchenLeg[]; boxScore: BoxScore
         <span className="ml-auto text-[11px] text-text-2 font-medium">{legs.length} picks</span>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
         {legs.map((leg, i) => {
           const isHit = checkSlipHits([leg], boxScore)[0] ?? false;
-          return <ValuePickCard key={i} leg={leg} index={i} isHit={isHit} />;
+          return <ValuePickCard key={i} leg={leg} index={i} isHit={isHit} onPlayerClick={onPlayerClick} />;
         })}
       </div>
     </div>
@@ -422,7 +428,7 @@ function ValuePicks({ legs, boxScore }: { legs: KitchenLeg[]; boxScore: BoxScore
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function AFLKitchen({ slips, boxScore, isUpcoming }: { slips: KitchenSlip[]; boxScore?: BoxScore | null; isUpcoming?: boolean }) {
+export default function AFLKitchen({ slips, boxScore, isUpcoming, onPlayerClick }: { slips: KitchenSlip[]; boxScore?: BoxScore | null; isUpcoming?: boolean; onPlayerClick?: (name: string) => void }) {
   const mainSlips = slips.filter(s => s.type !== "value");
   const valueSlip = slips.find(s => s.type === "value");
   const allLegs   = slips.flatMap(s => s.legs);
@@ -469,12 +475,12 @@ export default function AFLKitchen({ slips, boxScore, isUpcoming }: { slips: Kit
       {/* 5 main slips */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
         {mainSlips.map(slip => (
-          <SlipCard key={slip.type} slip={slip} boxScore={bs} />
+          <SlipCard key={slip.type} slip={slip} boxScore={bs} onPlayerClick={onPlayerClick} />
         ))}
       </div>
 
       {/* Value picks */}
-      {valueSlip && <ValuePicks legs={valueSlip.legs} boxScore={bs} />}
+      {valueSlip && <ValuePicks legs={valueSlip.legs} boxScore={bs} onPlayerClick={onPlayerClick} />}
 
     </div>
   );

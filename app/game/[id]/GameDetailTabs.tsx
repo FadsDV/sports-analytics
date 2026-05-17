@@ -1938,6 +1938,32 @@ export default function GameDetailTabs({
   const [historyFilter, setHistoryFilter] = useState<VenueFilter>(initialHistoryFilter);
   const [soccerPlayer, setSoccerPlayer] = useState<{ player: SofascorePlayer; teamName: string; side: "home" | "away" } | null>(null);
 
+  // AFL kitchen player drawer
+  const [aflKitchenDrawer, setAflKitchenDrawer] = useState<import("@/lib/sports/afl/players/types").AFLPlayerAnalyticsResult | null>(null);
+  const [aflKitchenLoading, setAflKitchenLoading] = useState(false);
+
+  async function handleKitchenPlayerClick(playerName: string) {
+    const homePlayer = homeSquad.find(p => p.displayName === playerName);
+    const awayPlayer = awaySquad.find(p => p.displayName === playerName);
+    const player = homePlayer ?? awayPlayer;
+    if (!player) return;
+
+    const matchContext = homePlayer ? "home" : "away";
+    const opponent     = homePlayer ? awayTeam.name : homeTeam.name;
+    const teamId       = homePlayer ? (homeTeam.espnId ?? "") : (awayTeam.espnId ?? "");
+
+    setAflKitchenLoading(true);
+    setAflKitchenDrawer(null);
+
+    try {
+      const url = `/api/afl/player/${player.id}?homeAway=${matchContext}&opponent=${encodeURIComponent(opponent)}&teamId=${encodeURIComponent(teamId)}&name=${encodeURIComponent(playerName)}&position=${encodeURIComponent(player.position)}&jersey=${encodeURIComponent(player.jersey ?? "")}`;
+      const res = await fetch(url);
+      if (res.ok) setAflKitchenDrawer(await res.json());
+    } finally {
+      setAflKitchenLoading(false);
+    }
+  }
+
   const currentHomeHistory = homeHistories[historyFilter];
   const currentAwayHistory = awayHistories[historyFilter];
   const currentH2H = h2hVariants[h2hFilter];
@@ -2196,11 +2222,29 @@ export default function GameDetailTabs({
       {/* ── Kitchen ──────────────────────────────────────────────────────── */}
       {tab === "kitchen" && isAFL && (
         kitchenSlips && kitchenSlips.some(s => s.legs.length > 0)
-          ? <AFLKitchen slips={kitchenSlips} boxScore={boxScore} isUpcoming={game.status === "upcoming"} />
+          ? <AFLKitchen slips={kitchenSlips} boxScore={boxScore} isUpcoming={game.status === "upcoming"} onPlayerClick={handleKitchenPlayerClick} />
           : <div className="bg-surface rounded-xl p-8 border border-border text-center">
               <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
               <p className="text-[10px] text-text-2">Requires at least 3 completed games per team.</p>
             </div>
+      )}
+
+      {/* AFL kitchen player drawer */}
+      {isAFL && (aflKitchenLoading || aflKitchenDrawer) && (
+        <>
+          <div className="fixed inset-0 bg-black/80 z-[60] backdrop-blur-sm" onClick={() => { setAflKitchenDrawer(null); setAflKitchenLoading(false); }} />
+          {aflKitchenLoading && (
+            <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-bg border-l border-primary/20 flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-xs font-bold text-text-2 uppercase tracking-widest">Loading Intel…</p>
+              </div>
+            </div>
+          )}
+          {aflKitchenDrawer && !aflKitchenLoading && (
+            <PlayerDrawer data={aflKitchenDrawer} onClose={() => setAflKitchenDrawer(null)} />
+          )}
+        </>
       )}
       {tab === "kitchen" && isBasketball && (
         nbaKitchenSlips && nbaKitchenSlips.some(s => s.legs.length > 0)
