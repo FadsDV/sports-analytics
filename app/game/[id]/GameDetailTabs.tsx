@@ -1583,7 +1583,7 @@ function AFLOverview({ game, insights, boxScore, homeInjuries, awayInjuries, h2h
         </Section>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-7 gap-4">
         <div className="lg:col-span-3 space-y-4">
           {(ha || aa) && (
             <Section title="Match Intelligence">
