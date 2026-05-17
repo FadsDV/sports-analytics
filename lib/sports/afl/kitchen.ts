@@ -23,12 +23,15 @@
  *
  * Same player max 2× per slip (different stat). Min 5 games.
  *
- * Phase 3 — Intelligence Signals:
- *   Each leg's reliability is adjusted by up to ±0.20 based on four signals:
- *     1. Rest days  — <6 days since last game: −0.05 (fatigue)
- *     2. Venue history — player's avg at this ground vs season avg (±0.08 max)
- *     3. Opponent rank — how much of this stat the opponent concedes (±0.10 max)
- *     4. Weather      — rain/wind reduce scoring stats (−0.08 max)
+ * Phase 3–5 — Intelligence Signals:
+ *   Each leg's reliability is adjusted by up to ±0.25 based on five signals:
+ *     1. Rest days      — <6 days since last game: −0.05 (fatigue penalty)
+ *     2. Venue history  — player's avg at this ground vs season avg (±0.08 max)
+ *     3. Opponent rank  — team-style: what opponent CONCEDES vs our typical output
+ *                         Fires every game — no direct matchup frequency required.
+ *     4. Weather        — rain/wind penalise scoring; calm/sunny adds small bonus
+ *     5. Injury uplift  — player historically outperforms when key teammate (≥18D avg)
+ *                         is ruled out; based on "without" evidence in 8-game window
  */
 
 import type { AFLGamePlayerStats } from "@/lib/sports/espn";
@@ -266,42 +269,54 @@ function computeInjuryUpliftMap(
 }
 
 /**
- * How much does this team's output for `stat` change when facing `opponentId`
- * vs their overall average? Returns a reliability adjustment in [-0.10, +0.10].
+ * Compute opponent defensive rank signal using team-style concession analysis.
+ *
+ * Problem with old approach: in an 18-team league over 8 games, teams almost
+ * never face the same opponent twice — so grouping MY stats by opponent always
+ * returned 0 due to insufficient sample (n < 2 per matchup).
+ *
+ * New approach — "what does the opponent concede?":
+ *   1. Look at the OPPONENT's last 8 games (opponentGames).
+ *   2. For each game, sum stats scored by the NON-opponent players = what
+ *      the opponent conceded that game.
+ *   3. concededAvg = average across games.
+ *   4. Compare concededAvg to MY team's typical output (from myGames).
+ *   5. Ratio > 1 → weak defense → boost. Ratio < 1 → stingy defense → penalty.
+ *
+ * This fires reliably every game since we use the opponent's 8-game history
+ * rather than our own matchup frequency against them.
+ *
+ * Returns a reliability adjustment in [-0.10, +0.10].
  */
 function computeOpponentRankBoost(
-  gamesByGame: AFLGamePlayerStats[][],
-  gameMeta:    AFLGameMeta[],
-  teamId:      string,
-  stat:        AFLPickStat,
-  opponentId:  string,
+  myGames:        AFLGamePlayerStats[][],
+  opponentGames:  AFLGamePlayerStats[][],
+  myTeamId:       string,
+  opponentTeamId: string,
+  stat:           AFLPickStat,
 ): number {
-  if (!opponentId || gameMeta.length === 0) return 0;
+  if (opponentGames.length < 3 || myGames.length < 3) return 0;
 
-  // Sum stat across all team players per game, grouped by opponent
-  const byOpponent = new Map<string, number[]>();
+  // My team's average per-game total for this stat
+  const myTotals = myGames
+    .map(game => game.filter(p => p.teamId === myTeamId).reduce((s, p) => s + (p[stat] ?? 0), 0))
+    .filter(t => t > 0);
+  if (myTotals.length < 3) return 0;
+  const myAvg = mean(myTotals);
+  if (myAvg === 0) return 0;
 
-  gamesByGame.forEach((game, i) => {
-    const meta = gameMeta[i];
-    if (!meta?.opponentId) return;
-    const teamTotal = game
-      .filter(p => p.teamId === teamId)
-      .reduce((sum, p) => sum + (p[stat] ?? 0), 0);
-    const opp = meta.opponentId;
-    if (!byOpponent.has(opp)) byOpponent.set(opp, []);
-    byOpponent.get(opp)!.push(teamTotal);
-  });
+  // What the opponent concedes per game = stat scored BY THEIR OPPONENTS
+  const concededTotals = opponentGames
+    .map(game => game.filter(p => p.teamId !== opponentTeamId).reduce((s, p) => s + (p[stat] ?? 0), 0))
+    .filter(t => t > 0);
+  if (concededTotals.length < 3) return 0;
+  const concededAvg = mean(concededTotals);
 
-  const allTotals = Array.from(byOpponent.values()).flat();
-  if (allTotals.length < 3) return 0;
-  const overallAvg = mean(allTotals);
-  if (overallAvg === 0) return 0;
-
-  const vsToday = byOpponent.get(opponentId);
-  if (!vsToday || vsToday.length < 2) return 0;
-
-  const ratio = mean(vsToday) / overallAvg;
-  // Dampen: 20% above average → +0.10 boost, 20% below → -0.10 penalty
+  // How does the opponent's conceded rate compare to what I typically score?
+  // ratio > 1 → they concede more than I usually score → favorable matchup
+  // ratio < 1 → they're stingier than my usual output  → tough matchup
+  const ratio = concededAvg / myAvg;
+  // 20% above → +0.10 boost, 20% below → -0.10 penalty
   return Math.max(-0.10, Math.min(0.10, (ratio - 1.0) * 0.5));
 }
 
@@ -362,6 +377,8 @@ interface Profile {
 function buildProfiles(
   gamesByGame:   AFLGamePlayerStats[][],
   gameMeta:      AFLGameMeta[],
+  /** Opponent's last N games — used to compute how much they concede per stat */
+  opponentGames: AFLGamePlayerStats[][],
   teamId:        string,
   opponentId:    string,
   side:          "home" | "away",
@@ -397,12 +414,14 @@ function buildProfiles(
     }
   });
 
-  // Pre-compute opponent rank signal for each stat (team-level, not player-level)
+  // Pre-compute opponent rank signal for each stat (team-level, not player-level).
+  // Uses the opponent's recent games to determine their defensive concession rate,
+  // compared to our team's typical output — fires reliably every game.
   const oppRankByStatCache = new Map<AFLPickStat, number>();
   for (const stat of STATS) {
     oppRankByStatCache.set(
       stat,
-      computeOpponentRankBoost(gamesByGame, gameMeta, teamId, stat, opponentId),
+      computeOpponentRankBoost(gamesByGame, opponentGames, teamId, opponentId, stat),
     );
   }
 
@@ -698,11 +717,13 @@ export function computeAFLKitchen(params: {
   } = params;
 
   const homeProfiles = buildProfiles(
-    homeGames, homeGameMeta, homeTeamId, awayTeamId,
+    homeGames, homeGameMeta, awayGames,   // awayGames = opponent's recent games (for defensive rank)
+    homeTeamId, awayTeamId,
     "home", homeAbbr, currentVenue, homeRestDays, weather, homeInjuries,
   );
   const awayProfiles = buildProfiles(
-    awayGames, awayGameMeta, awayTeamId, homeTeamId,
+    awayGames, awayGameMeta, homeGames,   // homeGames = opponent's recent games (for defensive rank)
+    awayTeamId, homeTeamId,
     "away", awayAbbr, currentVenue, awayRestDays, weather, awayInjuries,
   );
   const all = [...homeProfiles, ...awayProfiles];
