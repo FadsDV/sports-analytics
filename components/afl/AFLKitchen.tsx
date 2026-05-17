@@ -363,32 +363,28 @@ function ValuePickCard({ leg, index, isHit, onPlayerClick }: { leg: KitchenLeg; 
         </div>
       </div>
 
-      {/* Stat type */}
-      <div className="text-[10px] text-text-2">{leg.statLabel} · {leg.gamesAnalyzed}g</div>
-
-      {/* Avg → Line */}
-      <div className="flex items-center gap-1.5">
-        <span className="text-[11px] text-text-2">avg</span>
-        <span className="text-sm font-bold text-text-1 tabular-nums">{leg.avgStat}</span>
-        <span className="text-[10px] text-text-2/50">→</span>
-        <span className="text-sm font-bold text-text-1 tabular-nums">{leg.threshold}</span>
-        <span className="text-[11px] text-text-2">line</span>
-      </div>
-
-      {/* Edge badge + odds */}
+      {/* Recommended bet — the actual pick */}
       <div className="flex items-center justify-between gap-1">
-        {leg.edge != null && (
-          <span
-            className={`text-xs font-black tabular-nums px-1.5 py-0.5 rounded ${colors.bg} ${colors.text}`}
-            style={{ border: `1px solid ${hex}40` }}
-          >
-            +{leg.edge} edge
-          </span>
-        )}
+        <span className="text-[13px] font-black text-primary tabular-nums">
+          ↑ {leg.threshold}+ {leg.statLabel}
+        </span>
         {leg.prop && (
-          <span className="text-[11px] font-bold text-text-1 tabular-nums ml-auto">
+          <span className="text-[11px] font-bold text-text-1 tabular-nums shrink-0">
             @{leg.prop.price.toFixed(2)}
           </span>
+        )}
+      </div>
+
+      {/* Avg → line context + games */}
+      <div className="flex items-center gap-1 text-[10px] text-text-2">
+        <span>avg {leg.avgStat}</span>
+        <span className="opacity-40">·</span>
+        <span>{leg.gamesAnalyzed}g</span>
+        {leg.edge != null && (
+          <>
+            <span className="opacity-40">·</span>
+            <span className={`font-bold ${colors.text}`}>+{leg.edge} edge</span>
+          </>
         )}
       </div>
 
