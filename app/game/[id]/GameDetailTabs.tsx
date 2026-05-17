@@ -2004,38 +2004,27 @@ export default function GameDetailTabs({
     if (outcomesResolved.current) return;
     outcomesResolved.current = true;
 
-    // Build outcomes from final boxscore
-    const outcomes: { player: string; stat: string; actualStat: number; hit: boolean }[] = [];
+    // ESPN AFL boxscore columns: D (disposals direct), G, M, T, HO, K, H (handballs)
+    // D is available directly — do NOT compute K + H, ESPN provides the total.
     const allRows = [...(game.boxScore.home ?? []), ...(game.boxScore.away ?? [])];
 
-    // AFL stat key mapping: ESPN column → our kitchen stat codes
-    const ESPN_STAT_MAP: Record<string, string> = {
-      D: "D", K: "_K", HB: "_HB", G: "G", M: "M", T: "T", HO: "HO",
-    };
-
-    for (const row of allRows) {
-      // Disposals = K + HB (computed)
-      const kicks     = Number(row.stats["K"]  ?? 0);
-      const handballs = Number(row.stats["HB"] ?? 0);
-      const disposals = kicks + handballs;
-
-      const statValues: Record<string, number> = {
-        D:  disposals,
+    const statLines = allRows
+      .filter(row => row.player && row.player !== "Unknown")
+      .map(row => ({
+        player: row.player,
+        D:  Number(row.stats["D"]  ?? 0),
         G:  Number(row.stats["G"]  ?? 0),
         M:  Number(row.stats["M"]  ?? 0),
         T:  Number(row.stats["T"]  ?? 0),
         HO: Number(row.stats["HO"] ?? 0),
-      };
+      }));
 
-      for (const [stat, actual] of Object.entries(statValues)) {
-        outcomes.push({ player: row.player, stat, actualStat: actual, hit: false /* resolved server-side */ });
-      }
-    }
+    if (statLines.length === 0) return;
 
     fetch("/api/slips/outcome", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ gameId: id, outcomes }),
+      body:    JSON.stringify({ gameId: id, statLines }),
     }).catch(err => console.warn("[slips] outcome resolve failed:", err));
   }, [isAFL, game.status, game.boxScore, id]);
 

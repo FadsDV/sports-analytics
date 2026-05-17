@@ -241,67 +241,150 @@ export function logSlips(game: SlipLogGame, slips: SlipLogSlip[]): void {
 
 // ─── Outcome resolution ───────────────────────────────────────────────────────
 
-export interface LegOutcome {
-  player:     string;
-  stat:       string;
-  actualStat: number;
-  hit:        boolean;
+/**
+ * Final boxscore stat line for one player.
+ * Sent from the client after a game finishes.
+ * `hit` is NOT included — computed server-side against stored threshold.
+ */
+export interface PlayerStatLine {
+  player: string;  // displayName from ESPN boxscore
+  D:  number;      // disposals (direct ESPN column, not K+H)
+  G:  number;      // goals
+  M:  number;      // marks
+  T:  number;      // tackles
+  HO: number;      // hitouts
+}
+
+// ── Fuzzy name normalisation (mirrors slipTracker.ts findRow) ─────────────────
+
+function normName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z]/g, "");
+}
+
+/**
+ * Find a PlayerStatLine whose name fuzzy-matches `target`.
+ * Uses exact normalised match first, then last-name suffix (≥5 chars).
+ */
+function findPlayerLine(
+  target: string,
+  lines:  PlayerStatLine[],
+): PlayerStatLine | undefined {
+  const norm = normName(target);
+
+  // 1. Exact normalised match
+  const exact = lines.find(l => normName(l.player) === norm);
+  if (exact) return exact;
+
+  // 2. Last-name suffix match (≥5 chars)
+  const suffix = norm.slice(-7);
+  if (suffix.length >= 5) {
+    return lines.find(l => normName(l.player).endsWith(suffix));
+  }
+
+  return undefined;
 }
 
 /**
  * Update leg outcomes for a finished game.
- * Called automatically when a finished game page is opened.
+ *
+ * - Fetches all unresolved legs from the DB for this game
+ * - Fuzzy-matches each leg's player name against the boxscore lines
+ * - Computes hit = actualStat >= threshold SERVER-SIDE
+ * - Updates legs and rolls up slip hit counts
+ *
+ * Safe to call multiple times (only updates legs where hit IS NULL).
  */
-export function resolveOutcomes(gameId: string, outcomes: LegOutcome[]): void {
+export function resolveOutcomes(gameId: string, statLines: PlayerStatLine[]): void {
   try {
     const db = getDb();
+
+    // Fetch all unresolved legs for this game
+    type LegRow = {
+      id:        number;
+      slip_id:   number;
+      player:    string;
+      stat:      string;
+      threshold: number;
+    };
+    const unresolved = db.prepare(`
+      SELECT id, slip_id, player, stat, threshold
+      FROM legs
+      WHERE game_id = ? AND hit IS NULL
+    `).all(gameId) as LegRow[];
+
+    if (unresolved.length === 0) return;
 
     const updateLeg = db.prepare(`
       UPDATE legs
       SET actual_stat = @actualStat, hit = @hit
-      WHERE game_id = @gameId
-        AND player   = @player
-        AND stat     = @stat
-        AND hit IS NULL
+      WHERE id = @id
     `);
 
     const transaction = db.transaction(() => {
-      for (const o of outcomes) {
-        updateLeg.run({
-          gameId:     gameId,
-          player:     o.player,
-          stat:       o.stat,
-          actualStat: o.actualStat,
-          hit:        o.hit ? 1 : 0,
-        });
+      for (const leg of unresolved) {
+        const line = findPlayerLine(leg.player, statLines);
+        if (!line) continue;  // player not in boxscore (did not play)
+
+        const actualStat = line[leg.stat as keyof PlayerStatLine] as number ?? 0;
+        const hit        = actualStat >= leg.threshold ? 1 : 0;
+
+        updateLeg.run({ id: leg.id, actualStat, hit });
       }
 
-      // Update each slip's hit_count and all_hit
+      // Roll up hit_count and all_hit on each slip
       const slips = db.prepare(
         `SELECT id, leg_count FROM slips WHERE game_id = ?`
       ).all(gameId) as { id: number; leg_count: number }[];
 
-      const countHits = db.prepare(
-        `SELECT COUNT(*) as n FROM legs WHERE slip_id = ? AND hit = 1`
-      );
+      const countHits  = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE slip_id = ? AND hit = 1`);
+      const countResolved = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE slip_id = ? AND hit IS NOT NULL`);
       const updateSlip = db.prepare(`
-        UPDATE slips SET hit_count = @hitCount, all_hit = @allHit
-        WHERE id = @slipId
+        UPDATE slips SET hit_count = @hitCount, all_hit = @allHit WHERE id = @slipId
       `);
 
       for (const slip of slips) {
-        const row = countHits.get(slip.id) as { n: number };
+        const resolved = (countResolved.get(slip.id) as { n: number }).n;
+        if (resolved === 0) continue;  // none resolved for this slip yet
+        const hits = (countHits.get(slip.id) as { n: number }).n;
         updateSlip.run({
           slipId:   slip.id,
-          hitCount: row.n,
-          allHit:   row.n >= slip.leg_count ? 1 : 0,
+          hitCount: hits,
+          allHit:   hits >= slip.leg_count ? 1 : 0,
         });
       }
     });
 
     transaction();
+    console.info(`[slipDb] resolved outcomes for ${gameId}: ${unresolved.length} legs processed`);
   } catch (err) {
     console.error("[slipDb] resolveOutcomes error:", err);
+  }
+}
+
+/**
+ * Reset outcomes for a game — sets hit = NULL so resolveOutcomes can re-run.
+ * Use this to clear incorrect data from the bug where hit was hardcoded false.
+ */
+export function resetOutcomes(gameId: string): void {
+  try {
+    const db = getDb();
+    db.prepare(`UPDATE legs  SET actual_stat = NULL, hit = NULL WHERE game_id = ?`).run(gameId);
+    db.prepare(`UPDATE slips SET hit_count   = NULL, all_hit = NULL WHERE game_id = ?`).run(gameId);
+    console.info(`[slipDb] reset outcomes for ${gameId}`);
+  } catch (err) {
+    console.error("[slipDb] resetOutcomes error:", err);
+  }
+}
+
+/** Reset ALL outcomes — nuclear option to clear all bad data from the old bug. */
+export function resetAllOutcomes(): void {
+  try {
+    const db = getDb();
+    db.prepare(`UPDATE legs  SET actual_stat = NULL, hit = NULL`).run();
+    db.prepare(`UPDATE slips SET hit_count   = NULL, all_hit = NULL`).run();
+    console.info(`[slipDb] reset ALL outcomes`);
+  } catch (err) {
+    console.error("[slipDb] resetAllOutcomes error:", err);
   }
 }
 
@@ -363,12 +446,17 @@ export function getPlayerStatHitRate(): {
   }
 }
 
-/** Check if outcomes have already been resolved for a game. */
+/**
+ * Check if outcomes have already been correctly resolved for a game.
+ *
+ * Considers outcomes "resolved" only if at least one leg has actual_stat > 0
+ * (guards against the old bug where everything was written as 0/false).
+ */
 export function hasOutcomes(gameId: string): boolean {
   try {
     const db = getDb();
     const row = db.prepare(
-      `SELECT COUNT(*) as n FROM legs WHERE game_id = ? AND hit IS NOT NULL`
+      `SELECT COUNT(*) as n FROM legs WHERE game_id = ? AND hit IS NOT NULL AND actual_stat > 0`
     ).get(gameId) as { n: number };
     return row.n > 0;
   } catch {
