@@ -26,6 +26,7 @@ import { formatKickoffFull, formatAFLKickoff } from "@/lib/utils";
 import { fetchSofascoreMatchData, fetchPlayerRecentGames, fetchPlayerSeasonStats } from "@/lib/sports/sofascore";
 import type { SofascorePlayer, SofascoreGameLog } from "@/lib/sports/sofascore";
 import { computeSoccerKitchen, type SoccerKitchenSlip, type SoccerPlayerProfile, type SoccerProp } from "@/lib/sports/soccer/kitchen";
+import { getSlipCache, saveSlipCache } from "@/lib/slipCache";
 import { computeAFLMatchAnalytics, type LadderEntry } from "@/lib/sports/afl/analytics";
 import { generateAFLInsights, type AFLInsight } from "@/lib/sports/afl/insights";
 import { fetchAFLStandings } from "@/lib/sports/squiggle";
@@ -554,6 +555,23 @@ export default async function GameDetailPage({
         awayRestDays,
         propOdds,
       });
+    }
+  }
+
+  // Freeze kitchen slips once a game goes live — read from KV if cached, else write once
+  const isLiveOrFinished = game.status === "live" || game.status === "finished";
+  if (isLiveOrFinished) {
+    const cached = await getSlipCache(id);
+    if (cached) {
+      if (cached.afl)    aflKitchenSlips    = cached.afl    as typeof aflKitchenSlips;
+      if (cached.soccer) soccerKitchenSlips = cached.soccer as typeof soccerKitchenSlips;
+      if (cached.nba)    nbaKitchenSlips    = cached.nba    as typeof nbaKitchenSlips;
+    } else {
+      await saveSlipCache(id, {
+        afl:    aflKitchenSlips.length    > 0 ? aflKitchenSlips    : undefined,
+        soccer: soccerKitchenSlips.length > 0 ? soccerKitchenSlips : undefined,
+        nba:    nbaKitchenSlips.length    > 0 ? nbaKitchenSlips    : undefined,
+      }, game.status);
     }
   }
 
@@ -1304,23 +1322,30 @@ export default async function GameDetailPage({
             {/* Form comparison */}
             <div className="bg-surface rounded-xl p-3 border border-border">
               <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Form</div>
-              {([{ t: homeTeam, role: "Home" }, { t: awayTeam, role: "Away" }] as const).map(({ t, role }) => (
-                <div key={t.name} className="mb-2.5 last:mb-0">
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
-                    <span className="text-[10px] font-medium text-text-1">{t.shortName}</span>
-                    <span className="text-[9px] text-text-2 ml-1">{role}</span>
-                    <span className="ml-auto text-[9px] text-text-2 tabular-nums">{t.record.wins}W {t.record.losses}L{t.record.draws ? ` ${t.record.draws}D` : ""}</span>
+              {([{ t: homeTeam, role: "Home" }, { t: awayTeam, role: "Away" }] as const).map(({ t, role }) => {
+                // Derive W/L/D from recent form array (ESPN record is often 0 for soccer)
+                const recentForm = t.form.slice(0, 5);
+                const fW = recentForm.filter(r => r === "W").length;
+                const fL = recentForm.filter(r => r === "L").length;
+                const fD = recentForm.filter(r => r === "D").length;
+                return (
+                  <div key={t.name} className="mb-2.5 last:mb-0">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                      <span className="text-[10px] font-medium text-text-1">{t.shortName}</span>
+                      <span className="text-[9px] text-text-2 ml-1">{role}</span>
+                      <span className="ml-auto text-[9px] text-text-2 tabular-nums">{fW}W {fL}L{fD > 0 ? ` ${fD}D` : ""}</span>
+                    </div>
+                    <div className="flex gap-1">
+                      {recentForm.map((r, i) => (
+                        <span key={i} className={`w-5 h-5 rounded text-[8px] font-bold flex items-center justify-center ${
+                          r === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" : r === "L" ? "bg-[#EF4444]/20 text-[#EF4444]" : "bg-[#F59E0B]/20 text-[#F59E0B]"
+                        }`}>{r}</span>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex gap-1">
-                    {t.form.slice(0, 5).map((r, i) => (
-                      <span key={i} className={`w-5 h-5 rounded text-[8px] font-bold flex items-center justify-center ${
-                        r === "W" ? "bg-[#22C55E]/20 text-[#22C55E]" : r === "L" ? "bg-[#EF4444]/20 text-[#EF4444]" : "bg-[#F59E0B]/20 text-[#F59E0B]"
-                      }`}>{r}</span>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* H2H summary */}
@@ -1329,7 +1354,6 @@ export default async function GameDetailPage({
               const hw  = h2h.filter(g => g.winner === homeTeam.name).length;
               const dr  = h2h.filter(g => g.winner === "Draw").length;
               const aw  = h2h.length - hw - dr;
-              // Goal stats
               const goals = h2h.map(g => {
                 const p = g.score.split("-").map(Number);
                 return (p[0] ?? 0) + (p[1] ?? 0);
@@ -1367,18 +1391,25 @@ export default async function GameDetailPage({
                     </div>
                   )}
                   <div className="space-y-0.5">
-                    {h2h.slice(0, 4).map((g, i) => (
-                      <div key={i} className="flex items-center gap-1 text-[9px] py-0.5 border-b border-border last:border-0">
-                        <span className="text-text-2 w-12 shrink-0">{g.date.slice(5)}</span>
-                        <span className="flex-1 truncate text-text-2">{g.homeTeam.split(" ").pop()} <span className="text-white font-medium">{g.score}</span> {g.awayTeam.split(" ").pop()}</span>
-                      </div>
-                    ))}
+                    {h2h.slice(0, 5).map((g, i) => {
+                      const row = (
+                        <div className="flex items-center gap-1 text-[9px] py-1 border-b border-border last:border-0">
+                          <span className="text-text-2 w-12 shrink-0">{g.date.slice(5)}</span>
+                          <span className="flex-1 truncate text-text-2">{g.homeTeam.split(" ").pop()} <span className="text-white font-medium">{g.score}</span> {g.awayTeam.split(" ").pop()}</span>
+                        </div>
+                      );
+                      return g.gameId ? (
+                        <Link key={i} href={`/game/${g.gameId}`} className="block hover:bg-surface2 rounded transition-colors">{row}</Link>
+                      ) : (
+                        <div key={i}>{row}</div>
+                      );
+                    })}
                   </div>
                 </div>
               );
             })()}
 
-            {/* Key insights */}
+            {/* Key Insights */}
             {insights.length > 0 && (
               <div className="bg-surface rounded-xl p-3 border border-border">
                 <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Key Insights</div>
@@ -1392,6 +1423,30 @@ export default async function GameDetailPage({
                 </ul>
               </div>
             )}
+
+            {/* Home / Away split */}
+            <div className="bg-surface rounded-xl p-3 border border-border">
+              <div className="text-[9px] font-bold uppercase tracking-widest text-text-2 mb-2.5">Home / Away</div>
+              {[
+                { label: `${homeTeam.shortName} Home`, split: homeTeam.splits.home },
+                { label: `${awayTeam.shortName} Away`, split: awayTeam.splits.away },
+              ].map(({ label, split }) => {
+                const total = split.wins + split.losses + (split.draws ?? 0);
+                const pct   = total > 0 ? Math.round((split.wins / total) * 100) : 0;
+                return (
+                  <div key={label} className="mb-2.5 last:mb-0">
+                    <div className="flex justify-between text-[10px] mb-1">
+                      <span className="text-text-2">{label}</span>
+                      <span className="text-text-1 font-semibold">{pct}%</span>
+                    </div>
+                    <div className="h-[3px] bg-surface2 rounded-full">
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="text-[9px] text-text-2 mt-0.5">{split.wins}W {split.losses}L{split.draws ? ` ${split.draws}D` : ""}</div>
+                  </div>
+                );
+              })}
+            </div>
 
           </aside>
 

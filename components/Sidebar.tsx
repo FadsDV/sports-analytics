@@ -21,7 +21,6 @@ const NAV_EXPLORE = [
 ];
 
 const NAV_TOOLS = [
-  { href: "/analytics",  icon: "📊", label: "Slip Analytics" },
   { href: "/betslip",    icon: "🧾", label: "Slip Checker"   },
 ];
 

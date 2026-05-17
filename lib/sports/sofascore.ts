@@ -182,6 +182,29 @@ export interface SofascoreGameLog {
   xA:            number | null;
 }
 
+// ─── Match statistics (from /event/{id}/statistics) ──────────────────────────
+
+export interface SofascoreStatItem {
+  name:            string;
+  home:            string;       // formatted display value e.g. "49%", "29"
+  away:            string;
+  homeValue:       number;       // numeric for proportion bar
+  awayValue:       number;
+  statisticsType?: string;       // "positive" | "negative" | "neutral"
+  compareCode?:    number;       // 1=home better, 2=equal, 3=away better
+  renderType?:     number;
+}
+
+export interface SofascoreStatGroup {
+  groupName:       string;
+  statisticsItems: SofascoreStatItem[];
+}
+
+export interface SofascoreMatchStats {
+  period:  string;               // "ALL" | "1ST" | "2ND"
+  groups:  SofascoreStatGroup[];
+}
+
 export interface SofascoreMatchData {
   sofascoreId:    number;
   lineups:        SofascoreLineup | null;
@@ -193,6 +216,7 @@ export interface SofascoreMatchData {
   homeTeamStats?: SofascoreTeamStats | null;
   awayTeamStats?: SofascoreTeamStats | null;
   topScorers?:    SofascoreTopPlayer[];
+  matchStats?:    SofascoreMatchStats[];
 }
 
 // ─── Name normalisation ───────────────────────────────────────────────────────
@@ -633,6 +657,28 @@ export async function fetchPlayerRecentGames(
  * Fetches lineups + incidents for a game.
  * Returns null if the game can't be found on Sofascore.
  */
+async function fetchMatchStatistics(eventId: number): Promise<SofascoreMatchStats[]> {
+  const data = await sofaFetch(`${BASE}/event/${eventId}/statistics`, 120) as Record<string, unknown> | null;
+  if (!data || !Array.isArray(data.statistics)) return [];
+  const raw = data.statistics as Record<string, unknown>[];
+  return raw.map(period => ({
+    period: String(period.period ?? "ALL"),
+    groups: (Array.isArray(period.groups) ? period.groups : []).map((g: Record<string, unknown>) => ({
+      groupName: String(g.groupName ?? ""),
+      statisticsItems: (Array.isArray(g.statisticsItems) ? g.statisticsItems : []).map((item: Record<string, unknown>) => ({
+        name:            String(item.name ?? ""),
+        home:            String(item.home ?? "0"),
+        away:            String(item.away ?? "0"),
+        homeValue:       typeof item.homeValue === "number" ? item.homeValue : parseFloat(String(item.home ?? "0")) || 0,
+        awayValue:       typeof item.awayValue === "number" ? item.awayValue : parseFloat(String(item.away ?? "0")) || 0,
+        statisticsType:  String(item.statisticsType ?? "positive"),
+        compareCode:     typeof item.compareCode === "number" ? item.compareCode : 2,
+        renderType:      typeof item.renderType === "number" ? item.renderType : 1,
+      })),
+    })),
+  }));
+}
+
 export async function fetchSofascoreMatchData(
   sport:        string,
   homeTeamName: string,
@@ -656,12 +702,14 @@ export async function fetchSofascoreMatchData(
   const ev = (eventData?.event ?? {}) as Record<string, unknown>;
   const homeTeamId   = ((ev.homeTeam as Record<string, unknown>)?.id as number) ?? undefined;
   const awayTeamId   = ((ev.awayTeam as Record<string, unknown>)?.id as number) ?? undefined;
-  const tournamentId = ((ev.uniqueTournament as Record<string, unknown>)?.id as number) ?? undefined;
+  // uniqueTournament is nested under ev.tournament.uniqueTournament, not ev.uniqueTournament
+  const tournamentObj = (ev.tournament as Record<string, unknown>)?.uniqueTournament as Record<string, unknown> | undefined;
+  const tournamentId = (tournamentObj?.id as number) ?? undefined;
   const seasonId     = ((ev.season as Record<string, unknown>)?.id as number) ?? undefined;
 
   console.info("[SportsPulse/sofascore] fetching lineups + incidents + team stats", { sofascoreId, homeTeamId, awayTeamId, tournamentId, seasonId });
 
-  const [lineups, incidents, homeTeamStats, awayTeamStats, topScorers] = await Promise.all([
+  const [lineups, incidents, homeTeamStats, awayTeamStats, topScorers, matchStats] = await Promise.all([
     fetchSofascoreLineups(sofascoreId, sport),
     fetchSofascoreIncidents(sofascoreId),
     homeTeamId && tournamentId && seasonId
@@ -673,6 +721,7 @@ export async function fetchSofascoreMatchData(
     tournamentId && seasonId
       ? fetchTournamentTopScorers(tournamentId, seasonId)
       : Promise.resolve([]),
+    fetchMatchStatistics(sofascoreId),
   ]);
 
   console.info("[SportsPulse/sofascore] fetchSofascoreMatchData done", {
@@ -687,5 +736,6 @@ export async function fetchSofascoreMatchData(
     sofascoreId, lineups, incidents,
     homeTeamId, awayTeamId, tournamentId, seasonId,
     homeTeamStats, awayTeamStats, topScorers,
+    matchStats: matchStats.length > 0 ? matchStats : undefined,
   };
 }
