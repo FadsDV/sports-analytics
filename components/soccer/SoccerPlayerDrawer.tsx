@@ -2,7 +2,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import type { SofascorePlayer, SofascorePlayerSeasonStats, SofascoreGameLog } from "@/lib/sports/sofascore";
+import type { SoccerPlayerAnalyticsResult } from "@/lib/sports/soccer/types";
+import { computeReliability as computeRelNew, SOCCER_CONFIG } from "@/lib/sports/reliability/engine";
+import { getConfidenceTier, CONFIDENCE_LABEL, CONFIDENCE_COLORS } from "@/lib/sports/reliability/labels";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -25,6 +29,11 @@ function posColor(pos: string) {
 function fmt(v: number | null | undefined, dec = 0): string {
   if (v == null) return "—";
   return dec > 0 ? v.toFixed(dec) : String(Math.round(v));
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[parts.length - 1]?.[0] ?? "")).toUpperCase();
 }
 
 function StatRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
@@ -69,8 +78,7 @@ function PlayerPhoto({ id, name, size = 72 }: { id: number; name: string; size?:
 
 // ─── Recent game row ──────────────────────────────────────────────────────────
 
-function shortName(full: string) {
-  // Last word of team name (e.g. "FC Bayern München" → "München")
+function shortTeamName(full: string) {
   return full.split(" ").slice(-1)[0] ?? full;
 }
 
@@ -86,15 +94,19 @@ function StatPill({ label, value, hi }: { label: string; value: number | null; h
 
 function GameLogRow({ game }: { game: SofascoreGameLog }) {
   const dateStr = game.date.slice(5).replace("-", "/"); // MM/DD
+  const isW = (game.teamScore ?? 0) > (game.oppScore ?? 0);
+  const isL = (game.teamScore ?? 0) < (game.oppScore ?? 0);
+  const res = isW ? "W" : isL ? "L" : "D";
+  const resCls = isW ? "bg-[#22C55E]/20 text-[#22C55E]" : isL ? "bg-[#EF4444]/20 text-[#EF4444]" : "bg-[#F59E0B]/20 text-[#F59E0B]";
 
   return (
     <div className="py-2.5 border-b border-border/30 last:border-0">
-      {/* Match header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-text-2 tabular-nums w-10 shrink-0">{dateStr}</span>
+          <span className={`w-4 h-4 rounded-[2px] text-[8px] font-bold flex items-center justify-center shrink-0 ${resCls}`}>{res}</span>
           <span className="text-[11px] text-text-1 font-medium">
-            {shortName(game.homeTeam)} {game.homeScore}–{game.awayScore} {shortName(game.awayTeam)}
+            {shortTeamName(game.homeTeam || "")} {game.homeScore}–{game.awayScore} {shortTeamName(game.awayTeam || "")}
           </span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -108,15 +120,12 @@ function GameLogRow({ game }: { game: SofascoreGameLog }) {
           )}
         </div>
       </div>
-      {/* Per-game stats grid */}
       <div className="flex items-start gap-3 pl-12 flex-wrap">
         <StatPill label="G"   value={game.goals}         hi={(game.goals ?? 0) > 0} />
         <StatPill label="A"   value={game.assists}       hi={(game.assists ?? 0) > 0} />
         <StatPill label="xG"  value={game.xG != null ? parseFloat(game.xG.toFixed(2)) : null} hi={(game.xG ?? 0) >= 0.3} />
-        <StatPill label="SH"  value={game.shots} />
         <StatPill label="SOT" value={game.shotsOnTarget} hi={(game.shotsOnTarget ?? 0) >= 2} />
         <StatPill label="KP"  value={game.keyPasses}     hi={(game.keyPasses ?? 0) >= 2} />
-        <StatPill label="PSS" value={game.passes} />
         <StatPill label="TKL" value={game.tackles} />
         <StatPill label="INT" value={game.interceptions} hi={(game.interceptions ?? 0) >= 2} />
       </div>
@@ -124,26 +133,94 @@ function GameLogRow({ game }: { game: SofascoreGameLog }) {
   );
 }
 
-// ─── Props & main component ───────────────────────────────────────────────────
+// ─── Bet Checker ──────────────────────────────────────────────────────────────
+
+function BetChecker({ recentGames, seasonStats }: { recentGames: SofascoreGameLog[], seasonStats: SofascorePlayerSeasonStats }) {
+  if (!recentGames.length || !seasonStats) return null;
+
+  const goalVals = recentGames.map(g => g.goals ?? 0);
+  const sotVals  = recentGames.map(g => g.shotsOnTarget ?? 0);
+
+  const goalAvg = (seasonStats.goals ?? 0) / (seasonStats.appearances || 1);
+  const sotAvg  = (seasonStats.shotsOnTarget ?? 0) / (seasonStats.appearances || 1);
+
+  const goalThreshold = 0.5;
+  const sotThreshold  = sotAvg >= 1.2 ? 1.5 : 0.5;
+
+  const goalHitRate = goalVals.filter(v => v >= goalThreshold).length / recentGames.length;
+  const sotHitRate  = sotVals.filter(v => v >= sotThreshold).length / recentGames.length;
+
+  const goalBreakdown = computeRelNew({ vals: goalVals, threshold: goalThreshold, config: SOCCER_CONFIG });
+  const sotBreakdown  = computeRelNew({ vals: sotVals, threshold: sotThreshold, config: SOCCER_CONFIG });
+
+  const goalTier = getConfidenceTier(goalBreakdown.finalReliability);
+  const sotTier  = getConfidenceTier(sotBreakdown.finalReliability);
+  const gc = CONFIDENCE_COLORS[goalTier];
+  const sc = CONFIDENCE_COLORS[sotTier];
+
+  return (
+    <div className="px-6 py-4 border-b border-white/5 bg-[#0d1421]">
+      <div className="text-[9px] font-black uppercase tracking-[0.15em] text-[#374151] mb-3">
+        Bet Checker · Last {recentGames.length} Games
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className={`rounded-xl p-3 border ${gc.border} ${gc.bg}`}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] text-[#6B7280] font-medium">Goal Scorer (0.5+)</span>
+            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${gc.bg} ${gc.text}`}>
+              {CONFIDENCE_LABEL[goalTier]}
+            </span>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className={`text-2xl font-black tabular-nums ${gc.text}`}>
+              {Math.round(goalHitRate * 100)}%
+            </span>
+            <span className="text-[10px] text-[#6B7280]">hit rate</span>
+          </div>
+          <div className="h-[3px] bg-white/5 rounded-full overflow-hidden mt-2 mb-1.5">
+            <div className={`h-full rounded-full ${gc.bar}`} style={{ width: `${Math.round(goalBreakdown.finalReliability * 100)}%` }} />
+          </div>
+          <div className="text-[9px] text-[#4B5563]">avg {goalAvg.toFixed(2)} / game</div>
+        </div>
+
+        <div className={`rounded-xl p-3 border ${sc.border} ${sc.bg}`}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] text-[#6B7280] font-medium">Shots on Target ≥{sotThreshold}</span>
+            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${sc.bg} ${sc.text}`}>
+              {CONFIDENCE_LABEL[sotTier]}
+            </span>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className={`text-2xl font-black tabular-nums ${sc.text}`}>
+              {Math.round(sotHitRate * 100)}%
+            </span>
+            <span className="text-[10px] text-[#6B7280]">hit rate</span>
+          </div>
+          <div className="h-[3px] bg-white/5 rounded-full overflow-hidden mt-2 mb-1.5">
+            <div className={`h-full rounded-full ${sc.bar}`} style={{ width: `${Math.round(sotBreakdown.finalReliability * 100)}%` }} />
+          </div>
+          <div className="text-[9px] text-[#4B5563]">avg {sotAvg.toFixed(2)} / game</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 interface SoccerPlayerDrawerProps {
-  player:          SofascorePlayer;
-  teamName:        string;
+  data?:           SoccerPlayerAnalyticsResult | null;
+  player?:         SofascorePlayer;
+  teamName?:       string;
   tournamentId?:   number;
   opponentTeamId?: number;
   onClose:         () => void;
 }
 
-interface PlayerData {
-  seasonStats:  SofascorePlayerSeasonStats | null;
-  recentGames:  SofascoreGameLog[];
-  vsOpponent:   SofascoreGameLog | null;
-}
-
-export default function SoccerPlayerDrawer({ player, teamName, tournamentId, opponentTeamId, onClose }: SoccerPlayerDrawerProps) {
+export default function SoccerPlayerDrawer({ data: preData, player: prePlayer, teamName: preTeamName, tournamentId, opponentTeamId, onClose }: SoccerPlayerDrawerProps) {
   const [visible, setVisible]   = useState(false);
-  const [loading, setLoading]   = useState(true);
-  const [data, setData]         = useState<PlayerData | null>(null);
+  const [loading, setLoading]   = useState(!preData);
+  const [data, setData]         = useState<any>(preData || null);
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
@@ -153,162 +230,153 @@ export default function SoccerPlayerDrawer({ player, teamName, tournamentId, opp
   }, [onClose]);
 
   useEffect(() => {
-    if (!player.id) { setLoading(false); return; }
+    if (preData) return;
+    if (!prePlayer?.id) { setLoading(false); return; }
     const params = new URLSearchParams();
     if (tournamentId)   params.set("tournamentId",   String(tournamentId));
     if (opponentTeamId) params.set("opponentTeamId", String(opponentTeamId));
-    fetch(`/api/soccer/player/${player.id}?${params}`)
+    fetch(`/api/soccer/player/${prePlayer.id}?${params}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [player.id, tournamentId, opponentTeamId]);
+  }, [preData, prePlayer?.id, tournamentId, opponentTeamId]);
 
-  // Current match stats (if available from lineup data)
-  const ms = player.stats;
-  const hasMatchStats = Object.values(ms).some(v => v != null && v !== 0);
-  const matchMins = player.stats.minutesPlayed ?? (player.stats.secondsPlayed != null ? Math.round((player.stats.secondsPlayed as number) / 60) : null);
+  const player = preData ? {
+    id: preData.playerId,
+    name: preData.playerName,
+    shortName: preData.shortName,
+    position: preData.position,
+    jerseyNumber: preData.jersey,
+    rating: preData.seasonStats?.rating,
+  } : prePlayer;
 
-  // Season stats from API
+  const teamName = preData ? preData.teamName : preTeamName;
+
+  if (!player) return null;
+
   const ss = data?.seasonStats;
-  const apps = ss?.appearances ?? 1;
-
-  const posGroup = player.position.toUpperCase()[0];
-
-  // Season hero stats by position
-  const seasonHero: { label: string; value: string; highlight?: boolean }[] =
-    !ss ? [] :
-    posGroup === "G" ? [
-      { label: "Apps",  value: fmt(ss.appearances) },
-      { label: "Rating", value: fmt(ss.rating, 2) },
-    ] : posGroup === "D" ? [
-      { label: "Apps",    value: fmt(ss.appearances) },
-      { label: "G+A",     value: `${fmt(ss.goals)}+${fmt(ss.assists)}` },
-      { label: "Rating",  value: fmt(ss.rating, 2) },
-    ] : posGroup === "M" ? [
-      { label: "Apps",    value: fmt(ss.appearances) },
-      { label: "G+A",     value: `${fmt(ss.goals)}+${fmt(ss.assists)}` },
-      { label: "Rating",  value: fmt(ss.rating, 2) },
-    ] : [
-      { label: "Apps",    value: fmt(ss.appearances) },
-      { label: "Goals",   value: fmt(ss.goals), highlight: (ss.goals ?? 0) >= 5 },
-      { label: "Rating",  value: fmt(ss.rating, 2) },
-    ];
+  const recentGames = data?.recentGames || [];
 
   return (
     <>
-      {/* Backdrop */}
+      <div className="fixed inset-0 bg-black/80 z-[60] backdrop-blur-sm transition-opacity" onClick={onClose} aria-hidden="true" style={{ opacity: visible ? 1 : 0 }} />
       <div
-        className="fixed inset-0 bg-black/50 z-40 transition-opacity duration-200"
-        style={{ opacity: visible ? 1 : 0 }}
-        onClick={onClose}
-      />
-
-      {/* Drawer */}
-      <div
-        className="fixed top-0 right-0 h-full w-[340px] max-w-[92vw] bg-bg border-l border-border z-50 overflow-y-auto transition-transform duration-300 flex flex-col"
+        className="fixed top-0 right-0 h-full w-full max-w-2xl bg-[#0B0F1A] border-l border-[#3B82F6]/20 z-[70] overflow-y-auto transition-transform duration-300 flex flex-col"
         style={{ transform: visible ? "translateX(0)" : "translateX(100%)" }}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-bg border-b border-border px-4 py-3 flex items-center justify-between z-10 shrink-0">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-text-2">{teamName}</span>
-          <button onClick={onClose} className="text-text-2 hover:text-text-1 transition-colors text-lg leading-none">✕</button>
+        <div className="bg-[#111827] border-b border-[#3B82F6]/20 px-6 py-5 flex items-center justify-between z-10 shrink-0">
+          <div className="flex items-center gap-5">
+            <div className="relative group shrink-0">
+              <PlayerPhoto id={player.id} name={player.name} size={64} />
+              <div className="absolute -bottom-1 -right-1 bg-[#3B82F6] text-white text-[10px] font-black px-1.5 py-0.5 rounded shadow-lg border border-[#0B0F1A]">
+                #{player.jerseyNumber || "—"}
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl font-black text-white tracking-tight truncate uppercase mb-1">{player.name}</h2>
+              <div className="flex items-center gap-3">
+                <span className={`text-[11px] font-bold text-[#3B82F6] uppercase tracking-widest`}>{player.position}</span>
+                <span className="w-1 h-1 rounded-full bg-[#374151]" />
+                <span className="text-[11px] font-medium text-[#6B7280] uppercase tracking-widest">{teamName}</span>
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 text-[#6B7280] hover:text-white transition-all rounded-lg border border-white/5">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
         </div>
 
-        <div className="p-4 space-y-4 flex-1">
-          {/* Player identity */}
-          <div className="flex items-center gap-3">
-            <PlayerPhoto id={player.id} name={player.name} size={64} />
-            <div className="flex-1 min-w-0">
-              <div className="text-[15px] font-black text-text-1 leading-tight">{player.name}</div>
-              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                <span className={`text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${posColor(player.position)}`}>{player.position}</span>
-                <span className="text-[10px] text-text-2 font-mono">#{player.jerseyNumber}</span>
-                {!player.starter && <span className="text-[9px] text-text-2 bg-surface2 border border-border px-1 py-px rounded">SUB</span>}
-              </div>
-            </div>
-            {player.rating != null && (
-              <div className={`flex-shrink-0 text-lg font-black px-2.5 py-1.5 rounded-xl border-2 tabular-nums ${ratingColor(player.rating)}`}>
-                {player.rating.toFixed(1)}
-              </div>
-            )}
-          </div>
+        {ss && recentGames.length > 0 && <BetChecker recentGames={recentGames} seasonStats={ss} />}
 
-          {/* Season averages */}
-          {loading && (
-            <div className="bg-surface border border-border rounded-xl p-4 text-center">
-              <div className="text-[11px] text-text-2">Loading season stats...</div>
-            </div>
-          )}
+        <div className="p-6 space-y-8 flex-1">
+          {loading && <div className="text-center py-20 text-text-2">Loading stats...</div>}
 
           {ss && (
-            <div className="bg-surface border border-border rounded-xl p-3">
-              <div className="text-[9px] font-black uppercase tracking-widest text-text-2 mb-2.5">Season {ss.appearances ? `(${ss.appearances} apps)` : ""}</div>
-              <div className="grid grid-cols-3 gap-1.5 mb-3">
-                {seasonHero.map(h => (
-                  <SeasonStatBox key={h.label} label={h.label} value={h.value} highlight={h.highlight} />
-                ))}
+            <div className="space-y-6">
+              <section className="grid grid-cols-4 gap-4">
+                <div className="col-span-1 bg-[#3B82F6]/5 border border-[#3B82F6]/10 rounded-xl p-4 flex flex-col items-center justify-center">
+                  <span className="text-[9px] font-bold text-[#3B82F6] uppercase tracking-widest mb-1">Apps</span>
+                  <span className="text-xl font-black text-white tabular-nums">{ss.appearances || 0}</span>
+                </div>
+                <div className="bg-white/[0.04] rounded-xl px-4 py-3 flex flex-col items-center min-w-[72px]">
+                  <span className="text-[9px] text-[#6B7280] uppercase tracking-wider font-semibold mb-0.5">Avg Goals</span>
+                  <span className="text-base font-black text-white tabular-nums">{fmt((ss.goals || 0) / (ss.appearances || 1), 2)}</span>
+                </div>
+                <div className="bg-white/[0.04] rounded-xl px-4 py-3 flex flex-col items-center min-w-[72px]">
+                  <span className="text-[9px] text-[#6B7280] uppercase tracking-wider font-semibold mb-0.5">Avg SOT</span>
+                  <span className="text-base font-black text-white tabular-nums">{fmt((ss.shotsOnTarget || 0) / (ss.appearances || 1), 2)}</span>
+                </div>
+                <div className="bg-[#3B82F6]/10 border border-[#3B82F6]/20 rounded-xl px-4 py-3 flex flex-col items-center min-w-[72px]">
+                  <span className="text-[9px] text-[#3B82F6] uppercase tracking-wider font-semibold mb-0.5">Rating</span>
+                  <span className="text-base font-black text-[#3B82F6] tabular-nums">{fmt(ss.rating, 2)}</span>
+                </div>
+              </section>
+
+              <div className="bg-surface border border-border rounded-xl p-4">
+                <div className="text-[9px] font-black uppercase tracking-widest text-text-2 mb-3">Full Season Stats</div>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                  <StatRow label="Goals"          value={fmt(ss.goals)}                highlight={(ss.goals ?? 0) >= 1} />
+                  <StatRow label="Assists"         value={fmt(ss.assists)}              highlight={(ss.assists ?? 0) >= 1} />
+                  <StatRow label="xG"             value={fmt(ss.expectedGoals, 2)}    highlight={(ss.expectedGoals ?? 0) >= 3} />
+                  <StatRow label="xA"           value={fmt(ss.expectedAssists, 2)} />
+                  <StatRow label="Shots"           value={fmt(ss.totalShots)} />
+                  <StatRow label="On Target"      value={fmt(ss.shotsOnTarget)} />
+                  <StatRow label="Key Passes"      value={fmt(ss.keyPasses)}           highlight={(ss.keyPasses ?? 0) >= 20} />
+                  <StatRow label="Tackles"         value={fmt(ss.tackles)} />
+                  <StatRow label="Interceptions"  value={fmt(ss.interceptions)} />
+                  <StatRow label="Pass Acc." value={`${fmt(ss.accuratePassesPercentage, 1)}%`} highlight={(ss.accuratePassesPercentage ?? 0) >= 85} />
+                </div>
               </div>
-              <div className="space-y-0">
-                {ss.goals != null        && <StatRow label="Goals"          value={fmt(ss.goals)}                highlight={(ss.goals ?? 0) >= 1} />}
-                {ss.assists != null      && <StatRow label="Assists"         value={fmt(ss.assists)}              highlight={(ss.assists ?? 0) >= 1} />}
-                {ss.expectedGoals != null && <StatRow label="xG"             value={fmt(ss.expectedGoals, 2)}    highlight={(ss.expectedGoals ?? 0) >= 3} />}
-                {ss.expectedAssists != null && <StatRow label="xA"           value={fmt(ss.expectedAssists, 2)} />}
-                {ss.totalShots != null   && <StatRow label="Shots"           value={fmt(ss.totalShots)} />}
-                {ss.shotsOnTarget != null && <StatRow label="On Target"      value={fmt(ss.shotsOnTarget)} />}
-                {ss.keyPasses != null    && <StatRow label="Key Passes"      value={fmt(ss.keyPasses)}           highlight={(ss.keyPasses ?? 0) >= 20} />}
-                {ss.tackles != null      && <StatRow label="Tackles"         value={fmt(ss.tackles)} />}
-                {ss.interceptions != null && <StatRow label="Interceptions"  value={fmt(ss.interceptions)} />}
-                {ss.accuratePassesPercentage != null && <StatRow label="Pass Acc." value={`${fmt(ss.accuratePassesPercentage, 1)}%`} highlight={(ss.accuratePassesPercentage ?? 0) >= 85} />}
-                {ss.yellowCards != null  && <StatRow label="Yellow Cards"    value={fmt(ss.yellowCards)} />}
-                {ss.minutesPlayed != null && <StatRow label="Minutes"        value={fmt(ss.minutesPlayed)} />}
+            </div>
+          )}
+
+          {recentGames.length > 0 && (
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[11px] font-black text-white uppercase tracking-widest flex items-center gap-2">
+                  <span className="w-1.5 h-4 bg-[#3B82F6] rounded-sm" />
+                  Recent Season Log
+                </h3>
               </div>
-            </div>
+              <div className="bg-white/[0.01] rounded-xl border border-white/[0.05] overflow-hidden">
+                <div className="px-3">
+                  {recentGames.map((g: any, i: number) => (
+                    <GameLogRow key={i} game={g} />
+                  ))}
+                </div>
+              </div>
+            </section>
           )}
-
-          {/* Current match stats (if played) */}
-          {hasMatchStats && (
-            <div className="bg-surface border border-border rounded-xl p-3">
-              <div className="text-[9px] font-black uppercase tracking-widest text-text-2 mb-2">This Match{matchMins != null ? ` · ${matchMins}'` : ""}</div>
-              {ms.goals != null          && <StatRow label="Goals"       value={fmt(ms.goals as number)}                         highlight={(ms.goals as number ?? 0) >= 1} />}
-              {ms.goalAssist != null     && <StatRow label="Assists"     value={fmt(ms.goalAssist as number)}                    highlight={(ms.goalAssist as number ?? 0) >= 1} />}
-              {ms.expectedGoals != null  && <StatRow label="xG"          value={fmt(ms.expectedGoals as number, 2)}              highlight={(ms.expectedGoals as number ?? 0) >= 0.4} />}
-              {ms.totalShots != null     && <StatRow label="Shots"       value={fmt(ms.totalShots as number)} />}
-              {ms.onTargetScoringAttempt != null && <StatRow label="On Target" value={fmt(ms.onTargetScoringAttempt as number)} />}
-              {ms.keyPass != null        && <StatRow label="Key Passes"  value={fmt(ms.keyPass as number)}                       highlight={(ms.keyPass as number ?? 0) >= 2} />}
-              {ms.totalTackle != null    && <StatRow label="Tackles"     value={fmt(ms.totalTackle as number)} />}
-              {ms.interceptionWon != null && <StatRow label="INT"        value={fmt(ms.interceptionWon as number)} />}
-              {ms.accuratePass != null   && <StatRow label="Passes"      value={fmt(ms.accuratePass as number)} />}
-              {ms.touches != null        && <StatRow label="Touches"     value={fmt(ms.touches as number)} />}
-            </div>
-          )}
-
-          {/* Last 5 games */}
-          {!loading && (data?.recentGames?.length ?? 0) > 0 && (
-            <div className="bg-surface border border-border rounded-xl p-3">
-              <div className="text-[9px] font-black uppercase tracking-widest text-text-2 mb-2">Last 8 Games This Season</div>
-              {data!.recentGames.map(g => (
-                <GameLogRow key={g.eventId} game={g} />
-              ))}
-            </div>
-          )}
-
-          {/* vs Opponent */}
-          {!loading && data?.vsOpponent && (
-            <div className="bg-surface border border-border rounded-xl p-3">
+          
+          {data?.vsOpponent && (
+            <section>
               <div className="text-[9px] font-black uppercase tracking-widest text-text-2 mb-2">vs This Opponent</div>
-              <GameLogRow game={data.vsOpponent} />
-            </div>
+              <div className="bg-white/[0.01] rounded-xl border border-white/[0.05] px-3">
+                <GameLogRow game={data.vsOpponent} />
+              </div>
+            </section>
           )}
 
-          {/* Sofascore link */}
           <a
             href={`https://www.sofascore.com/player/${player.name.toLowerCase().replace(/\s+/g, "-")}/${player.id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="block text-center text-[10px] text-text-2 hover:text-text-1 py-2 transition-colors"
+            className="block text-center text-[10px] text-text-2 hover:text-text-1 py-4 transition-colors"
           >
-            View on Sofascore →
+            View full history on Sofascore →
           </a>
+        </div>
+        
+        <div className="px-6 py-4 bg-[#111827] border-t border-white/5 flex items-center justify-between shrink-0">
+          <div className="text-[9px] text-[#374151] font-mono">INTEL_VERSION: 1.0.42_SOCCER</div>
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
+            <span className="text-[9px] font-bold text-[#4B5563] uppercase tracking-widest">Real-time stats active</span>
+          </div>
         </div>
       </div>
     </>

@@ -55,6 +55,15 @@ export const AFL_CONFIG: SportReliabilityConfig = {
   useMinutesFactor: false,
 };
 
+export const SOCCER_CONFIG: SportReliabilityConfig = {
+  lambda:           0.82,
+  gameWindow:       10,
+  minGames:         5,
+  sampleWeights:    DEFAULT_SAMPLE_WEIGHTS,
+  cvBands:          DEFAULT_CV_BANDS,
+  useMinutesFactor: false, // Soccer uses 90m mostly, but we don't have linear minutes factor yet
+};
+
 // ─── NBA minutes brackets (linear interpolation within each bracket) ──────────
 
 const NBA_MINUTES_BRACKETS: MinutesBracket[] = [

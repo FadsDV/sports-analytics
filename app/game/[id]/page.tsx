@@ -24,8 +24,8 @@ import { fetchWeather } from "@/lib/sports/weather";
 import { calcBetRisk } from "@/lib/sports/betRisk";
 import { formatKickoffFull, formatAFLKickoff } from "@/lib/utils";
 import { fetchSofascoreMatchData, fetchPlayerRecentGames, fetchPlayerSeasonStats } from "@/lib/sports/sofascore";
-import type { SofascorePlayer } from "@/lib/sports/sofascore";
-import { computeSoccerKitchen, type SoccerKitchenSlip, type SoccerPlayerProfile } from "@/lib/sports/soccer/kitchen";
+import type { SofascorePlayer, SofascoreGameLog } from "@/lib/sports/sofascore";
+import { computeSoccerKitchen, type SoccerKitchenSlip, type SoccerPlayerProfile, type SoccerProp } from "@/lib/sports/soccer/kitchen";
 import { computeAFLMatchAnalytics, type LadderEntry } from "@/lib/sports/afl/analytics";
 import { generateAFLInsights, type AFLInsight } from "@/lib/sports/afl/insights";
 import { fetchAFLStandings } from "@/lib/sports/squiggle";
@@ -172,6 +172,88 @@ async function fetchNBAPlayerProps(
           const existing = propMap.get(mapKey);
           if (!existing || pri < existing._pri) {
             propMap.set(mapKey, { price: o.price, line: o.point, bookmaker: bm.title, _pri: pri });
+          }
+        }
+      }
+    }
+    return propMap as Map<string, { price: number; line: number; bookmaker: string }>;
+  } catch {
+    return new Map();
+  }
+}
+
+// ─── Soccer Player Prop Odds (server-side, 6h cache) ─────────────────────────
+
+const SOCCER_STAT_TO_MARKET: Partial<Record<string, string>> = {
+  goals:          "player_anytime_goalscorer",
+  shots:          "player_shots",
+  shotsOnTarget:  "player_shots_on_target",
+  assists:        "player_assist",
+};
+
+async function fetchSoccerPlayerProps(
+  homeTeam: string,
+  awayTeam: string,
+): Promise<Map<string, { price: number; line: number; bookmaker: string }>> {
+  const key = process.env.THE_ODDS_API_KEY;
+  if (!key) return new Map();
+
+  try {
+    const evRes = await fetch(
+      `https://api.the-odds-api.com/v4/sports/soccer_epl/events?apiKey=${key}`,
+      { next: { revalidate: 21_600 } },
+    );
+    if (!evRes.ok) return new Map();
+    const events: { id: string; home_team: string; away_team: string }[] = await evRes.json();
+
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+    const homeN = norm(homeTeam);
+    const awayN = norm(awayTeam);
+    const event = events.find(e => {
+      const eH = norm(e.home_team);
+      const eA = norm(e.away_team);
+      return (eH.includes(homeN) || homeN.includes(eH)) &&
+             (eA.includes(awayN) || awayN.includes(eA));
+    });
+    if (!event) return new Map();
+
+    const markets = Object.values(SOCCER_STAT_TO_MARKET).join(",");
+    const propsRes = await fetch(
+      `https://api.the-odds-api.com/v4/sports/soccer_epl/events/${event.id}/odds` +
+      `?apiKey=${key}&regions=au&markets=${markets}&oddsFormat=decimal`,
+      { next: { revalidate: 21_600 } },
+    );
+    if (!propsRes.ok) return new Map();
+    const propsData = await propsRes.json();
+
+    const propMap = new Map<string, { price: number; line: number; bookmaker: string; _pri: number }>();
+    const PRIORITY: Record<string, number> = { bet365: 0, sportsbet: 1, pointsbetau: 2 };
+
+    for (const bm of propsData.bookmakers ?? []) {
+      const pri = PRIORITY[bm.key] ?? 9;
+      for (const market of bm.markets ?? []) {
+        const stat = (Object.entries(SOCCER_STAT_TO_MARKET) as [string, string][])
+          .find(([, v]) => v === market.key)?.[0];
+        if (!stat) continue;
+
+        for (const o of market.outcomes ?? []) {
+          // player_anytime_goalscorer has outcome names like player names
+          // player_shots has "Over" / "Under" in name and player name in description
+          let playerName = "";
+          let line = 0.5; // default for goalscorer/assist if not specified
+
+          if (market.key === "player_anytime_goalscorer" || market.key === "player_assist") {
+            playerName = o.name;
+          } else {
+            if (o.name !== "Over") continue;
+            playerName = o.description;
+            line = o.point ?? 0.5;
+          }
+
+          const mapKey = `${playerName}|${stat}`;
+          const existing = propMap.get(mapKey);
+          if (!existing || pri < existing._pri) {
+            propMap.set(mapKey, { price: o.price, line, bookmaker: bm.title, _pri: pri });
           }
         }
       }
@@ -420,7 +502,26 @@ export default async function GameDetailPage({
   // Soccer kitchen — fetch key player game logs and compute slips
   let soccerKitchenSlips: SoccerKitchenSlip[] = [];
   if (isSoccer && sofascore) {
-    // Pick top outfield starters (FWD + MID) — max 5 per team, skip GK
+    const daysBetween = (a: string, b: string): number => {
+      const d1 = new Date(a).getTime();
+      const d2 = new Date(b).getTime();
+      return Math.round(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24));
+    };
+    const kickoffStr = game.kickoff ?? new Date().toISOString();
+
+    const lastHomeDate = homeSchedule
+      .filter((e: any) => e.competitions?.[0]?.status?.type?.state === "post")
+      .map((e: any) => e.date)
+      .filter(Boolean).sort().pop() ?? "";
+    const lastAwayDate = awaySchedule
+      .filter((e: any) => e.competitions?.[0]?.status?.type?.state === "post")
+      .map((e: any) => e.date)
+      .filter(Boolean).sort().pop() ?? "";
+
+    const homeRestDays = lastHomeDate ? daysBetween(lastHomeDate, kickoffStr) : 0;
+    const awayRestDays = lastAwayDate ? daysBetween(lastAwayDate, kickoffStr) : 0;
+
+    // Pick top outfield starters (FWD + MID) — max 6 per team, skip GK
     const pickPlayers = (players: SofascorePlayer[], side: "home" | "away", teamName: string, teamAbbr: string): SoccerPlayerProfile[] =>
       players
         .filter(p => p.starter && !["G", "GK", "GL"].includes(p.position.toUpperCase()))
@@ -432,9 +533,10 @@ export default async function GameDetailPage({
     const allKitchenPlayers = [...homePlayers, ...awayPlayers];
 
     if (allKitchenPlayers.length > 0) {
-      const gameResults = await Promise.all(
-        allKitchenPlayers.map(p => fetchPlayerRecentGames(p.sofaId).catch(() => ({ recentGames: [], vsOpponent: null })))
-      );
+      const [propOdds, ...gameResults] = await Promise.all([
+        fetchSoccerPlayerProps(game.homeTeam.name, game.awayTeam.name),
+        ...allKitchenPlayers.map(p => fetchPlayerRecentGames(p.sofaId).catch(() => ({ recentGames: [], vsOpponent: null })))
+      ]) as [Map<string, SoccerProp>, ...{ recentGames: SofascoreGameLog[], vsOpponent: SofascoreGameLog | null }[]];
       gameResults.forEach((r, i) => { allKitchenPlayers[i].games = r.recentGames; });
 
       soccerKitchenSlips = computeSoccerKitchen({
@@ -447,6 +549,10 @@ export default async function GameDetailPage({
         homeTeamStats: sofascore.homeTeamStats ?? null,
         awayTeamStats: sofascore.awayTeamStats ?? null,
         players:       allKitchenPlayers,
+        weather:       game.weather ? { condition: game.weather.condition, windKph: game.weather.windKph } : null,
+        homeRestDays,
+        awayRestDays,
+        propOdds,
       });
     }
   }

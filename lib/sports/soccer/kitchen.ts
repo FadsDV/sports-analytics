@@ -1,25 +1,7 @@
-/**
- * Soccer Kitchen — slip generator aligned to real bookmaker markets.
- *
- * Markets covered:
- *   MATCH:   Both Teams to Score · Over/Under Total Goals · Over Corners
- *            Over Total Cards · Both Teams to Receive Cards · Total Shots
- *
- *   PLAYER:  Score or Assist · Anytime Goalscorer · Player Shots on Target
- *            Player Shots · Player Card · Player Tackles
- *            Fouls Committed · Goalkeeper Saves
- *
- * Slip types:
- *   safe        — BTTS + Over Goals + reliable match total legs
- *   doable      — Score or Assist player props (most popular market)
- *   goalscorers — Anytime Goalscorer legs only
- *   shots       — Player Shots on Target + Player Shots
- *   cards       — Total Cards · Both Teams to Receive Cards · Player Card
- *   value       — Best edge picks across all markets
- */
-
 import type { TeamHistoryGame } from "@/lib/sports/espn";
 import type { SofascoreGameLog, SofascoreTeamStats } from "@/lib/sports/sofascore";
+import { computeReliability, SOCCER_CONFIG } from "@/lib/sports/reliability/engine";
+import type { ReliabilityBreakdown } from "@/lib/sports/reliability/types";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -52,10 +34,12 @@ export interface SoccerKitchenLeg {
   reliability:   number;
   avgStat:       number;
   gamesAnalyzed: number;
-  breakdown:     string[];
+  breakdown:     ReliabilityBreakdown;
   isOnForm:      boolean;
   isBounceBack:  boolean;
   edge?:         number;
+  signalTotal?:  number;
+  prop?:         SoccerProp;
 }
 
 export interface SoccerKitchenSlip {
@@ -76,6 +60,12 @@ export interface SoccerPlayerProfile {
   games:     SofascoreGameLog[];
 }
 
+export interface SoccerProp {
+  price:     number;
+  line:      number;
+  bookmaker: string;
+}
+
 export interface SoccerKitchenInput {
   homeAbbr:      string;
   awayAbbr:      string;
@@ -86,6 +76,81 @@ export interface SoccerKitchenInput {
   homeTeamStats: SofascoreTeamStats | null;
   awayTeamStats: SofascoreTeamStats | null;
   players:       SoccerPlayerProfile[];
+  weather?:      { condition: string; windKph: number } | null;
+  homeRestDays?: number;
+  awayRestDays?: number;
+  propOdds?:     Map<string, SoccerProp>;
+}
+
+// ─── Intelligence signals ─────────────────────────────────────────────────────
+
+function computeOpponentRankBoost(
+  myAvg: number,
+  oppConcededAvg: number,
+): number {
+  if (myAvg <= 0 || oppConcededAvg <= 0) return 0;
+  const ratio = oppConcededAvg / myAvg;
+  // 20% above -> +0.10 boost, 20% below -> -0.10 penalty
+  return Math.max(-0.10, Math.min(0.10, (ratio - 1.0) * 0.5));
+}
+
+function computeWeatherPenalty(
+  stat: string,
+  weather: { condition: string; windKph: number } | null | undefined,
+): number {
+  if (!weather) return 0;
+  const isWet = ["Rain", "Storm"].includes(weather.condition);
+  const wind  = weather.windKph;
+
+  switch (stat) {
+    case "goals":
+    case "teamGoals":
+    case "matchGoals":
+    case "shots":
+    case "shotsOnTarget":
+      return (isWet ? -0.05 : 0) + (wind > 40 ? -0.03 : 0);
+    case "corners":
+      return (isWet ? -0.02 : 0);
+    default:
+      return 0;
+  }
+}
+
+function computeRestDaysPenalty(restDays: number): number {
+  if (restDays > 0 && restDays < 4) return -0.05;
+  return 0;
+}
+
+function computeUsageBoost(
+  player: SoccerPlayerProfile,
+  allPlayers: SoccerPlayerProfile[],
+): number {
+  const myTeam = allPlayers.filter(p => p.teamName === player.teamName && p.sofaId !== player.sofaId);
+  // Simple heuristic: if a top playmaker or scorer is missing, others get a usage boost.
+  // In our current 'players' input, we only have starters. 
+  // We'd need the full squad to truly see who is missing, 
+  // but we can look for high-impact teammates NOT in the starters list.
+  return 0; // Placeholder until we have full squad access
+}
+
+function computeRotationPenalty(games: SofascoreGameLog[]): number {
+  const recent5 = games.slice(-5);
+  if (recent5.length < 3) return 0;
+  const subGames = recent5.filter(g => (g.minutesPlayed ?? 0) < 60).length;
+  // If played < 60 mins in 3+ of last 5, apply penalty
+  return subGames >= 3 ? -0.12 : 0;
+}
+
+function computeSetPieceBonus(player: SoccerPlayerProfile, stat: string): number {
+  const avgKeyPasses = mean(player.games.map(g => g.keyPasses ?? 0).filter(v => v !== null));
+  if (stat === "assists" || stat === "scoreOrAssist") {
+    return avgKeyPasses >= 2.0 ? 0.08 : avgKeyPasses >= 1.2 ? 0.04 : 0;
+  }
+  return 0;
+}
+
+function computeVenueBoost(side: "home" | "away"): number {
+  return side === "home" ? 0.04 : -0.02;
 }
 
 // ─── Math helpers ─────────────────────────────────────────────────────────────
@@ -104,16 +169,20 @@ function parseScore(score: string | null): [number, number] | null {
   return m ? [parseInt(m[1]), parseInt(m[2])] : null;
 }
 
-function sampleFactor(n: number): number {
-  return Math.min(1, (n - 2) / 8);
-}
-
-function reliability(hitRate: number, n: number): number {
-  return Math.round(hitRate * sampleFactor(n) * 100) / 100;
-}
-
 function snap(raw: number, step: number): number {
   return Math.round(raw / step) * step;
+}
+
+function snapToMarket(val: number, stat: string): number {
+  if (stat === "goals" || stat === "assists" || stat === "scoreOrAssist" || stat === "yellowCards") {
+    // bet365 ladders: 0.5, 1.5, 2.5
+    return snap(val, 0.5);
+  }
+  if (stat === "shots" || stat === "shotsOnTarget" || stat === "tackles" || stat === "foulsCommitted") {
+    // bet365 usually 1.0, 2.0, 3.0 etc for shots/tackles
+    return snap(val, 1.0);
+  }
+  return snap(val, 0.5);
 }
 
 function findThreshold(
@@ -136,16 +205,6 @@ function findThreshold(
 
 // ─── Match / team leg builders ────────────────────────────────────────────────
 
-interface MatchLeg {
-  stat: SoccerKitchenLeg["stat"];
-  label: string;
-  threshold: number;
-  hitRate: number;
-  avgStat: number;
-  gamesAnalyzed: number;
-  breakdown: string[];
-}
-
 function buildMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
   const legs: SoccerKitchenLeg[] = [];
 
@@ -166,32 +225,34 @@ function buildMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
     awayFor.push(scored); awayAgainst.push(conceded);
   }
 
-  const n = Math.min(homeFor.length, awayFor.length);
-
   // ── Total Goals Over / Under ──────────────────────────────────────────────
-  if (n >= 3) {
+  if (homeFor.length >= 3 && awayFor.length >= 3) {
     const homeMatchTotals = homeFor.map((g, i) => g + (homeAgainst[i] ?? 0));
     const awayMatchTotals = awayFor.map((g, i) => g + (awayAgainst[i] ?? 0));
-    const avgMatch = (mean(homeMatchTotals) + mean(awayMatchTotals)) / 2;
+    const allTotals = [...homeMatchTotals, ...awayMatchTotals];
+    const avgMatch = mean(allTotals);
 
     for (const thr of [2.5, 1.5]) {
-      const hRate = homeMatchTotals.filter(t => t > thr).length / homeMatchTotals.length;
-      const aRate = awayMatchTotals.filter(t => t > thr).length / awayMatchTotals.length;
+      const hRate = hr(homeMatchTotals, thr + 0.1);
+      const aRate = hr(awayMatchTotals, thr + 0.1);
       const combined = (hRate + aRate) / 2;
+      
       if (combined >= 0.55) {
+        const breakdown = computeReliability({
+          vals: allTotals,
+          threshold: thr + 0.1,
+          config: SOCCER_CONFIG,
+        });
+
         legs.push({
           legType: "match", stat: "matchGoals",
           statLabel: `Total Goals Over ${thr}`,
           threshold: thr, direction: "over",
           hitRate: combined,
-          reliability: reliability(combined, n),
+          reliability: breakdown.finalReliability,
           avgStat: Math.round(avgMatch * 10) / 10,
-          gamesAnalyzed: n,
-          breakdown: [
-            `${input.homeAbbr} home games: ${Math.round(hRate * 100)}% over ${thr}`,
-            `${input.awayAbbr} away games: ${Math.round(aRate * 100)}% over ${thr}`,
-            `Avg match total: ${avgMatch.toFixed(1)} goals`,
-          ],
+          gamesAnalyzed: allTotals.length,
+          breakdown,
           isOnForm: false, isBounceBack: false,
         });
         break;
@@ -201,23 +262,29 @@ function buildMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
 
   // ── Both Teams to Score ───────────────────────────────────────────────────
   if (homeFor.length >= 3 && awayFor.length >= 3) {
-    const homeScoredRate = homeFor.filter(g => g >= 1).length / homeFor.length;
-    const awayScoredRate = awayFor.filter(g => g >= 1).length / awayFor.length;
+    const homeScoredRate = hr(homeFor, 1);
+    const awayScoredRate = hr(awayFor, 1);
     const prob = homeScoredRate * awayScoredRate;
     if (prob >= 0.50) {
+      // Fake vals for engine: 1 if both scored, 0 if not
+      const fakeVals = new Array(homeFor.length).fill(0).map((_, i) => 
+        (homeFor[i] >= 1 && homeAgainst[i] >= 1) ? 1 : 0
+      );
+      const breakdown = computeReliability({
+        vals: fakeVals,
+        threshold: 0.5,
+        config: SOCCER_CONFIG,
+      });
+
       legs.push({
         legType: "match", stat: "btts",
         statLabel: "Both Teams to Score",
         threshold: 1, direction: "over",
         hitRate: prob,
-        reliability: reliability(prob, n),
+        reliability: breakdown.finalReliability,
         avgStat: 0,
-        gamesAnalyzed: n,
-        breakdown: [
-          `${input.homeAbbr} scored in ${Math.round(homeScoredRate * 100)}% of home games`,
-          `${input.awayAbbr} scored in ${Math.round(awayScoredRate * 100)}% of away games`,
-          `Combined probability: ${Math.round(prob * 100)}%`,
-        ],
+        gamesAnalyzed: homeFor.length,
+        breakdown,
         isOnForm: false, isBounceBack: false,
       });
     }
@@ -227,31 +294,38 @@ function buildMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
   if (homeFor.length >= 3) {
     const avg = mean(homeFor);
     if (avg >= 0.8) {
-      const recent3 = homeFor.slice(-3);
-      for (const [minHR, maxHR, minF, maxF] of [
-        [0.72, 1.0, 0.30, 0.62] as const,
-        [0.58, 0.75, 0.62, 0.88] as const,
-      ]) {
-        const found = findThreshold(homeFor, avg, 0.5, minHR, maxHR, minF, maxF);
-        if (found) {
-          legs.push({
-            legType: "team", teamName: input.homeTeamName, teamAbbr: input.homeAbbr, side: "home",
-            stat: "teamGoals", statLabel: `${input.homeTeamName} Over ${found.threshold} Goals`,
-            threshold: found.threshold, direction: "over",
-            hitRate: found.hitRate,
-            reliability: reliability(found.hitRate, homeFor.length),
-            avgStat: Math.round(avg * 10) / 10,
-            gamesAnalyzed: homeFor.length,
-            breakdown: [
-              `Avg ${avg.toFixed(1)} goals/game at home`,
-              `Scored ${found.threshold}+ in ${Math.round(found.hitRate * 100)}% of home games`,
-              mean(recent3) >= avg * 1.1 ? `On form — avg ${mean(recent3).toFixed(1)} last 3 games` : `Season avg: ${avg.toFixed(1)}`,
-            ],
-            isOnForm: mean(recent3) >= avg * 1.1,
-            isBounceBack: (homeFor[homeFor.length - 1] ?? 0) === 0 && avg >= 1.5,
-          });
-          break;
-        }
+      const found = findThreshold(homeFor, avg, 0.5, 0.58, 1.0, 0.30, 0.88);
+      if (found) {
+        // Opponent concession boost
+        const oppConcededAvg = input.awayTeamStats?.goalsConceded && input.awayTeamStats.matches > 0
+          ? input.awayTeamStats.goalsConceded / input.awayTeamStats.matches : 0;
+        const oppBoost = computeOpponentRankBoost(avg, oppConcededAvg);
+        const weatherPenalty = computeWeatherPenalty("teamGoals", input.weather);
+        const venueBoost = computeVenueBoost("home");
+        const restPenalty = computeRestDaysPenalty(input.homeRestDays ?? 0);
+        const signalTotal = oppBoost + weatherPenalty + venueBoost + restPenalty;
+
+        const breakdown = computeReliability({
+          vals: homeFor,
+          threshold: found.threshold,
+          config: SOCCER_CONFIG,
+          contextualBonus: Math.max(0, signalTotal),
+        });
+        const finalRel = Math.max(0, Math.min(1.0, breakdown.finalReliability + (signalTotal < 0 ? signalTotal : 0)));
+
+        legs.push({
+          legType: "team", teamName: input.homeTeamName, teamAbbr: input.homeAbbr, side: "home",
+          stat: "teamGoals", statLabel: `${input.homeTeamName} Over ${found.threshold} Goals`,
+          threshold: found.threshold, direction: "over",
+          hitRate: found.hitRate,
+          reliability: finalRel,
+          avgStat: Math.round(avg * 10) / 10,
+          gamesAnalyzed: homeFor.length,
+          breakdown: { ...breakdown, finalReliability: finalRel },
+          isOnForm: mean(homeFor.slice(-3)) >= avg * 1.1,
+          isBounceBack: (homeFor[homeFor.length - 1] ?? 0) === 0 && avg >= 1.5,
+          signalTotal,
+        });
       }
     }
   }
@@ -260,58 +334,69 @@ function buildMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
   if (awayFor.length >= 3) {
     const avg = mean(awayFor);
     if (avg >= 0.6) {
-      const recent3 = awayFor.slice(-3);
-      for (const [minHR, maxHR, minF, maxF] of [
-        [0.65, 1.0, 0.28, 0.58] as const,
-        [0.52, 0.68, 0.55, 0.85] as const,
-      ]) {
-        const found = findThreshold(awayFor, avg, 0.5, minHR, maxHR, minF, maxF);
-        if (found) {
-          legs.push({
-            legType: "team", teamName: input.awayTeamName, teamAbbr: input.awayAbbr, side: "away",
-            stat: "teamGoals", statLabel: `${input.awayTeamName} Over ${found.threshold} Goals`,
-            threshold: found.threshold, direction: "over",
-            hitRate: found.hitRate,
-            reliability: reliability(found.hitRate, awayFor.length),
-            avgStat: Math.round(avg * 10) / 10,
-            gamesAnalyzed: awayFor.length,
-            breakdown: [
-              `Avg ${avg.toFixed(1)} goals/game away`,
-              `Scored ${found.threshold}+ in ${Math.round(found.hitRate * 100)}% of away games`,
-              mean(recent3) >= avg * 1.1 ? `On form — avg ${mean(recent3).toFixed(1)} last 3 games` : `Season avg: ${avg.toFixed(1)}`,
-            ],
-            isOnForm: mean(recent3) >= avg * 1.1,
-            isBounceBack: (awayFor[awayFor.length - 1] ?? 0) === 0 && avg >= 1.2,
-          });
-          break;
-        }
+      const found = findThreshold(awayFor, avg, 0.5, 0.52, 1.0, 0.28, 0.85);
+      if (found) {
+        const oppConcededAvg = input.homeTeamStats?.goalsConceded && input.homeTeamStats.matches > 0
+          ? input.homeTeamStats.goalsConceded / input.homeTeamStats.matches : 0;
+        const oppBoost = computeOpponentRankBoost(avg, oppConcededAvg);
+        const weatherPenalty = computeWeatherPenalty("teamGoals", input.weather);
+        const venueBoost = computeVenueBoost("away");
+        const restPenalty = computeRestDaysPenalty(input.awayRestDays ?? 0);
+        const signalTotal = oppBoost + weatherPenalty + venueBoost + restPenalty;
+
+        const breakdown = computeReliability({
+          vals: awayFor,
+          threshold: found.threshold,
+          config: SOCCER_CONFIG,
+          contextualBonus: Math.max(0, signalTotal),
+        });
+        const finalRel = Math.max(0, Math.min(1.0, breakdown.finalReliability + (signalTotal < 0 ? signalTotal : 0)));
+
+        legs.push({
+          legType: "team", teamName: input.awayTeamName, teamAbbr: input.awayAbbr, side: "away",
+          stat: "teamGoals", statLabel: `${input.awayTeamName} Over ${found.threshold} Goals`,
+          threshold: found.threshold, direction: "over",
+          hitRate: found.hitRate,
+          reliability: finalRel,
+          avgStat: Math.round(avg * 10) / 10,
+          gamesAnalyzed: awayFor.length,
+          breakdown: { ...breakdown, finalReliability: finalRel },
+          isOnForm: mean(awayFor.slice(-3)) >= avg * 1.1,
+          isBounceBack: (awayFor[awayFor.length - 1] ?? 0) === 0 && avg >= 1.2,
+          signalTotal,
+        });
       }
     }
   }
 
   // ── Corners (from Sofascore team stats) ───────────────────────────────────
-  const homeCorners = input.homeTeamStats?.corners && input.homeTeamStats.matches > 0
+  const hCorners = input.homeTeamStats?.corners && input.homeTeamStats.matches > 0
     ? input.homeTeamStats.corners / input.homeTeamStats.matches : null;
-  const awayCorners = input.awayTeamStats?.corners && input.awayTeamStats.matches > 0
+  const aCorners = input.awayTeamStats?.corners && input.awayTeamStats.matches > 0
     ? input.awayTeamStats.corners / input.awayTeamStats.matches : null;
-  if (homeCorners !== null && awayCorners !== null) {
-    const matchAvg = homeCorners + awayCorners;
+  if (hCorners !== null && aCorners !== null) {
+    const matchAvg = hCorners + aCorners;
     for (const thr of [9.5, 8.5, 7.5]) {
       const estHR = thr < matchAvg * 0.82 ? 0.72 : thr < matchAvg * 0.95 ? 0.60 : 0;
       if (estHR >= 0.60) {
+        const breakdown: ReliabilityBreakdown = {
+          weightedHitRate: estHR,
+          consistencyFactor: 1.0,
+          sampleFactor: 1.0,
+          minutesFactor: 1.0,
+          contextualBonus: 0,
+          finalReliability: estHR,
+        };
+
         legs.push({
           legType: "match", stat: "corners",
           statLabel: `Corners Over ${thr}`,
           threshold: thr, direction: "over",
           hitRate: estHR,
-          reliability: reliability(estHR, Math.min(input.homeTeamStats?.matches ?? 10, 20)),
+          reliability: estHR,
           avgStat: Math.round(matchAvg * 10) / 10,
           gamesAnalyzed: Math.min(input.homeTeamStats?.matches ?? 10, 30),
-          breakdown: [
-            `${input.homeAbbr} avg ${homeCorners.toFixed(1)} corners/game`,
-            `${input.awayAbbr} avg ${awayCorners.toFixed(1)} corners/game`,
-            `Match avg: ${matchAvg.toFixed(1)} combined corners`,
-          ],
+          breakdown,
           isOnForm: false, isBounceBack: false,
         });
         break;
@@ -331,7 +416,6 @@ function buildCardMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
 
   if (hCards !== null && aCards !== null) {
     const matchAvg = hCards + aCards;
-    // Total cards over
     for (const thr of [3.5, 2.5]) {
       const estHR = thr < matchAvg * 0.80 ? 0.70 : thr < matchAvg * 0.95 ? 0.60 : 0;
       if (estHR >= 0.60) {
@@ -340,40 +424,21 @@ function buildCardMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
           statLabel: `Total Cards Over ${thr}`,
           threshold: thr, direction: "over",
           hitRate: estHR,
-          reliability: reliability(estHR, Math.min(input.homeTeamStats?.matches ?? 10, 25)),
+          reliability: estHR,
           avgStat: Math.round(matchAvg * 10) / 10,
           gamesAnalyzed: Math.min(input.homeTeamStats?.matches ?? 10, 30),
-          breakdown: [
-            `${input.homeAbbr} avg ${hCards.toFixed(1)} yellow cards/game`,
-            `${input.awayAbbr} avg ${aCards.toFixed(1)} yellow cards/game`,
-            `Match avg: ${matchAvg.toFixed(1)} total cards`,
-          ],
+          breakdown: {
+            weightedHitRate: estHR,
+            consistencyFactor: 1.0,
+            sampleFactor: 1.0,
+            minutesFactor: 1.0,
+            contextualBonus: 0,
+            finalReliability: estHR,
+          },
           isOnForm: false, isBounceBack: false,
         });
         break;
       }
-    }
-
-    // Both Teams to Receive Cards (rough estimate)
-    const homePct = hCards >= 1.2 ? 0.75 : hCards >= 0.8 ? 0.62 : 0.50;
-    const awayPct = aCards >= 1.2 ? 0.75 : aCards >= 0.8 ? 0.62 : 0.50;
-    const btrcProb = homePct * awayPct;
-    if (btrcProb >= 0.45) {
-      legs.push({
-        legType: "match", stat: "totalCards",
-        statLabel: "Both Teams to Receive Cards",
-        threshold: 1, direction: "over",
-        hitRate: btrcProb,
-        reliability: reliability(btrcProb, Math.min(input.homeTeamStats?.matches ?? 10, 20)),
-        avgStat: 0,
-        gamesAnalyzed: Math.min(input.homeTeamStats?.matches ?? 10, 30),
-        breakdown: [
-          `${input.homeAbbr} avg ${hCards.toFixed(1)} yellows/game`,
-          `${input.awayAbbr} avg ${aCards.toFixed(1)} yellows/game`,
-          `Est. probability both booked: ${Math.round(btrcProb * 100)}%`,
-        ],
-        isOnForm: false, isBounceBack: false,
-      });
     }
   }
 
@@ -385,28 +450,21 @@ function buildCardMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
 interface PlayerStatConfig {
   key:       keyof SofascoreGameLog | "scoreOrAssist";
   stat:      SoccerStatKey;
-  label:     string;   // exact bookmaker market name
+  label:     string;
   step:      number;
   minAvg:    number;
-  posFilter?: string[]; // only include these position groups (G, D, M, F)
+  posFilter?: string[];
 }
 
 const PLAYER_STATS: PlayerStatConfig[] = [
-  // Most popular market — combined score or assist
   { key: "scoreOrAssist", stat: "scoreOrAssist", label: "Score or Assist",      step: 0.5, minAvg: 0.25 },
-  // Anytime scorer
   { key: "goals",          stat: "goals",         label: "Anytime Goalscorer",   step: 0.5, minAvg: 0.18 },
-  // Assist-only
   { key: "assists",        stat: "assists",        label: "To Assist",            step: 0.5, minAvg: 0.15 },
-  // Shots markets
   { key: "shotsOnTarget",  stat: "shotsOnTarget",  label: "Shots on Target",      step: 0.5, minAvg: 0.40 },
   { key: "shots",          stat: "shots",          label: "Player Shots",         step: 0.5, minAvg: 0.80 },
-  // Defensive / physical markets
   { key: "tackles",        stat: "tackles",        label: "Player Tackles",       step: 1.0, minAvg: 1.0, posFilter: ["D", "M"] },
   { key: "foulsCommitted", stat: "foulsCommitted", label: "Fouls Committed",      step: 1.0, minAvg: 1.0 },
-  // Card market
   { key: "yellowCards",    stat: "yellowCards",    label: "Player Card",          step: 0.5, minAvg: 0.12 },
-  // GK only
   { key: "saves",          stat: "saves",          label: "Goalkeeper Saves",     step: 0.5, minAvg: 1.0, posFilter: ["G"] },
 ];
 
@@ -418,6 +476,7 @@ interface PlayerProfile {
   recentAvg:    number;
   isOnForm:     boolean;
   isBounceBack: boolean;
+  signals:      { oppBoost: number; weatherPenalty: number; venueBoost: number; restPenalty: number; rotationPenalty: number; setPieceBonus: number };
 }
 
 function getVals(games: SofascoreGameLog[], key: PlayerStatConfig["key"]): number[] {
@@ -439,15 +498,14 @@ function getVals(games: SofascoreGameLog[], key: PlayerStatConfig["key"]): numbe
     .filter((v): v is number => v !== null);
 }
 
-function buildPlayerProfiles(players: SoccerPlayerProfile[]): PlayerProfile[] {
+function buildPlayerProfiles(input: SoccerKitchenInput): PlayerProfile[] {
   const profiles: PlayerProfile[] = [];
 
-  for (const p of players) {
+  for (const p of input.players) {
     if (p.games.length < 3) continue;
     const posGroup = p.position.toUpperCase()[0] ?? "M";
 
     for (const sc of PLAYER_STATS) {
-      // Position filter
       if (sc.posFilter && !sc.posFilter.includes(posGroup)) continue;
 
       const vals = getVals(p.games, sc.key);
@@ -462,7 +520,28 @@ function buildPlayerProfiles(players: SoccerPlayerProfile[]): PlayerProfile[] {
       const lastVal    = vals[vals.length - 1] ?? 0;
       const isBounceBack = lastVal < avg * 0.5 && avg >= sc.minAvg * 2;
 
-      profiles.push({ player: p, stat: sc, vals, avg, recentAvg, isOnForm, isBounceBack });
+      const opponentStats = p.side === "home" ? input.awayTeamStats : input.homeTeamStats;
+      let oppBoost = 0;
+      if (opponentStats && opponentStats.matches > 0) {
+        if (sc.stat === "goals" || sc.stat === "scoreOrAssist") {
+          const oppConcededAvg = opponentStats.goalsConceded / opponentStats.matches;
+          oppBoost = computeOpponentRankBoost(1.5, oppConcededAvg);
+        } else if (sc.stat === "shotsOnTarget" || sc.stat === "shots") {
+          const sOTConceded = (opponentStats.goalsConceded + (opponentStats.saves ?? 0)) / opponentStats.matches;
+          oppBoost = computeOpponentRankBoost(4.5, sOTConceded);
+        }
+      }
+
+      const weatherPenalty = computeWeatherPenalty(sc.stat, input.weather);
+      const venueBoost = computeVenueBoost(p.side);
+      const restPenalty = computeRestDaysPenalty(p.side === "home" ? input.homeRestDays ?? 0 : input.awayRestDays ?? 0);
+      const rotationPenalty = computeRotationPenalty(p.games);
+      const setPieceBonus = computeSetPieceBonus(p, sc.stat);
+
+      profiles.push({
+        player: p, stat: sc, vals, avg, recentAvg, isOnForm, isBounceBack,
+        signals: { oppBoost, weatherPenalty, venueBoost, restPenalty, rotationPenalty, setPieceBonus }
+      });
     }
   }
 
@@ -486,6 +565,7 @@ function buildPlayerLegs(
   profiles: PlayerProfile[],
   tier: TierConfig,
   exclude: Set<string> = new Set(),
+  propOdds?: Map<string, SoccerProp>,
 ): SoccerKitchenLeg[] {
   const candidates: { leg: SoccerKitchenLeg; rel: number }[] = [];
 
@@ -493,15 +573,43 @@ function buildPlayerLegs(
     if (tier.statFilter && !tier.statFilter.includes(prof.stat.stat)) continue;
 
     const base = tier.formBonus > 0 && prof.isOnForm ? prof.recentAvg : prof.avg;
-    const found = findThreshold(prof.vals, base, prof.stat.step,
-      tier.minHR, tier.maxHR, tier.minFrac, tier.maxFrac);
-    if (!found) continue;
+    
+    // Check for real prop odds
+    const prop = propOdds?.get(`${prof.player.name}|${prof.stat.stat}`);
+    
+    let threshold: number;
+    let hitRate: number;
+    
+    if (prop) {
+      threshold = prop.line;
+      hitRate   = hr(prof.vals, threshold);
+      // Ensure hitRate is within tier limits
+      if (hitRate < tier.minHR || hitRate > tier.maxHR) continue;
+    } else {
+      const found = findThreshold(prof.vals, base, prof.stat.step,
+        tier.minHR, tier.maxHR, tier.minFrac, tier.maxFrac);
+      if (!found) continue;
+      threshold = snapToMarket(found.threshold, prof.stat.stat);
+      hitRate   = hr(prof.vals, threshold);
+    }
 
-    let rel = reliability(found.hitRate, prof.vals.length);
+    const signalTotal = prof.signals.oppBoost + prof.signals.weatherPenalty + prof.signals.venueBoost + 
+                      prof.signals.restPenalty + prof.signals.rotationPenalty + prof.signals.setPieceBonus;
+
+    const breakdown = computeReliability({
+      vals: prof.vals,
+      threshold: threshold,
+      config: SOCCER_CONFIG,
+      contextualBonus: Math.max(0, signalTotal),
+    });
+
+    let rel = breakdown.finalReliability;
+    if (signalTotal < 0) rel = Math.max(0, rel + signalTotal);
     if (prof.isOnForm) rel = Math.min(1, rel + tier.formBonus);
+
     if (rel < tier.minRel) continue;
 
-    const key = `${prof.player.name}|${prof.stat.stat}|${found.threshold}`;
+    const key = `${prof.player.name}|${prof.stat.stat}|${threshold}`;
     if (exclude.has(key)) continue;
 
     candidates.push({
@@ -514,20 +622,17 @@ function buildPlayerLegs(
         teamAbbr:      prof.player.teamAbbr,
         stat:          prof.stat.stat,
         statLabel:     prof.stat.label,
-        threshold:     found.threshold,
+        threshold,
         direction:     "over",
-        hitRate:       found.hitRate,
+        hitRate,
         reliability:   rel,
         avgStat:       Math.round(prof.avg * 100) / 100,
         gamesAnalyzed: prof.vals.length,
-        breakdown: [
-          `Avg ${prof.avg.toFixed(2)} ${prof.stat.label.toLowerCase()}/game`,
-          `Hit ${found.threshold}+ in ${Math.round(found.hitRate * 100)}% of games`,
-          ...(prof.isOnForm ? [`▲ On form — avg ${prof.recentAvg.toFixed(2)} last 3 games`] : []),
-          ...(prof.isBounceBack ? ["↺ Bounce-back candidate"] : []),
-        ],
+        breakdown:     { ...breakdown, finalReliability: rel },
         isOnForm:      prof.isOnForm,
         isBounceBack:  prof.isBounceBack,
+        signalTotal:   Math.round(signalTotal * 100) / 100,
+        prop,
       },
     });
   }
@@ -555,77 +660,100 @@ function buildPlayerLegs(
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function computeSoccerKitchen(input: SoccerKitchenInput): SoccerKitchenSlip[] {
-  const profiles   = buildPlayerProfiles(input.players);
+  const profiles   = buildPlayerProfiles(input);
   const matchLegs  = buildMatchLegs(input);
   const cardMatchLegs = buildCardMatchLegs(input);
 
-  // Partition match legs by confidence
   const safeMatchLegs   = matchLegs.filter(l => l.hitRate >= 0.70).slice(0, 3);
   const doableMatchLegs = matchLegs.filter(l => l.hitRate >= 0.58 && l.hitRate < 0.70).slice(0, 2);
 
-  const safeKeys = new Set(safeMatchLegs.map(l => `${l.teamName ?? "match"}|${l.stat}|${l.threshold}`));
-
   // ── 1. Safe ───────────────────────────────────────────────────────────────
-  // Best match legs + any player legs at 78%+ hit rate
   const safePlayerLegs = buildPlayerLegs(profiles, {
     minHR: 0.72, maxHR: 1.0,
     minFrac: 0.28, maxFrac: 0.62,
     minRel: 0.45, maxLegs: 3 - safeMatchLegs.length,
     formBonus: 0,
-  });
+  }, new Set(), input.propOdds);
   const safeLegs = [...safeMatchLegs, ...safePlayerLegs].slice(0, 3);
 
-  // ── 2. Doable — Score or Assist ───────────────────────────────────────────
+  // ── 2. Doable ─────────────────────────────────────────────────────────────
   const doablePlayerLegs = buildPlayerLegs(profiles, {
     minHR: 0.55, maxHR: 0.78,
     minFrac: 0.35, maxFrac: 0.80,
     minRel: 0.28, maxLegs: 5,
     statFilter: ["scoreOrAssist", "goals", "assists"],
     formBonus: 0.04,
-  });
+  }, new Set(), input.propOdds);
   const doableLegs = [...doableMatchLegs, ...doablePlayerLegs].slice(0, 3);
 
-  // ── 3. Goal Scorers — Anytime Goalscorer ──────────────────────────────────
+  // ── 3. Goal Scorers ───────────────────────────────────────────────────────
   const goalLegs = buildPlayerLegs(profiles, {
     minHR: 0.30, maxHR: 0.80,
     minFrac: 0.25, maxFrac: 0.75,
     minRel: 0.12, maxLegs: 4,
     statFilter: ["goals"],
     formBonus: 0.03,
-  });
+  }, new Set(), input.propOdds);
 
-  // ── 4. Shots — Player Shots + Shots on Target ────────────────────────────
+  // ── 4. Shots ─────────────────────────────────────────────────────────────
   const shotLegs = buildPlayerLegs(profiles, {
     minHR: 0.45, maxHR: 0.85,
     minFrac: 0.35, maxFrac: 0.80,
     minRel: 0.22, maxLegs: 4,
     statFilter: ["shots", "shotsOnTarget"],
     formBonus: 0.03,
-  });
+  }, new Set(), input.propOdds);
 
-  // ── 5. Cards — Total Cards + Both Teams to Receive + Player Card ──────────
+  // ── 5. Cards ──────────────────────────────────────────────────────────────
   const playerCardLegs = buildPlayerLegs(profiles, {
     minHR: 0.20, maxHR: 0.75,
     minFrac: 0.35, maxFrac: 1.0,
     minRel: 0.08, maxLegs: 2,
     statFilter: ["yellowCards"],
     formBonus: 0,
-  });
+  }, new Set(), input.propOdds);
   const cardLegs = [...cardMatchLegs, ...playerCardLegs].slice(0, 4);
 
-  // ── 6. Value — best edge by (avg - threshold) / threshold × reliability ───
+  // ── 6. Value ──────────────────────────────────────────────────────────────
   const valueProfiles: { leg: SoccerKitchenLeg; score: number }[] = [];
   for (const prof of profiles) {
-    // Skip if stat not a real bookmaker market
     const BETTABLE: SoccerStatKey[] = ["scoreOrAssist","goals","assists","shots","shotsOnTarget","tackles","yellowCards","foulsCommitted","saves"];
     if (!BETTABLE.includes(prof.stat.stat)) continue;
 
-    const found = findThreshold(prof.vals, prof.avg, prof.stat.step, 0.50, 0.82, 0.45, 0.85);
-    if (!found) continue;
-    const rel  = reliability(found.hitRate, prof.vals.length);
-    const edge = prof.avg - found.threshold;
+    // Check if we have real prop odds for this player/stat
+    const prop = input.propOdds?.get(`${prof.player.name}|${prof.stat.stat}`);
+    
+    let threshold: number;
+    let hitRate: number;
+    
+    if (prop) {
+      threshold = prop.line;
+      hitRate   = hr(prof.vals, threshold);
+    } else {
+      const found = findThreshold(prof.vals, prof.avg, prof.stat.step, 0.50, 0.82, 0.45, 0.85);
+      if (!found) continue;
+      threshold = found.threshold;
+      hitRate   = found.hitRate;
+    }
+
+    const signalTotal = prof.signals.oppBoost + prof.signals.weatherPenalty + prof.signals.venueBoost + 
+                      prof.signals.restPenalty + prof.signals.rotationPenalty + prof.signals.setPieceBonus;
+    const breakdown = computeReliability({
+      vals: prof.vals,
+      threshold,
+      config: SOCCER_CONFIG,
+      contextualBonus: Math.max(0, signalTotal),
+    });
+    let rel = breakdown.finalReliability;
+    if (signalTotal < 0) rel = Math.max(0, rel + signalTotal);
+
+    const edge = prof.avg - threshold;
     if (edge <= 0 || rel < 0.18) continue;
-    const score = (edge / Math.max(found.threshold, 0.1)) * rel * found.hitRate;
+    
+    // Scoring: (edge / threshold) * price (if any) * reliability * hitRate
+    const price = prop?.price ?? 1.83; // 1.83 as neutral "fair" odds
+    const score = (edge / Math.max(threshold, 0.1)) * price * rel * hitRate;
+
     valueProfiles.push({
       score,
       leg: {
@@ -636,26 +764,23 @@ export function computeSoccerKitchen(input: SoccerKitchenInput): SoccerKitchenSl
         teamAbbr:      prof.player.teamAbbr,
         stat:          prof.stat.stat,
         statLabel:     prof.stat.label,
-        threshold:     found.threshold,
+        threshold:     threshold,
         direction:     "over",
-        hitRate:       found.hitRate,
+        hitRate:       hitRate,
         reliability:   rel,
         avgStat:       Math.round(prof.avg * 100) / 100,
         gamesAnalyzed: prof.vals.length,
-        breakdown: [
-          `Avg ${prof.avg.toFixed(2)} vs line ${found.threshold} (edge: +${(prof.avg - found.threshold).toFixed(2)})`,
-          `Hits in ${Math.round(found.hitRate * 100)}% of games`,
-          ...(prof.isOnForm ? [`▲ On form — avg ${prof.recentAvg.toFixed(2)} last 3`] : []),
-        ],
+        breakdown:     { ...breakdown, finalReliability: rel },
         isOnForm:      prof.isOnForm,
         isBounceBack:  prof.isBounceBack,
-        edge:          Math.round((prof.avg - found.threshold) * 100) / 100,
+        edge:          Math.round(edge * 100) / 100,
+        signalTotal:   Math.round(signalTotal * 100) / 100,
+        prop,
       },
     });
   }
   valueProfiles.sort((a, b) => b.score - a.score);
 
-  // Deduplicate by player+stat
   const valueSeen = new Set<string>();
   const valueLegs: SoccerKitchenLeg[] = [];
   for (const { leg } of valueProfiles) {

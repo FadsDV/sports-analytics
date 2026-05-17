@@ -29,6 +29,7 @@ import SoccerPlayerIntel from "@/components/soccer/SoccerPlayerIntel";
 import SoccerPlayerDrawer from "@/components/soccer/SoccerPlayerDrawer";
 import SoccerMatchInsights from "@/components/soccer/SoccerMatchInsights";
 import SoccerKitchen from "@/components/soccer/SoccerKitchen";
+import type { SoccerPlayerAnalyticsResult } from "@/lib/sports/soccer/types";
 import type { SofascorePlayer } from "@/lib/sports/sofascore";
 import type { SoccerKitchenSlip } from "@/lib/sports/soccer/kitchen";
 import { buildSlipColorMap, type SlipEntry } from "@/lib/sports/slipTracker";
@@ -1944,6 +1945,62 @@ export default function GameDetailTabs({
   const [aflKitchenDrawer, setAflKitchenDrawer] = useState<import("@/lib/sports/afl/players/types").AFLPlayerAnalyticsResult | null>(null);
   const [aflKitchenLoading, setAflKitchenLoading] = useState(false);
 
+  const [soccerKitchenDrawer, setSoccerKitchenDrawer] = useState<SoccerPlayerAnalyticsResult | null>(null);
+  const [soccerKitchenLoading, setSoccerKitchenLoading] = useState(false);
+
+  const onSoccerKitchenClick = async (name: string) => {
+    const p = [
+      ...(sofascore?.lineups?.home ?? []),
+      ...(sofascore?.lineups?.away ?? [])
+    ].find(x => x.name === name || x.shortName === name);
+    if (!p) return;
+
+    setSoccerKitchenLoading(true);
+    setSoccerKitchenDrawer(null);
+
+    try {
+      const oppId = sofascore?.homeTeamId === p.id ? sofascore?.awayTeamId : sofascore?.homeTeamId;
+      const res = await fetch(`/api/soccer/player/${p.id}?opponentTeamId=${oppId}&tournamentId=${sofascore?.tournamentId}`);
+      if (res.ok) {
+        const result = await res.json();
+        // Transform API result to SoccerPlayerAnalyticsResult
+        const side = (sofascore?.lineups?.home ?? []).some(x => x.id === p.id) ? "home" : "away";
+        const teamName = side === "home" ? game.homeTeam.name : game.awayTeam.name;
+        const teamAbbr = side === "home" ? game.homeTeam.shortName : game.awayTeam.shortName;
+        const opponent = side === "home" ? game.awayTeam.name : game.homeTeam.name;
+
+        // Trends (simplified)
+        const recent = result.recentGames || [];
+        const trends = {
+          goals: recent.map((g: any) => g.goals ?? 0),
+          shots: recent.map((g: any) => g.totalShots ?? 0),
+          shotsOnTarget: recent.map((g: any) => g.shotsOnTarget ?? 0),
+          rating: recent.map((g: any) => g.rating ?? 0),
+        };
+
+        setSoccerKitchenDrawer({
+          playerId: p.id,
+          playerName: p.name,
+          shortName: p.shortName,
+          position: p.position,
+          jersey: p.jerseyNumber,
+          headshot: `https://img.sofascore.com/api/v1/player/${p.id}/image`,
+          teamName, teamAbbr, opponent, side,
+          seasonStats: result.seasonStats,
+          recentGames: result.recentGames,
+          vsOpponent: {
+            lastMatchup: result.vsOpponent,
+            history: [],
+          },
+          homeAvg: {}, awayAvg: {},
+          trends,
+        });
+      }
+    } finally {
+      setSoccerKitchenLoading(false);
+    }
+  };
+
   // Bookie tab state for AFL kitchen
   const [bookieTab, setBookieTab] = useState<"generic" | "bet365" | "dabble">("generic");
 
@@ -2414,22 +2471,54 @@ export default function GameDetailTabs({
       )}
       {tab === "kitchen" && isSoccer && (
         soccerKitchenSlips && soccerKitchenSlips.some(s => s.legs.length > 0)
-          ? <SoccerKitchen slips={soccerKitchenSlips} />
+          ? <SoccerKitchen slips={soccerKitchenSlips} onPlayerClick={onSoccerKitchenClick} />
           : <div className="bg-surface rounded-xl p-8 border border-border text-center">
               <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
               <p className="text-[10px] text-text-2">Requires lineup data and at least 3 recent games per player.</p>
             </div>
       )}
 
-      {/* ── Soccer player drawer ──────────────────────────────────────── */}
-      {soccerPlayer && (
-        <SoccerPlayerDrawer
-          player={soccerPlayer.player}
-          teamName={soccerPlayer.teamName}
-          tournamentId={sofascore?.tournamentId}
-          opponentTeamId={soccerPlayer.side === "home" ? sofascore?.awayTeamId : sofascore?.homeTeamId}
-          onClose={() => setSoccerPlayer(null)}
-        />
+      {/* ── Overlays ─────────────────────────────────────────────────────── */}
+      {isAFL && (aflKitchenLoading || aflKitchenDrawer) && (
+        <div className="fixed inset-0 z-[70] flex justify-end">
+          <div className="fixed inset-0 bg-black/80 z-[60] backdrop-blur-sm" onClick={() => { setAflKitchenDrawer(null); setAflKitchenLoading(false); }} />
+          {aflKitchenLoading && (
+            <div className="relative z-[70] w-full max-w-2xl bg-[#0B0F1A] flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-bold text-text-2 uppercase tracking-widest">Cooking Analytics...</span>
+              </div>
+            </div>
+          )}
+          {aflKitchenDrawer && !aflKitchenLoading && (
+            <PlayerDrawer data={aflKitchenDrawer} onClose={() => setAflKitchenDrawer(null)} />
+          )}
+        </div>
+      )}
+
+      {isSoccer && (soccerKitchenLoading || soccerKitchenDrawer || soccerPlayer) && (
+        <div className="fixed inset-0 z-[70] flex justify-end">
+          <div className="fixed inset-0 bg-black/80 z-[60] backdrop-blur-sm" onClick={() => { setSoccerKitchenDrawer(null); setSoccerKitchenLoading(false); setSoccerPlayer(null); }} />
+          {soccerKitchenLoading && (
+            <div className="relative z-[70] w-full max-w-2xl bg-[#0B0F1A] flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-bold text-text-2 uppercase tracking-widest">Cooking Analytics...</span>
+              </div>
+            </div>
+          )}
+          
+          {(soccerKitchenDrawer || soccerPlayer) && !soccerKitchenLoading && (
+            <SoccerPlayerDrawer
+              data={soccerKitchenDrawer}
+              player={soccerPlayer?.player}
+              teamName={soccerPlayer?.teamName}
+              tournamentId={sofascore?.tournamentId}
+              opponentTeamId={soccerPlayer?.side === "home" ? sofascore?.awayTeamId : sofascore?.homeTeamId}
+              onClose={() => { setSoccerKitchenDrawer(null); setSoccerPlayer(null); }}
+            />
+          )}
+        </div>
       )}
     </>
   );
