@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import type { Game, Team, H2HGame, BoxScore, BoxScoreRow, Insight } from "@/lib/types";
 import type { AFLInsight } from "@/lib/sports/afl/insights";
@@ -20,6 +20,8 @@ import NBAPlayerDrawer from "@/components/nba/NBAPlayerDrawer";
 import type { NBAPlayerAnalyticsResult } from "@/lib/sports/nba/players/types";
 import AFLKitchen from "@/components/afl/AFLKitchen";
 import type { KitchenSlip } from "@/lib/sports/afl/kitchen";
+import { filterSlipsForBookie } from "@/lib/sports/afl/kitchen";
+import { BOOKIES } from "@/lib/sports/afl/bookies";
 import NBAKitchen from "@/components/nba/NBAKitchen";
 import type { NBAKitchenSlip } from "@/lib/sports/nba/kitchen";
 import SoccerPlayerList from "@/components/soccer/SoccerPlayerList";
@@ -1942,6 +1944,101 @@ export default function GameDetailTabs({
   const [aflKitchenDrawer, setAflKitchenDrawer] = useState<import("@/lib/sports/afl/players/types").AFLPlayerAnalyticsResult | null>(null);
   const [aflKitchenLoading, setAflKitchenLoading] = useState(false);
 
+  // Bookie tab state for AFL kitchen
+  const [bookieTab, setBookieTab] = useState<"generic" | "bet365" | "dabble">("generic");
+
+  // ── Slip logger: save AFL kitchen to local DB when kitchen tab opens ──────────
+  const slipsSaved = useRef(false);
+  useEffect(() => {
+    if (!isAFL || !kitchenSlips || kitchenSlips.length === 0) return;
+    if (slipsSaved.current) return;
+    slipsSaved.current = true;
+
+    const gameDate = game.kickoff ? game.kickoff.slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const venue    = game.venue ?? undefined;
+
+    const payload = {
+      game: {
+        id:       id,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name,
+        venue,
+        gameDate,
+      },
+      slips: kitchenSlips
+        .filter(s => s.legs.length > 0)
+        .map(s => ({
+          slipType: s.type,
+          bookie:   "generic",
+          legs: s.legs.map(l => ({
+            player:        l.player,
+            teamAbbr:      l.teamAbbr,
+            side:          l.side,
+            stat:          l.stat,
+            statLabel:     l.statLabel,
+            threshold:     l.threshold,
+            avgStat:       l.avgStat,
+            hitRate:       l.hitRate,
+            reliability:   l.reliability,
+            isOnForm:      l.isOnForm,
+            isBounceBack:  l.isBounceBack,
+            gamesAnalyzed: l.gamesAnalyzed,
+            prop:          l.prop,
+            edge:          l.edge,
+          })),
+        })),
+    };
+
+    fetch("/api/slips/save", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload),
+    }).catch(err => console.warn("[slips] save failed:", err));
+  }, [isAFL, kitchenSlips, id, game]);
+
+  // ── Outcome resolver: auto-check results when a finished AFL game loads ───────
+  const outcomesResolved = useRef(false);
+  useEffect(() => {
+    if (!isAFL || game.status !== "finished") return;
+    if (!game.boxScore) return;
+    if (outcomesResolved.current) return;
+    outcomesResolved.current = true;
+
+    // Build outcomes from final boxscore
+    const outcomes: { player: string; stat: string; actualStat: number; hit: boolean }[] = [];
+    const allRows = [...(game.boxScore.home ?? []), ...(game.boxScore.away ?? [])];
+
+    // AFL stat key mapping: ESPN column → our kitchen stat codes
+    const ESPN_STAT_MAP: Record<string, string> = {
+      D: "D", K: "_K", HB: "_HB", G: "G", M: "M", T: "T", HO: "HO",
+    };
+
+    for (const row of allRows) {
+      // Disposals = K + HB (computed)
+      const kicks     = Number(row.stats["K"]  ?? 0);
+      const handballs = Number(row.stats["HB"] ?? 0);
+      const disposals = kicks + handballs;
+
+      const statValues: Record<string, number> = {
+        D:  disposals,
+        G:  Number(row.stats["G"]  ?? 0),
+        M:  Number(row.stats["M"]  ?? 0),
+        T:  Number(row.stats["T"]  ?? 0),
+        HO: Number(row.stats["HO"] ?? 0),
+      };
+
+      for (const [stat, actual] of Object.entries(statValues)) {
+        outcomes.push({ player: row.player, stat, actualStat: actual, hit: false /* resolved server-side */ });
+      }
+    }
+
+    fetch("/api/slips/outcome", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ gameId: id, outcomes }),
+    }).catch(err => console.warn("[slips] outcome resolve failed:", err));
+  }, [isAFL, game.status, game.boxScore, id]);
+
   async function handleKitchenPlayerClick(playerName: string) {
     const homePlayer = homeSquad.find(p => p.displayName === playerName);
     const awayPlayer = awaySquad.find(p => p.displayName === playerName);
@@ -2220,14 +2317,69 @@ export default function GameDetailTabs({
       )}
 
       {/* ── Kitchen ──────────────────────────────────────────────────────── */}
-      {tab === "kitchen" && isAFL && (
-        kitchenSlips && kitchenSlips.some(s => s.legs.length > 0)
-          ? <AFLKitchen slips={kitchenSlips} boxScore={boxScore} isUpcoming={game.status === "upcoming"} onPlayerClick={handleKitchenPlayerClick} />
-          : <div className="bg-surface rounded-xl p-8 border border-border text-center">
+      {tab === "kitchen" && isAFL && (() => {
+        if (!kitchenSlips || !kitchenSlips.some(s => s.legs.length > 0)) {
+          return (
+            <div className="bg-surface rounded-xl p-8 border border-border text-center">
               <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
               <p className="text-[10px] text-text-2">Requires at least 3 completed games per team.</p>
             </div>
-      )}
+          );
+        }
+
+        // Compute bookie-specific slips
+        const bet365Slips = filterSlipsForBookie(kitchenSlips, BOOKIES.bet365);
+        const dabbleSlips = filterSlipsForBookie(kitchenSlips, BOOKIES.dabble);
+
+        const activeSlips =
+          bookieTab === "bet365" ? bet365Slips :
+          bookieTab === "dabble" ? dabbleSlips :
+          kitchenSlips;
+
+        return (
+          <div className="space-y-3">
+            {/* Bookie selector */}
+            <div className="flex items-center gap-1 bg-surface rounded-xl p-1 border border-border">
+              {([
+                { key: "generic", label: "All Markets", color: "text-text-1" },
+                { key: "bet365",  label: "Bet365",      color: "text-[#00A651]" },
+                { key: "dabble",  label: "Dabble",      color: "text-[#FF6B35]" },
+              ] as const).map(b => (
+                <button
+                  key={b.key}
+                  onClick={() => setBookieTab(b.key)}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                    bookieTab === b.key
+                      ? `bg-surface2 ${b.color}`
+                      : "text-text-2 hover:text-text-1"
+                  }`}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Bookie context note */}
+            {bookieTab === "bet365" && (
+              <div className="px-3 py-2 bg-[#00A651]/5 border border-[#00A651]/20 rounded-lg text-[11px] text-[#00A651]">
+                Bet365 only: Disposals (10–35, multiples of 5) · Goals (Anytime / 2+ / 3+) · Marks, Tackles, Kicks not available
+              </div>
+            )}
+            {bookieTab === "dabble" && (
+              <div className="px-3 py-2 bg-[#FF6B35]/5 border border-[#FF6B35]/20 rounded-lg text-[11px] text-[#FF6B35]">
+                Dabble: Disposals (15–30) · Goals (up to 5+) · Marks · Tackles · Kicks · Handballs
+              </div>
+            )}
+
+            <AFLKitchen
+              slips={activeSlips}
+              boxScore={boxScore}
+              isUpcoming={game.status === "upcoming"}
+              onPlayerClick={handleKitchenPlayerClick}
+            />
+          </div>
+        );
+      })()}
 
       {/* AFL kitchen player drawer */}
       {isAFL && (aflKitchenLoading || aflKitchenDrawer) && (

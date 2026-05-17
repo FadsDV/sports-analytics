@@ -472,3 +472,50 @@ export function computeAFLKitchen(params: {
     { type: "value",       legs: valueLegs },
   ];
 }
+
+// ─── Bookie-specific kitchen ──────────────────────────────────────────────────
+
+import { snapThreshold, goalLabel, type BookieConfig } from "./bookies";
+
+/**
+ * Filter and snap a set of generic kitchen slips to a specific bookie's
+ * available markets and valid line increments.
+ *
+ * - Removes legs for stats not offered by the bookie
+ * - Snaps each threshold to the nearest valid bookie line (floors down by default)
+ * - Drops legs where no valid line exists (e.g. Dabble: 12 disposals < 15 minimum)
+ * - Deduplicates: if two legs snap to the same player+stat+line, keep highest reliability
+ */
+export function filterSlipsForBookie(
+  slips:  KitchenSlip[],
+  bookie: BookieConfig,
+): KitchenSlip[] {
+  return slips.map(slip => {
+    const seen = new Map<string, KitchenLeg>();
+
+    for (const leg of slip.legs) {
+      const statConfig = bookie.stats[leg.stat];
+      if (!statConfig?.available) continue;
+
+      const snapped = snapThreshold(leg.threshold, leg.stat, bookie);
+      if (snapped === null) continue;
+
+      const dedupKey = `${leg.player}|${leg.stat}|${snapped}`;
+      const existing = seen.get(dedupKey);
+      if (!existing || leg.reliability > existing.reliability) {
+        // For goals: update statLabel to show bookie-friendly label (e.g. "Anytime")
+        const statLabel = leg.stat === "G"
+          ? goalLabel(snapped)
+          : leg.statLabel;
+
+        seen.set(dedupKey, {
+          ...leg,
+          threshold: snapped,
+          statLabel,
+        });
+      }
+    }
+
+    return { ...slip, legs: Array.from(seen.values()) };
+  }).filter(slip => slip.legs.length > 0);
+}
