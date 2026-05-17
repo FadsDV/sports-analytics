@@ -139,73 +139,178 @@ function GameLogRow({ game }: { game: SofascoreGameLog }) {
 
 // ─── Bet Checker ──────────────────────────────────────────────────────────────
 
-function BetChecker({ recentGames, seasonStats }: { recentGames: SofascoreGameLog[], seasonStats: SofascorePlayerSeasonStats }) {
+interface CheckerCardDef {
+  label:     string;
+  vals:      number[];
+  threshold: number;
+  avg:       number;
+  avgLabel:  string;
+}
+
+function CheckerCard({ def }: { def: CheckerCardDef }) {
+  const hitRate  = def.vals.length ? def.vals.filter(v => v >= def.threshold).length / def.vals.length : 0;
+  const breakdown = computeRelNew({ vals: def.vals, threshold: def.threshold, config: SOCCER_CONFIG });
+  const tier = getConfidenceTier(breakdown.finalReliability);
+  const c    = CONFIDENCE_COLORS[tier];
+  return (
+    <div className={`rounded-xl p-3 border ${c.border} ${c.bg}`}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] text-[#6B7280] font-medium leading-tight">{def.label}</span>
+        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${c.bg} ${c.text} shrink-0 ml-1`}>
+          {CONFIDENCE_LABEL[tier]}
+        </span>
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span className={`text-2xl font-black tabular-nums ${c.text}`}>
+          {def.vals.length ? `${Math.round(hitRate * 100)}%` : "—"}
+        </span>
+        <span className="text-[10px] text-[#6B7280]">hit rate</span>
+      </div>
+      <div className="h-[3px] bg-white/5 rounded-full overflow-hidden mt-2 mb-1.5">
+        <div className={`h-full rounded-full ${c.bar}`} style={{ width: `${Math.round(breakdown.finalReliability * 100)}%` }} />
+      </div>
+      <div className="text-[9px] text-[#4B5563]">{def.avgLabel}</div>
+    </div>
+  );
+}
+
+function BetChecker({
+  recentGames,
+  seasonStats,
+  position,
+}: {
+  recentGames:  SofascoreGameLog[];
+  seasonStats:  SofascorePlayerSeasonStats;
+  position?:    string;
+}) {
   if (!recentGames.length || !seasonStats) return null;
 
-  const goalVals = recentGames.map(g => g.goals ?? 0);
-  const sotVals  = recentGames.map(g => g.shotsOnTarget ?? 0);
+  const apps = seasonStats.appearances || 1;
+  const pos  = (position ?? "F").toUpperCase()[0]; // G D M F A
 
-  const goalAvg = (seasonStats.goals ?? 0) / (seasonStats.appearances || 1);
-  const sotAvg  = (seasonStats.shotsOnTarget ?? 0) / (seasonStats.appearances || 1);
+  // ── Per-game vals from recent games ────────────────────────────────────────
+  const goalVals    = recentGames.map(g => g.goals         ?? 0);
+  const sotVals     = recentGames.map(g => g.shotsOnTarget ?? 0);
+  const shotVals    = recentGames.map(g => g.shots         ?? 0);
+  const soaVals     = recentGames.map(g => (g.goals ?? 0) + (g.assists ?? 0));
+  const tackleVals  = recentGames.map(g => g.tackles       ?? 0);
+  const saveVals    = recentGames.map(g => g.saves         ?? 0);
 
-  const goalThreshold = 0.5;
-  const sotThreshold  = sotAvg >= 1.2 ? 1.5 : 0.5;
+  // ── Season averages ────────────────────────────────────────────────────────
+  const goalAvg   = (seasonStats.goals         ?? 0) / apps;
+  const sotAvg    = (seasonStats.shotsOnTarget  ?? 0) / apps;
+  const shotAvg   = (seasonStats.totalShots     ?? 0) / apps;
+  const soaAvg    = ((seasonStats.goals ?? 0) + (seasonStats.assists ?? 0)) / apps;
+  const xGAvg     = (seasonStats.expectedGoals  ?? 0) / apps;
+  const tackleAvg = (seasonStats.tackles        ?? 0) / apps;
+  const saveAvg   = recentGames.length
+    ? saveVals.reduce((a, b) => a + b, 0) / recentGames.length
+    : 0;
 
-  const goalHitRate = goalVals.filter(v => v >= goalThreshold).length / recentGames.length;
-  const sotHitRate  = sotVals.filter(v => v >= sotThreshold).length / recentGames.length;
+  // ── Shot profile (accuracy + quality, for outfield players) ───────────────
+  const recentShotAvg = shotVals.length ? shotVals.reduce((a, b) => a + b, 0) / shotVals.length : 0;
+  const recentSotAvg  = sotVals.length  ? sotVals.reduce((a, b)  => a + b, 0) / sotVals.length  : 0;
+  const sotPct = recentShotAvg > 0 ? Math.round((recentSotAvg / recentShotAvg) * 100) : null;
 
-  const goalBreakdown = computeRelNew({ vals: goalVals, threshold: goalThreshold, config: SOCCER_CONFIG });
-  const sotBreakdown  = computeRelNew({ vals: sotVals, threshold: sotThreshold, config: SOCCER_CONFIG });
+  // ── Position-adaptive card definitions ─────────────────────────────────────
+  let cards: CheckerCardDef[];
 
-  const goalTier = getConfidenceTier(goalBreakdown.finalReliability);
-  const sotTier  = getConfidenceTier(sotBreakdown.finalReliability);
-  const gc = CONFIDENCE_COLORS[goalTier];
-  const sc = CONFIDENCE_COLORS[sotTier];
+  if (pos === "G") {
+    // GK: Saves (two thresholds)
+    const saveThr = saveAvg >= 3.5 ? 3.5 : saveAvg >= 2.0 ? 2.5 : 1.5;
+    cards = [
+      { label: `Saves ≥${saveThr}`, vals: saveVals, threshold: saveThr,
+        avg: saveAvg, avgLabel: `avg ${saveAvg.toFixed(1)} saves/game` },
+      { label: "Saves ≥1.5", vals: saveVals, threshold: 1.5,
+        avg: saveAvg, avgLabel: `last ${recentGames.length} games` },
+    ];
+  } else if (pos === "D") {
+    // Defender: Goals, SOT, Tackles
+    const sotThr = sotAvg >= 0.6 ? 0.5 : null;
+    const tklThr = tackleAvg >= 3 ? 2.5 : tackleAvg >= 1.5 ? 1.5 : 0.5;
+    cards = [
+      { label: "Goal Scorer (0.5+)", vals: goalVals, threshold: 0.5,
+        avg: goalAvg, avgLabel: `avg ${goalAvg.toFixed(2)} goals/game` },
+      ...(sotThr !== null ? [{
+        label: "Shots on Target (0.5+)", vals: sotVals, threshold: sotThr,
+        avg: sotAvg, avgLabel: `avg ${sotAvg.toFixed(1)} SOT/game`,
+      }] : []),
+      { label: `Tackles ≥${tklThr}`, vals: tackleVals, threshold: tklThr,
+        avg: tackleAvg, avgLabel: `avg ${tackleAvg.toFixed(1)} tackles/game` },
+    ];
+  } else if (pos === "M") {
+    // Midfielder: Score/Assist, SOT, Goals
+    const sotThr = sotAvg >= 1.2 ? 1.5 : 0.5;
+    cards = [
+      { label: "Score or Assist (0.5+)", vals: soaVals, threshold: 0.5,
+        avg: soaAvg, avgLabel: `avg ${soaAvg.toFixed(2)} G+A/game` },
+      { label: `Shots on Target ≥${sotThr}`, vals: sotVals, threshold: sotThr,
+        avg: sotAvg, avgLabel: `avg ${sotAvg.toFixed(1)} SOT/game` },
+      { label: "Goal Scorer (0.5+)", vals: goalVals, threshold: 0.5,
+        avg: goalAvg, avgLabel: `avg ${goalAvg.toFixed(2)} goals/game` },
+    ];
+  } else {
+    // Forward (F/A) + default: Goals, SOT, Score/Assist
+    const sotThr = sotAvg >= 1.2 ? 1.5 : 0.5;
+    cards = [
+      { label: "Goal Scorer (0.5+)", vals: goalVals, threshold: 0.5,
+        avg: goalAvg, avgLabel: `avg ${goalAvg.toFixed(2)} goals/game` },
+      { label: `Shots on Target ≥${sotThr}`, vals: sotVals, threshold: sotThr,
+        avg: sotAvg, avgLabel: `avg ${sotAvg.toFixed(1)} SOT/game` },
+      { label: "Score or Assist (0.5+)", vals: soaVals, threshold: 0.5,
+        avg: soaAvg, avgLabel: `avg ${soaAvg.toFixed(2)} G+A/game` },
+    ];
+  }
 
   return (
     <div className="px-6 py-4 border-b border-white/5 bg-[#0d1421]">
       <div className="text-[9px] font-black uppercase tracking-[0.15em] text-[#374151] mb-3">
         Bet Checker · Last {recentGames.length} Games
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className={`rounded-xl p-3 border ${gc.border} ${gc.bg}`}>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] text-[#6B7280] font-medium">Goal Scorer (0.5+)</span>
-            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${gc.bg} ${gc.text}`}>
-              {CONFIDENCE_LABEL[goalTier]}
-            </span>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className={`text-2xl font-black tabular-nums ${gc.text}`}>
-              {Math.round(goalHitRate * 100)}%
-            </span>
-            <span className="text-[10px] text-[#6B7280]">hit rate</span>
-          </div>
-          <div className="h-[3px] bg-white/5 rounded-full overflow-hidden mt-2 mb-1.5">
-            <div className={`h-full rounded-full ${gc.bar}`} style={{ width: `${Math.round(goalBreakdown.finalReliability * 100)}%` }} />
-          </div>
-          <div className="text-[9px] text-[#4B5563]">avg {goalAvg.toFixed(2)} / game</div>
-        </div>
 
-        <div className={`rounded-xl p-3 border ${sc.border} ${sc.bg}`}>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] text-[#6B7280] font-medium">Shots on Target ≥{sotThreshold}</span>
-            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${sc.bg} ${sc.text}`}>
-              {CONFIDENCE_LABEL[sotTier]}
-            </span>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className={`text-2xl font-black tabular-nums ${sc.text}`}>
-              {Math.round(sotHitRate * 100)}%
-            </span>
-            <span className="text-[10px] text-[#6B7280]">hit rate</span>
-          </div>
-          <div className="h-[3px] bg-white/5 rounded-full overflow-hidden mt-2 mb-1.5">
-            <div className={`h-full rounded-full ${sc.bar}`} style={{ width: `${Math.round(sotBreakdown.finalReliability * 100)}%` }} />
-          </div>
-          <div className="text-[9px] text-[#4B5563]">avg {sotAvg.toFixed(2)} / game</div>
-        </div>
+      <div className={`grid gap-3 ${cards.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+        {cards.map((def, i) => <CheckerCard key={i} def={def} />)}
       </div>
+
+      {/* Shot profile — outfield players only */}
+      {pos !== "G" && (recentShotAvg > 0 || xGAvg > 0) && (
+        <div className="mt-3 flex items-center gap-4 px-1">
+          <div className="text-[9px] font-bold text-[#374151] uppercase tracking-widest shrink-0">Shot Profile</div>
+          <div className="flex items-center gap-3 flex-wrap">
+            {recentShotAvg > 0 && (
+              <span className="text-[10px] text-[#6B7280]">
+                <span className="text-white font-bold tabular-nums">{recentShotAvg.toFixed(1)}</span> shots/g
+              </span>
+            )}
+            {recentSotAvg > 0 && (
+              <span className="text-[10px] text-[#6B7280]">
+                <span className="text-white font-bold tabular-nums">{recentSotAvg.toFixed(1)}</span> SOT/g
+              </span>
+            )}
+            {sotPct !== null && (
+              <span className="text-[10px] text-[#6B7280]">
+                <span className={`font-bold tabular-nums ${sotPct >= 40 ? "text-[#22C55E]" : sotPct >= 25 ? "text-[#F59E0B]" : "text-[#EF4444]"}`}>
+                  {sotPct}%
+                </span> on target
+              </span>
+            )}
+            {xGAvg > 0.02 && (
+              <span className="text-[10px] text-[#6B7280]">
+                xG <span className={`font-bold tabular-nums ${xGAvg >= 0.25 ? "text-[#22C55E]" : xGAvg >= 0.10 ? "text-[#F59E0B]" : "text-[#6B7280]"}`}>
+                  {xGAvg.toFixed(2)}
+                </span>/g
+              </span>
+            )}
+            {shotAvg > 0 && xGAvg > 0.02 && (
+              <span className="text-[10px] text-[#6B7280]">
+                xG/shot <span className="font-bold tabular-nums text-[#6B7280]">
+                  {(xGAvg / Math.max(shotAvg, 0.1)).toFixed(2)}
+                </span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -294,7 +399,9 @@ export default function SoccerPlayerDrawer({ data: preData, player: prePlayer, t
           </button>
         </div>
 
-        {ss && recentGames.length > 0 && <BetChecker recentGames={recentGames} seasonStats={ss} />}
+        {ss && recentGames.length > 0 && (
+          <BetChecker recentGames={recentGames} seasonStats={ss} position={player.position} />
+        )}
 
         <div className="p-6 space-y-8 flex-1">
           {loading && <div className="text-center py-20 text-text-2">Loading stats...</div>}
@@ -356,14 +463,46 @@ export default function SoccerPlayerDrawer({ data: preData, player: prePlayer, t
             </section>
           )}
           
-          {data?.vsOpponent && (
-            <section>
-              <div className="text-[9px] font-black uppercase tracking-widest text-text-2 mb-2">vs This Opponent</div>
-              <div className="bg-white/[0.01] rounded-xl border border-white/[0.05] px-3">
-                <GameLogRow game={data.vsOpponent} />
-              </div>
-            </section>
-          )}
+          {(() => {
+            // Resolve vsOpponent + vsHistory regardless of which drawer path was used:
+            // Path 1 (player list click): data.vsOpponent = SofascoreGameLog | null, data.vsHistory = SofascoreGameLog[]
+            // Path 2 (kitchen click via preData): data.vsOpponent = { lastMatchup, history }
+            const hasWrapper = data?.vsOpponent && typeof data.vsOpponent === "object" && "lastMatchup" in data.vsOpponent;
+            const lastMatchup: SofascoreGameLog | null = hasWrapper
+              ? (data.vsOpponent as { lastMatchup: SofascoreGameLog | null }).lastMatchup
+              : (data?.vsOpponent?.eventId ? data.vsOpponent : null);
+            const allHistory: SofascoreGameLog[] = hasWrapper
+              ? ((data.vsOpponent as { history: SofascoreGameLog[] }).history ?? [])
+              : (Array.isArray(data?.vsHistory) ? data.vsHistory : []);
+
+            // Filter to last 3 years
+            const cutoff = new Date();
+            cutoff.setFullYear(cutoff.getFullYear() - 3);
+            const cutoffStr = cutoff.toISOString().slice(0, 10);
+            const recentHistory = allHistory.filter((g: SofascoreGameLog) => g.date >= cutoffStr);
+
+            if (!lastMatchup && recentHistory.length === 0) return null;
+
+            return (
+              <section className="space-y-2">
+                <div className="text-[9px] font-black uppercase tracking-widest text-text-2">
+                  vs This Opponent
+                  {recentHistory.length > 1 && (
+                    <span className="ml-2 text-[8px] font-normal opacity-60">last 3 years</span>
+                  )}
+                </div>
+                <div className="bg-white/[0.01] rounded-xl border border-white/[0.05] px-3">
+                  {recentHistory.length > 0
+                    ? recentHistory.map((g: SofascoreGameLog, i: number) => <GameLogRow key={i} game={g} />)
+                    : lastMatchup && <GameLogRow game={lastMatchup} />
+                  }
+                </div>
+                {recentHistory.length === 0 && lastMatchup && (
+                  <p className="text-[9px] text-text-2 opacity-50 px-1">Most recent matchup shown. No head-to-head in last 3 years.</p>
+                )}
+              </section>
+            );
+          })()}
 
           <a
             href={`https://www.sofascore.com/player/${player.name.toLowerCase().replace(/\s+/g, "-")}/${player.id}`}
