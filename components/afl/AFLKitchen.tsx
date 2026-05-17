@@ -330,7 +330,7 @@ function ValuePickCard({ leg, index, isHit, onPlayerClick }: { leg: KitchenLeg; 
   const hex    = CONFIDENCE_HEX[tier];
 
   return (
-    <div className={`p-3 border-b border-r border-border/30 last:border-r-0 flex flex-col gap-2 ${isHit ? "bg-[#22C55E]/5" : ""}`}>
+    <div className={`p-3 rounded-xl border border-border/30 flex flex-col gap-2 ${isHit ? "bg-[#22C55E]/5 border-[#22C55E]/30" : "bg-surface/40"}`}>
       {/* Player header */}
       <div className="flex items-start justify-between gap-1">
         <div className="min-w-0">
@@ -412,7 +412,7 @@ function ValuePicks({ legs, boxScore, onPlayerClick }: { legs: KitchenLeg[]; box
         <span className="ml-auto text-[11px] text-text-2 font-medium">{legs.length} picks</span>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 p-3">
         {legs.map((leg, i) => {
           const isHit = checkSlipHits([leg], boxScore)[0] ?? false;
           return <ValuePickCard key={i} leg={leg} index={i} isHit={isHit} onPlayerClick={onPlayerClick} />;
