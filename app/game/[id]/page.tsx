@@ -13,7 +13,7 @@ import {
 } from "@/lib/sports/espn";
 import { computeAFLPlayerPicks, type AFLPlayerPick, type AFLPickStat } from "@/lib/sports/afl/picks";
 import { checkLegHit, getLegCurrentValue } from "@/lib/sports/slipTracker";
-import { computeAFLKitchen, type KitchenSlip } from "@/lib/sports/afl/kitchen";
+import { computeAFLKitchen, type KitchenSlip, type AFLGameMeta } from "@/lib/sports/afl/kitchen";
 import { computeNBAPlayerPicks, type NBAPlayerPick } from "@/lib/sports/nba/picks";
 import { computeNBAKitchen, type NBAKitchenSlip } from "@/lib/sports/nba/kitchen";
 import { resolveTeamCanonicalId } from "@/lib/mappings";
@@ -270,15 +270,52 @@ export default async function GameDetailPage({
   let aflPropOdds = new Map<string, { price: number; line: number; bookmaker: string }>();
   let aflKitchenSlips: KitchenSlip[] = [];
   if (isAFL) {
-    // Extract last 5 completed game event IDs for each team from their schedules
-    const completedHomeIds = homeSchedule
+    // Extract last 5 completed games with full metadata for intelligence signals
+    const completedHomeGames = homeSchedule
       .filter((e: any) => e.competitions?.[0]?.status?.type?.state === "post")
-      .slice(0, 5)
-      .map((e: any) => String(e.id));
-    const completedAwayIds = awaySchedule
+      .slice(0, 5);
+    const completedAwayGames = awaySchedule
       .filter((e: any) => e.competitions?.[0]?.status?.type?.state === "post")
-      .slice(0, 5)
-      .map((e: any) => String(e.id));
+      .slice(0, 5);
+
+    const completedHomeIds = completedHomeGames.map((e: any) => String(e.id));
+    const completedAwayIds = completedAwayGames.map((e: any) => String(e.id));
+
+    // Build per-game context (venue + opponent + date) for intelligence signals
+    const homeTeamEspnId = String(game.homeTeam.espnId ?? "");
+    const awayTeamEspnId = String(game.awayTeam.espnId ?? "");
+
+    const homeGameMeta: AFLGameMeta[] = completedHomeGames.map((e: any) => ({
+      venueName:  String(e.competitions?.[0]?.venue?.fullName ?? ""),
+      opponentId: String(
+        e.competitions?.[0]?.competitors
+          ?.find((c: any) => String(c.team?.id) !== homeTeamEspnId)
+          ?.team?.id ?? ""
+      ),
+      gameDate: e.date ?? "",
+    }));
+
+    const awayGameMeta: AFLGameMeta[] = completedAwayGames.map((e: any) => ({
+      venueName:  String(e.competitions?.[0]?.venue?.fullName ?? ""),
+      opponentId: String(
+        e.competitions?.[0]?.competitors
+          ?.find((c: any) => String(c.team?.id) !== awayTeamEspnId)
+          ?.team?.id ?? ""
+      ),
+      gameDate: e.date ?? "",
+    }));
+
+    // Compute rest days: days between most recent completed game and today's kickoff
+    const daysBetween = (a: string, b: string): number => {
+      const d1 = new Date(a).getTime();
+      const d2 = new Date(b).getTime();
+      return Math.round(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24));
+    };
+    const kickoffStr  = game.kickoff ?? new Date().toISOString();
+    const lastHomeDate = homeGameMeta.map(m => m.gameDate).filter(Boolean).sort().pop() ?? "";
+    const lastAwayDate = awayGameMeta.map(m => m.gameDate).filter(Boolean).sort().pop() ?? "";
+    const homeRestDays = lastHomeDate ? daysBetween(lastHomeDate, kickoffStr) : 0;
+    const awayRestDays = lastAwayDate ? daysBetween(lastAwayDate, kickoffStr) : 0;
 
     const [squiggleStandings, propOddsResult, ...rawBoxScores] = await Promise.all([
       fetchAFLStandings(),
@@ -305,8 +342,8 @@ export default async function GameDetailPage({
     aflPlayerPicks = computeAFLPlayerPicks({
       homeGames:    homeBoxScores,
       awayGames:    awayBoxScores,
-      homeTeamId:   game.homeTeam.espnId ?? "",
-      awayTeamId:   game.awayTeam.espnId ?? "",
+      homeTeamId:   homeTeamEspnId,
+      awayTeamId:   awayTeamEspnId,
       homeAbbr:     game.homeTeam.shortName,
       awayAbbr:     game.awayTeam.shortName,
       homeInjuries,
@@ -314,13 +351,20 @@ export default async function GameDetailPage({
     });
 
     aflKitchenSlips = computeAFLKitchen({
-      homeGames:  homeBoxScores,
-      awayGames:  awayBoxScores,
-      homeTeamId: game.homeTeam.espnId ?? "",
-      awayTeamId: game.awayTeam.espnId ?? "",
-      homeAbbr:   game.homeTeam.shortName,
-      awayAbbr:   game.awayTeam.shortName,
-      propOdds:   aflPropOdds,
+      homeGames:     homeBoxScores,
+      awayGames:     awayBoxScores,
+      homeTeamId:    homeTeamEspnId,
+      awayTeamId:    awayTeamEspnId,
+      homeAbbr:      game.homeTeam.shortName,
+      awayAbbr:      game.awayTeam.shortName,
+      propOdds:      aflPropOdds,
+      // ── Intelligence signals ──
+      homeGameMeta,
+      awayGameMeta,
+      currentVenue:  game.venue ?? "",
+      weather:       game.weather ? { condition: game.weather.condition, windKph: game.weather.windKph } : null,
+      homeRestDays,
+      awayRestDays,
     });
   }
 

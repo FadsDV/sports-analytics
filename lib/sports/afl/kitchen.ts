@@ -22,12 +22,34 @@
  *                 Sorted by edge (avg − line) × odds.
  *
  * Same player max 2× per slip (different stat). Min 5 games.
+ *
+ * Phase 3 — Intelligence Signals:
+ *   Each leg's reliability is adjusted by up to ±0.20 based on four signals:
+ *     1. Rest days  — <6 days since last game: −0.05 (fatigue)
+ *     2. Venue history — player's avg at this ground vs season avg (±0.08 max)
+ *     3. Opponent rank — how much of this stat the opponent concedes (±0.10 max)
+ *     4. Weather      — rain/wind reduce scoring stats (−0.08 max)
  */
 
 import type { AFLGamePlayerStats } from "@/lib/sports/espn";
 import type { AFLPickStat } from "./picks";
 import { computeReliability, AFL_CONFIG } from "@/lib/sports/reliability/engine";
 import type { ReliabilityBreakdown } from "@/lib/sports/reliability/types";
+
+// ─── Intelligence context ─────────────────────────────────────────────────────
+
+/**
+ * Per-game metadata for a completed AFL game in the history window.
+ * Extracted from ESPN team schedule data and passed into the kitchen.
+ */
+export interface AFLGameMeta {
+  /** ESPN venue name (e.g. "Melbourne Cricket Ground") */
+  venueName:  string;
+  /** ESPN team ID of the OPPONENT in that game */
+  opponentId: string;
+  /** ISO 8601 date string from ESPN (e.g. "2025-04-12T08:35Z") */
+  gameDate:   string;
+}
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -57,6 +79,12 @@ export interface KitchenLeg {
   prop?:         { price: number; line: number; bookmaker: string };
   /** Value only: how far the book line sits below the player's average */
   edge?:         number;
+  /**
+   * Net intelligence signal applied to this leg's reliability.
+   * Positive = favorable context (good venue/opponent/rest).
+   * Negative = unfavorable context (bad weather/fatigue/tough opponent).
+   */
+  signalTotal?:  number;
 }
 
 export interface KitchenSlip {
@@ -126,6 +154,78 @@ function findBestThreshold(
   return best;
 }
 
+// ─── Intelligence signals ─────────────────────────────────────────────────────
+
+interface IntelligenceSignals {
+  restDaysPenalty:   number;  // negative: fatigue from short turnaround
+  venueBoost:        number;  // +/- based on player's history at this ground
+  opponentRankBoost: number;  // +/- based on how much this stat opponent concedes
+  weatherPenalty:    number;  // negative: rain/wind hurts scoring stats
+}
+
+/**
+ * How much does this team's output for `stat` change when facing `opponentId`
+ * vs their overall average? Returns a reliability adjustment in [-0.10, +0.10].
+ */
+function computeOpponentRankBoost(
+  gamesByGame: AFLGamePlayerStats[][],
+  gameMeta:    AFLGameMeta[],
+  teamId:      string,
+  stat:        AFLPickStat,
+  opponentId:  string,
+): number {
+  if (!opponentId || gameMeta.length === 0) return 0;
+
+  // Sum stat across all team players per game, grouped by opponent
+  const byOpponent = new Map<string, number[]>();
+
+  gamesByGame.forEach((game, i) => {
+    const meta = gameMeta[i];
+    if (!meta?.opponentId) return;
+    const teamTotal = game
+      .filter(p => p.teamId === teamId)
+      .reduce((sum, p) => sum + (p[stat] ?? 0), 0);
+    const opp = meta.opponentId;
+    if (!byOpponent.has(opp)) byOpponent.set(opp, []);
+    byOpponent.get(opp)!.push(teamTotal);
+  });
+
+  const allTotals = Array.from(byOpponent.values()).flat();
+  if (allTotals.length < 3) return 0;
+  const overallAvg = mean(allTotals);
+  if (overallAvg === 0) return 0;
+
+  const vsToday = byOpponent.get(opponentId);
+  if (!vsToday || vsToday.length < 2) return 0;
+
+  const ratio = mean(vsToday) / overallAvg;
+  // Dampen: 20% above average → +0.10 boost, 20% below → -0.10 penalty
+  return Math.max(-0.10, Math.min(0.10, (ratio - 1.0) * 0.5));
+}
+
+/** Weather-derived reliability penalty per stat. */
+function computeWeatherPenalty(
+  stat:    AFLPickStat,
+  weather: { condition: string; windKph: number } | null | undefined,
+): number {
+  if (!weather) return 0;
+  const isWet  = ["Rain", "Storm"].includes(weather.condition);
+  const wind   = weather.windKph;
+
+  switch (stat) {
+    case "G":
+      return Math.max(-0.10, (isWet ? -0.04 : 0) + (wind > 60 ? -0.06 : wind > 40 ? -0.03 : 0));
+    case "D":
+      return (isWet ? -0.03 : 0) + (wind > 60 ? -0.02 : 0);
+    case "M":
+      return (isWet ? -0.02 : 0) + (wind > 40 ? -0.02 : 0);
+    case "T":
+    case "HO":
+    default:
+      return 0;
+  }
+}
+
 // ─── Player profile builder ───────────────────────────────────────────────────
 
 interface Profile {
@@ -139,35 +239,67 @@ interface Profile {
   isOnForm:      boolean;  // last 3g avg ≥ season avg × 1.10
   isBounceBack:  boolean;
   gamesAnalyzed: number;
+  signals:       IntelligenceSignals;
 }
 
 function buildProfiles(
-  gamesByGame: AFLGamePlayerStats[][],
-  teamId:      string,
-  side:        "home" | "away",
-  teamAbbr:    string,
+  gamesByGame:   AFLGamePlayerStats[][],
+  gameMeta:      AFLGameMeta[],
+  teamId:        string,
+  opponentId:    string,
+  side:          "home" | "away",
+  teamAbbr:      string,
+  currentVenue:  string,
+  restDays:      number,
+  weather:       { condition: string; windKph: number } | null | undefined,
 ): Profile[] {
-  const playerStats = new Map<string, Record<AFLPickStat, number[]>>();
-
-  for (const game of gamesByGame) {
-    for (const p of game) {
-      if (p.teamId !== teamId) continue;
-      if (!playerStats.has(p.name)) {
-        playerStats.set(p.name, { D: [], G: [], M: [], T: [], HO: [] });
-      }
-      const m = playerStats.get(p.name)!;
-      m.D.push(p.D);
-      m.G.push(p.G);
-      m.M.push(p.M);
-      m.T.push(p.T);
-      m.HO.push(p.HO);
-    }
-  }
-
-  const profiles: Profile[] = [];
   const STATS: AFLPickStat[] = ["D", "G", "M", "T", "HO"];
 
-  for (const [name, statMap] of Array.from(playerStats.entries())) {
+  // Build per-player, per-stat: ordered vals AND a gameIndex→value map for venue lookup
+  const playerVals     = new Map<string, Record<AFLPickStat, number[]>>();
+  const playerGameVals = new Map<string, Record<AFLPickStat, Map<number, number>>>();
+
+  gamesByGame.forEach((game, gameIdx) => {
+    for (const p of game) {
+      if (p.teamId !== teamId) continue;
+      if (!playerVals.has(p.name)) {
+        playerVals.set(p.name,     { D: [], G: [], M: [], T: [], HO: [] });
+        playerGameVals.set(p.name, {
+          D:  new Map(), G: new Map(), M:  new Map(),
+          T:  new Map(), HO: new Map(),
+        });
+      }
+      const v  = playerVals.get(p.name)!;
+      const gv = playerGameVals.get(p.name)!;
+      for (const s of STATS) {
+        const val = p[s] ?? 0;
+        v[s].push(val);
+        gv[s].set(gameIdx, val);
+      }
+    }
+  });
+
+  // Pre-compute opponent rank signal for each stat (team-level, not player-level)
+  const oppRankByStatCache = new Map<AFLPickStat, number>();
+  for (const stat of STATS) {
+    oppRankByStatCache.set(
+      stat,
+      computeOpponentRankBoost(gamesByGame, gameMeta, teamId, stat, opponentId),
+    );
+  }
+
+  // Rest days penalty: <6 days is a short turnaround
+  const restDaysPenalty = restDays > 0 && restDays < 6 ? -0.05 : 0;
+
+  // Venue indices: which game indices were played at the current venue
+  const venueIndices = gameMeta
+    .map((m, i) => (m.venueName && currentVenue && m.venueName === currentVenue ? i : -1))
+    .filter(i => i >= 0);
+
+  const profiles: Profile[] = [];
+
+  for (const [name, statMap] of Array.from(playerVals.entries())) {
+    const gameValMap = playerGameVals.get(name)!;
     for (const stat of STATS) {
       const vals = statMap[stat];
       if (vals.length < 5) continue;
@@ -180,9 +312,29 @@ function buildProfiles(
       const lastGame     = vals[vals.length - 1] ?? 0;
       const isBounceBack = lastGame < avg * 0.65 && avg >= MIN_AVG[stat] * 1.5;
 
+      // ── Venue history signal ────────────────────────────────────────────────
+      let venueBoost = 0;
+      if (venueIndices.length >= 3) {
+        const venueVals = venueIndices
+          .map(i => gameValMap[stat].get(i))
+          .filter((v): v is number => v !== undefined);
+        if (venueVals.length >= 3 && avg > 0) {
+          const ratio = mean(venueVals) / avg;
+          venueBoost = Math.max(-0.08, Math.min(0.08, (ratio - 1.0) * 0.4));
+        }
+      }
+
+      const signals: IntelligenceSignals = {
+        restDaysPenalty,
+        venueBoost,
+        opponentRankBoost: oppRankByStatCache.get(stat) ?? 0,
+        weatherPenalty:    computeWeatherPenalty(stat, weather),
+      };
+
       profiles.push({
         name, side, teamAbbr, stat, vals, avg,
         recentAvg, isOnForm, isBounceBack, gamesAnalyzed: vals.length,
+        signals,
       });
     }
   }
@@ -242,6 +394,14 @@ function buildLegs(
     let reliability = breakdown.finalReliability;
     if (tier.formBonus > 0 && p.isOnForm) reliability = Math.min(1.0, reliability + tier.formBonus);
 
+    // Apply intelligence signals
+    const signalTotal =
+      p.signals.restDaysPenalty +
+      p.signals.venueBoost +
+      p.signals.opponentRankBoost +
+      p.signals.weatherPenalty;
+    reliability = Math.max(0, Math.min(1.0, reliability + signalTotal));
+
     if (reliability < tier.minReliability || reliability > tier.maxReliability) continue;
 
     candidates.push({
@@ -265,6 +425,13 @@ function buildLegs(
 
     const prop = propOdds.get(`${p.name}|${p.stat}`);
 
+    const legSignalTotal = Math.round(
+      (p.signals.restDaysPenalty +
+       p.signals.venueBoost +
+       p.signals.opponentRankBoost +
+       p.signals.weatherPenalty) * 100
+    ) / 100;
+
     legs.push({
       player:        p.name,
       side:          p.side,
@@ -280,6 +447,7 @@ function buildLegs(
       isBounceBack:  p.isBounceBack,
       isOnForm:      p.isOnForm,
       prop,
+      signalTotal:   legSignalTotal,
     });
 
     playerCount.set(p.name, used + 1);
@@ -379,11 +547,35 @@ export function computeAFLKitchen(params: {
   homeAbbr:   string;
   awayAbbr:   string;
   propOdds:   Map<string, { price: number; line: number; bookmaker: string }>;
+  // ── Intelligence signals (all optional — degrade gracefully if absent) ──
+  /** Per-game context for home team's recent history */
+  homeGameMeta?:   AFLGameMeta[];
+  /** Per-game context for away team's recent history */
+  awayGameMeta?:   AFLGameMeta[];
+  /** Venue name for today's game (e.g. "Melbourne Cricket Ground") */
+  currentVenue?:   string;
+  /** Weather at game time */
+  weather?:        { condition: string; windKph: number } | null;
+  /** Days since home team's last game (0 = unknown) */
+  homeRestDays?:   number;
+  /** Days since away team's last game (0 = unknown) */
+  awayRestDays?:   number;
 }): KitchenSlip[] {
-  const { homeGames, awayGames, homeTeamId, awayTeamId, homeAbbr, awayAbbr, propOdds } = params;
+  const {
+    homeGames, awayGames, homeTeamId, awayTeamId, homeAbbr, awayAbbr, propOdds,
+    homeGameMeta = [], awayGameMeta = [],
+    currentVenue = "", weather = null,
+    homeRestDays = 0, awayRestDays = 0,
+  } = params;
 
-  const homeProfiles = buildProfiles(homeGames, homeTeamId, "home", homeAbbr);
-  const awayProfiles = buildProfiles(awayGames, awayTeamId, "away", awayAbbr);
+  const homeProfiles = buildProfiles(
+    homeGames, homeGameMeta, homeTeamId, awayTeamId,
+    "home", homeAbbr, currentVenue, homeRestDays, weather,
+  );
+  const awayProfiles = buildProfiles(
+    awayGames, awayGameMeta, awayTeamId, homeTeamId,
+    "away", awayAbbr, currentVenue, awayRestDays, weather,
+  );
   const all = [...homeProfiles, ...awayProfiles];
 
   // ── 1. Safe ───────────────────────────────────────────────────────────────

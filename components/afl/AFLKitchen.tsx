@@ -187,8 +187,20 @@ function LegRow({ leg, isHit, currentValue, onPlayerClick }: { leg: KitchenLeg; 
         ) : null}
       </div>
       {/* Context */}
-      <div className="text-[10px] text-text-2 mt-0.5">
-        avg {leg.avgStat} · {leg.gamesAnalyzed}g
+      <div className="text-[10px] text-text-2 mt-0.5 flex items-center gap-1.5">
+        <span>avg {leg.avgStat} · {leg.gamesAnalyzed}g</span>
+        {typeof leg.signalTotal === "number" && Math.abs(leg.signalTotal) >= 0.02 && (
+          <span
+            title={`Intelligence signals: ${leg.signalTotal > 0 ? "+" : ""}${Math.round(leg.signalTotal * 100)}% context boost`}
+            className={`text-[9px] font-bold px-1 py-px rounded leading-none ${
+              leg.signalTotal > 0
+                ? "text-[#22C55E] bg-[#22C55E]/10"
+                : "text-[#F59E0B] bg-[#F59E0B]/10"
+            }`}
+          >
+            {leg.signalTotal > 0 ? "+" : ""}{Math.round(leg.signalTotal * 100)}%
+          </span>
+        )}
       </div>
       {/* Live progress bar with moving pill */}
       {showBar && (
