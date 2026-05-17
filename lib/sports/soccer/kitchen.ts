@@ -121,16 +121,36 @@ function computeRestDaysPenalty(restDays: number): number {
   return 0;
 }
 
+/**
+ * Usage concentration boost.
+ *
+ * If a player's team has fewer high-impact attacking teammates in the current
+ * lineup, that player is likely to receive more touches and scoring chances.
+ * Applies only to attacking stats (goals, assists, scoreOrAssist, shots, SOT).
+ *
+ * "High-impact" = teamate whose avg (goals + assists) across recent games >= 0.30.
+ * - 0 such teammates: player is the sole creator → +0.05
+ * - 1 such teammate: thin attack, sharing with one other → +0.02
+ * - 2+ such teammates: normal competition, no adjustment
+ */
 function computeUsageBoost(
   player: SoccerPlayerProfile,
   allPlayers: SoccerPlayerProfile[],
+  stat: string,
 ): number {
-  const myTeam = allPlayers.filter(p => p.teamName === player.teamName && p.sofaId !== player.sofaId);
-  // Simple heuristic: if a top playmaker or scorer is missing, others get a usage boost.
-  // In our current 'players' input, we only have starters. 
-  // We'd need the full squad to truly see who is missing, 
-  // but we can look for high-impact teammates NOT in the starters list.
-  return 0; // Placeholder until we have full squad access
+  if (!["goals", "assists", "scoreOrAssist", "shots", "shotsOnTarget"].includes(stat)) return 0;
+
+  const teammates = allPlayers.filter(p => p.teamName === player.teamName && p.sofaId !== player.sofaId);
+  if (teammates.length === 0) return 0;
+
+  const highImpact = teammates.filter(t => {
+    const soa = mean(t.games.map(g => (g.goals ?? 0) + (g.assists ?? 0)));
+    return soa >= 0.30;
+  });
+
+  if (highImpact.length === 0) return 0.05;   // sole creator on the team
+  if (highImpact.length === 1) return 0.02;   // thin attack — sharing with one other
+  return 0;                                    // normal lineup — no adjustment
 }
 
 function computeRotationPenalty(games: SofascoreGameLog[]): number {
@@ -376,26 +396,22 @@ function buildMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
     ? input.awayTeamStats.corners / input.awayTeamStats.matches : null;
   if (hCorners !== null && aCorners !== null) {
     const matchAvg = hCorners + aCorners;
+    // Synthesize a game-by-game sample from season averages so the engine can
+    // apply its sample-factor and consistency-factor properly.
+    const n = Math.min(Math.max(input.homeTeamStats?.matches ?? 10, input.awayTeamStats?.matches ?? 10), 30);
+    const syntheticVals = Array.from({ length: n }, () => matchAvg);
     for (const thr of [9.5, 8.5, 7.5]) {
-      const estHR = thr < matchAvg * 0.82 ? 0.72 : thr < matchAvg * 0.95 ? 0.60 : 0;
-      if (estHR >= 0.60) {
-        const breakdown: ReliabilityBreakdown = {
-          weightedHitRate: estHR,
-          consistencyFactor: 1.0,
-          sampleFactor: 1.0,
-          minutesFactor: 1.0,
-          contextualBonus: 0,
-          finalReliability: estHR,
-        };
-
+      if (thr >= matchAvg * 0.95) continue; // threshold above avg — skip
+      const breakdown = computeReliability({ vals: syntheticVals, threshold: thr, config: SOCCER_CONFIG });
+      if (breakdown.finalReliability >= 0.52) {
         legs.push({
           legType: "match", stat: "corners",
           statLabel: `Corners Over ${thr}`,
           threshold: thr, direction: "over",
-          hitRate: estHR,
-          reliability: estHR,
+          hitRate: breakdown.weightedHitRate,
+          reliability: breakdown.finalReliability,
           avgStat: Math.round(matchAvg * 10) / 10,
-          gamesAnalyzed: Math.min(input.homeTeamStats?.matches ?? 10, 30),
+          gamesAnalyzed: n,
           breakdown,
           isOnForm: false, isBounceBack: false,
         });
@@ -416,25 +432,21 @@ function buildCardMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
 
   if (hCards !== null && aCards !== null) {
     const matchAvg = hCards + aCards;
+    const n = Math.min(Math.max(input.homeTeamStats?.matches ?? 10, input.awayTeamStats?.matches ?? 10), 30);
+    const syntheticVals = Array.from({ length: n }, () => matchAvg);
     for (const thr of [3.5, 2.5]) {
-      const estHR = thr < matchAvg * 0.80 ? 0.70 : thr < matchAvg * 0.95 ? 0.60 : 0;
-      if (estHR >= 0.60) {
+      if (thr >= matchAvg * 0.95) continue;
+      const breakdown = computeReliability({ vals: syntheticVals, threshold: thr, config: SOCCER_CONFIG });
+      if (breakdown.finalReliability >= 0.52) {
         legs.push({
           legType: "match", stat: "totalCards",
           statLabel: `Total Cards Over ${thr}`,
           threshold: thr, direction: "over",
-          hitRate: estHR,
-          reliability: estHR,
+          hitRate: breakdown.weightedHitRate,
+          reliability: breakdown.finalReliability,
           avgStat: Math.round(matchAvg * 10) / 10,
-          gamesAnalyzed: Math.min(input.homeTeamStats?.matches ?? 10, 30),
-          breakdown: {
-            weightedHitRate: estHR,
-            consistencyFactor: 1.0,
-            sampleFactor: 1.0,
-            minutesFactor: 1.0,
-            contextualBonus: 0,
-            finalReliability: estHR,
-          },
+          gamesAnalyzed: n,
+          breakdown,
           isOnForm: false, isBounceBack: false,
         });
         break;
@@ -476,7 +488,7 @@ interface PlayerProfile {
   recentAvg:    number;
   isOnForm:     boolean;
   isBounceBack: boolean;
-  signals:      { oppBoost: number; weatherPenalty: number; venueBoost: number; restPenalty: number; rotationPenalty: number; setPieceBonus: number };
+  signals:      { oppBoost: number; weatherPenalty: number; venueBoost: number; restPenalty: number; rotationPenalty: number; setPieceBonus: number; usageBoost: number };
 }
 
 function getVals(games: SofascoreGameLog[], key: PlayerStatConfig["key"]): number[] {
@@ -522,25 +534,28 @@ function buildPlayerProfiles(input: SoccerKitchenInput): PlayerProfile[] {
 
       const opponentStats = p.side === "home" ? input.awayTeamStats : input.homeTeamStats;
       let oppBoost = 0;
-      if (opponentStats && opponentStats.matches > 0) {
+      if (opponentStats && opponentStats.matches > 0 && avg > 0) {
         if (sc.stat === "goals" || sc.stat === "scoreOrAssist") {
+          // How many goals does the opponent concede per game vs this player's own avg?
           const oppConcededAvg = opponentStats.goalsConceded / opponentStats.matches;
-          oppBoost = computeOpponentRankBoost(1.5, oppConcededAvg);
+          oppBoost = computeOpponentRankBoost(avg, oppConcededAvg);
         } else if (sc.stat === "shotsOnTarget" || sc.stat === "shots") {
+          // Proxy: total shots faced by opponent = goals conceded + saves
           const sOTConceded = (opponentStats.goalsConceded + (opponentStats.saves ?? 0)) / opponentStats.matches;
-          oppBoost = computeOpponentRankBoost(4.5, sOTConceded);
+          oppBoost = computeOpponentRankBoost(avg, sOTConceded);
         }
       }
 
-      const weatherPenalty = computeWeatherPenalty(sc.stat, input.weather);
-      const venueBoost = computeVenueBoost(p.side);
-      const restPenalty = computeRestDaysPenalty(p.side === "home" ? input.homeRestDays ?? 0 : input.awayRestDays ?? 0);
+      const weatherPenalty  = computeWeatherPenalty(sc.stat, input.weather);
+      const venueBoost      = computeVenueBoost(p.side);
+      const restPenalty     = computeRestDaysPenalty(p.side === "home" ? input.homeRestDays ?? 0 : input.awayRestDays ?? 0);
       const rotationPenalty = computeRotationPenalty(p.games);
-      const setPieceBonus = computeSetPieceBonus(p, sc.stat);
+      const setPieceBonus   = computeSetPieceBonus(p, sc.stat);
+      const usageBoost      = computeUsageBoost(p, input.players, sc.stat);
 
       profiles.push({
         player: p, stat: sc, vals, avg, recentAvg, isOnForm, isBounceBack,
-        signals: { oppBoost, weatherPenalty, venueBoost, restPenalty, rotationPenalty, setPieceBonus }
+        signals: { oppBoost, weatherPenalty, venueBoost, restPenalty, rotationPenalty, setPieceBonus, usageBoost }
       });
     }
   }
@@ -593,19 +608,19 @@ function buildPlayerLegs(
       hitRate   = hr(prof.vals, threshold);
     }
 
-    const signalTotal = prof.signals.oppBoost + prof.signals.weatherPenalty + prof.signals.venueBoost + 
-                      prof.signals.restPenalty + prof.signals.rotationPenalty + prof.signals.setPieceBonus;
+    const signalTotal = prof.signals.oppBoost + prof.signals.weatherPenalty + prof.signals.venueBoost +
+                        prof.signals.restPenalty + prof.signals.rotationPenalty + prof.signals.setPieceBonus +
+                        prof.signals.usageBoost;
 
     const breakdown = computeReliability({
       vals: prof.vals,
-      threshold: threshold,
+      threshold,
       config: SOCCER_CONFIG,
-      contextualBonus: Math.max(0, signalTotal),
     });
 
-    let rel = breakdown.finalReliability;
-    if (signalTotal < 0) rel = Math.max(0, rel + signalTotal);
-    if (prof.isOnForm) rel = Math.min(1, rel + tier.formBonus);
+    // Apply signals uniformly after engine (same pattern as AFL kitchen)
+    let rel = Math.max(0, Math.min(1.0, breakdown.finalReliability + signalTotal));
+    if (prof.isOnForm) rel = Math.min(1.0, rel + tier.formBonus);
 
     if (rel < tier.minRel) continue;
 
@@ -736,16 +751,15 @@ export function computeSoccerKitchen(input: SoccerKitchenInput): SoccerKitchenSl
       hitRate   = found.hitRate;
     }
 
-    const signalTotal = prof.signals.oppBoost + prof.signals.weatherPenalty + prof.signals.venueBoost + 
-                      prof.signals.restPenalty + prof.signals.rotationPenalty + prof.signals.setPieceBonus;
+    const signalTotal = prof.signals.oppBoost + prof.signals.weatherPenalty + prof.signals.venueBoost +
+                        prof.signals.restPenalty + prof.signals.rotationPenalty + prof.signals.setPieceBonus +
+                        prof.signals.usageBoost;
     const breakdown = computeReliability({
       vals: prof.vals,
       threshold,
       config: SOCCER_CONFIG,
-      contextualBonus: Math.max(0, signalTotal),
     });
-    let rel = breakdown.finalReliability;
-    if (signalTotal < 0) rel = Math.max(0, rel + signalTotal);
+    let rel = Math.max(0, Math.min(1.0, breakdown.finalReliability + signalTotal));
 
     const edge = prof.avg - threshold;
     if (edge <= 0 || rel < 0.18) continue;

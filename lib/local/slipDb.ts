@@ -110,9 +110,14 @@ function initSchema(db: Database.Database): void {
 // ─── Migrations (run after initSchema to patch existing DBs) ─────────────────
 
 function runMigrations(db: Database.Database): void {
-  // Phase 3 → add signal_total column to legs
+  // Add signal_total column to legs
   try {
     db.exec(`ALTER TABLE legs ADD COLUMN signal_total REAL`);
+  } catch { /* column already exists — safe to ignore */ }
+
+  // Add sport column to games (afl | soccer | nba)
+  try {
+    db.exec(`ALTER TABLE games ADD COLUMN sport TEXT DEFAULT 'afl'`);
   } catch { /* column already exists — safe to ignore */ }
 }
 
@@ -126,6 +131,7 @@ export interface SlipLogGame {
   gameDate?: string;
   round?:    string;
   season?:   number;
+  sport?:    string;  // 'afl' | 'soccer' | 'nba' — defaults to 'afl'
 }
 
 export interface SlipLogLeg {
@@ -166,8 +172,8 @@ export function logSlips(game: SlipLogGame, slips: SlipLogSlip[]): void {
 
     // Upsert game
     db.prepare(`
-      INSERT OR IGNORE INTO games (id, home_team, away_team, venue, game_date, round, season)
-      VALUES (@id, @homeTeam, @awayTeam, @venue, @gameDate, @round, @season)
+      INSERT OR IGNORE INTO games (id, home_team, away_team, venue, game_date, round, season, sport)
+      VALUES (@id, @homeTeam, @awayTeam, @venue, @gameDate, @round, @season, @sport)
     `).run({
       id:       game.id,
       homeTeam: game.homeTeam,
@@ -176,6 +182,7 @@ export function logSlips(game: SlipLogGame, slips: SlipLogSlip[]): void {
       gameDate: game.gameDate ?? null,
       round:    game.round ?? null,
       season:   game.season ?? null,
+      sport:    game.sport ?? "afl",
     });
 
     const insertSlip = db.prepare(`
@@ -383,6 +390,114 @@ export function resolveOutcomes(gameId: string, statLines: PlayerStatLine[]): vo
   }
 }
 
+// ─── Soccer outcome resolution ────────────────────────────────────────────────
+
+/**
+ * Final player stats for a soccer match, sourced from Sofascore lineup data.
+ * Sent from the client after the game finishes.
+ */
+export interface SoccerStatLine {
+  player:        string;   // player.name from Sofascore
+  playerId:      number;   // Sofascore player ID
+  goals:         number;   // stats.goals
+  assists:       number;   // stats.goalAssist
+  shots:         number;   // stats.totalScoringAttempt
+  shotsOnTarget: number;   // stats.onTargetScoringAttempt
+  yellowCards:   number;   // stats.yellowCard
+}
+
+/**
+ * Resolve outcomes for a finished soccer game.
+ *
+ * Handles soccer-specific stat keys including the composite `scoreOrAssist`
+ * (= goals + assists). All other mapping is 1:1 with SoccerStatLine fields.
+ * Only updates legs where hit IS NULL (idempotent).
+ */
+export function resolveSoccerOutcomes(gameId: string, statLines: SoccerStatLine[]): void {
+  try {
+    const db = getDb();
+
+    type LegRow = { id: number; slip_id: number; player: string; stat: string; threshold: number };
+    const unresolved = db.prepare(`
+      SELECT id, slip_id, player, stat, threshold
+      FROM legs
+      WHERE game_id = ? AND hit IS NULL
+    `).all(gameId) as LegRow[];
+
+    if (unresolved.length === 0) return;
+
+    const updateLeg = db.prepare(`
+      UPDATE legs SET actual_stat = @actualStat, hit = @hit WHERE id = @id
+    `);
+
+    // Index lines by normalised name for fast lookup (plain object, no Map)
+    const byName: Record<string, SoccerStatLine> = {};
+    for (const line of statLines) {
+      byName[normName(line.player)] = line;
+    }
+
+    const findSoccerLine = (target: string): SoccerStatLine | undefined => {
+      const norm = normName(target);
+      if (byName[norm]) return byName[norm];
+      // Last-name suffix fallback (≥5 chars)
+      const suffix = norm.slice(-7);
+      if (suffix.length >= 5) {
+        const keys = Object.keys(byName);
+        for (let i = 0; i < keys.length; i++) {
+          if (keys[i].endsWith(suffix)) return byName[keys[i]];
+        }
+      }
+      return undefined;
+    };
+
+    const getSoccerStatValue = (line: SoccerStatLine, stat: string): number => {
+      switch (stat) {
+        case "goals":         return line.goals;
+        case "assists":       return line.assists;
+        case "scoreOrAssist": return line.goals + line.assists;
+        case "shots":         return line.shots;
+        case "shotsOnTarget": return line.shotsOnTarget;
+        case "yellowCards":   return line.yellowCards;
+        default:              return 0;
+      }
+    };
+
+    const transaction = db.transaction(() => {
+      for (const leg of unresolved) {
+        const line = findSoccerLine(leg.player);
+        if (!line) continue;
+
+        const actualStat = getSoccerStatValue(line, leg.stat);
+        const hit        = actualStat >= leg.threshold ? 1 : 0;
+        updateLeg.run({ id: leg.id, actualStat, hit });
+      }
+
+      // Roll up hit_count and all_hit on each affected slip
+      const slips = db.prepare(
+        `SELECT id, leg_count FROM slips WHERE game_id = ?`
+      ).all(gameId) as { id: number; leg_count: number }[];
+
+      const countHits     = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE slip_id = ? AND hit = 1`);
+      const countResolved = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE slip_id = ? AND hit IS NOT NULL`);
+      const updateSlip    = db.prepare(
+        `UPDATE slips SET hit_count = @hitCount, all_hit = @allHit WHERE id = @slipId`
+      );
+
+      for (const slip of slips) {
+        const resolved = (countResolved.get(slip.id) as { n: number }).n;
+        if (resolved === 0) continue;
+        const hits = (countHits.get(slip.id) as { n: number }).n;
+        updateSlip.run({ slipId: slip.id, hitCount: hits, allHit: hits >= slip.leg_count ? 1 : 0 });
+      }
+    });
+
+    transaction();
+    console.info(`[slipDb] resolveSoccerOutcomes ${gameId}: ${unresolved.length} legs processed`);
+  } catch (err) {
+    console.error("[slipDb] resolveSoccerOutcomes error:", err);
+  }
+}
+
 /**
  * Reset outcomes for a game — sets hit = NULL so resolveOutcomes can re-run.
  * Use this to clear incorrect data from the bug where hit was hardcoded false.
@@ -424,29 +539,31 @@ export interface SlipHitStats {
   avgLegCount: number;
 }
 
-/** Per-slip-type breakdown with full/partial/bust counts. */
-export function getSlipHitStats(): SlipHitStats[] {
+/** Per-slip-type breakdown with full/partial/bust counts. Optional sport filter. */
+export function getSlipHitStats(sport?: string): SlipHitStats[] {
   try {
     const db = getDb();
+    const sportClause = sport ? `JOIN games g ON g.id = s.game_id WHERE g.sport = '${sport}'` : "";
     return db.prepare(`
       SELECT
-        slip_type    AS slipType,
-        bookie,
+        s.slip_type  AS slipType,
+        s.bookie,
         COUNT(*)     AS totalSlips,
-        SUM(CASE WHEN all_hit IS NOT NULL THEN 1 ELSE 0 END)           AS resolvedSlips,
-        SUM(CASE WHEN all_hit = 1 THEN 1 ELSE 0 END)                   AS fullHits,
-        SUM(CASE WHEN all_hit = 0 AND hit_count > 0 THEN 1 ELSE 0 END) AS partialHits,
-        SUM(CASE WHEN all_hit = 0 AND (hit_count = 0 OR hit_count IS NULL) AND all_hit IS NOT NULL THEN 1 ELSE 0 END) AS busts,
-        CASE WHEN SUM(CASE WHEN all_hit IS NOT NULL THEN 1 ELSE 0 END) > 0
+        SUM(CASE WHEN s.all_hit IS NOT NULL THEN 1 ELSE 0 END)           AS resolvedSlips,
+        SUM(CASE WHEN s.all_hit = 1 THEN 1 ELSE 0 END)                   AS fullHits,
+        SUM(CASE WHEN s.all_hit = 0 AND s.hit_count > 0 THEN 1 ELSE 0 END) AS partialHits,
+        SUM(CASE WHEN s.all_hit = 0 AND (s.hit_count = 0 OR s.hit_count IS NULL) AND s.all_hit IS NOT NULL THEN 1 ELSE 0 END) AS busts,
+        CASE WHEN SUM(CASE WHEN s.all_hit IS NOT NULL THEN 1 ELSE 0 END) > 0
           THEN ROUND(
-            CAST(SUM(CASE WHEN all_hit = 1 THEN 1 ELSE 0 END) AS REAL)
-            / SUM(CASE WHEN all_hit IS NOT NULL THEN 1 ELSE 0 END), 3)
+            CAST(SUM(CASE WHEN s.all_hit = 1 THEN 1 ELSE 0 END) AS REAL)
+            / SUM(CASE WHEN s.all_hit IS NOT NULL THEN 1 ELSE 0 END), 3)
           ELSE NULL
         END          AS hitRate,
-        ROUND(AVG(leg_count), 1) AS avgLegCount
-      FROM slips
-      GROUP BY slip_type, bookie
-      ORDER BY slip_type, bookie
+        ROUND(AVG(s.leg_count), 1) AS avgLegCount
+      FROM slips s
+      ${sportClause}
+      GROUP BY s.slip_type, s.bookie
+      ORDER BY s.slip_type, s.bookie
     `).all() as SlipHitStats[];
   } catch {
     return [];
@@ -463,24 +580,27 @@ export interface OverallStats {
   slipHitRate:   number | null;
 }
 
-/** Top-level summary numbers for the dashboard header. */
-export function getOverallStats(): OverallStats {
+/** Top-level summary numbers for the dashboard header. Optional sport filter. */
+export function getOverallStats(sport?: string): OverallStats {
   try {
     const db = getDb();
-    const games  = db.prepare(`SELECT COUNT(*) as n FROM games`).get() as { n: number };
-    const resolved = db.prepare(
-      `SELECT COUNT(DISTINCT game_id) as n FROM legs WHERE hit IS NOT NULL`
-    ).get() as { n: number };
-    const slips  = db.prepare(`SELECT COUNT(*) as n FROM slips`).get() as { n: number };
-    const legs   = db.prepare(`SELECT COUNT(*) as n FROM legs`).get() as { n: number };
-    const legRes = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE hit IS NOT NULL`).get() as { n: number };
-    const legHit = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE hit = 1`).get() as { n: number };
-    const slipHit = db.prepare(`
+    // Build reusable sport-scoped subqueries
+    const sportGames  = sport ? `SELECT id FROM games WHERE sport = '${sport}'` : `SELECT id FROM games`;
+    const gameFilter  = `game_id IN (${sportGames})`;
+    const slipFilter  = `game_id IN (${sportGames})`;
+
+    const games    = db.prepare(`SELECT COUNT(*) as n FROM games ${sport ? `WHERE sport = '${sport}'` : ""}`).get() as { n: number };
+    const resolved = db.prepare(`SELECT COUNT(DISTINCT game_id) as n FROM legs WHERE hit IS NOT NULL AND ${gameFilter}`).get() as { n: number };
+    const slips    = db.prepare(`SELECT COUNT(*) as n FROM slips WHERE ${slipFilter}`).get() as { n: number };
+    const legs     = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE ${gameFilter}`).get() as { n: number };
+    const legRes   = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE hit IS NOT NULL AND ${gameFilter}`).get() as { n: number };
+    const legHit   = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE hit = 1 AND ${gameFilter}`).get() as { n: number };
+    const slipHit  = db.prepare(`
       SELECT
         CASE WHEN SUM(CASE WHEN all_hit IS NOT NULL THEN 1 ELSE 0 END) > 0
           THEN ROUND(CAST(SUM(all_hit) AS REAL) / SUM(CASE WHEN all_hit IS NOT NULL THEN 1 ELSE 0 END), 3)
           ELSE NULL END AS rate
-      FROM slips
+      FROM slips WHERE ${slipFilter}
     `).get() as { rate: number | null };
 
     return {
@@ -511,9 +631,12 @@ export interface ReliabilityBandStats {
  * Model calibration: compare predicted reliability vs actual hit rate.
  * Reveals whether the reliability engine is over/underconfident.
  */
-export function getReliabilityCalibration(): ReliabilityBandStats[] {
+export function getReliabilityCalibration(sport?: string): ReliabilityBandStats[] {
   try {
     const db = getDb();
+    const sportClause = sport
+      ? `AND game_id IN (SELECT id FROM games WHERE sport = '${sport}')`
+      : "";
     const bands = [
       { band: "Elite",    min: 0.85, max: 1.01, mid: 0.92 },
       { band: "High",     min: 0.70, max: 0.85, mid: 0.77 },
@@ -530,6 +653,7 @@ export function getReliabilityCalibration(): ReliabilityBandStats[] {
         FROM legs
         WHERE reliability >= @min AND reliability < @max
           AND hit IS NOT NULL
+          ${sportClause}
       `).get({ min: b.min, max: b.max }) as { legs: number; hits: number };
 
       return {
@@ -560,10 +684,13 @@ export interface PlayerLegStats {
   drift:       number | null;  // actualHitRate - avgReliability (negative = model overconfident)
 }
 
-/** Per-player, per-stat accuracy. Minimum 2 resolved legs. */
-export function getPlayerStatHitRate(): PlayerLegStats[] {
+/** Per-player, per-stat accuracy. Minimum 2 resolved legs. Optional sport filter. */
+export function getPlayerStatHitRate(sport?: string): PlayerLegStats[] {
   try {
     const db = getDb();
+    const sportClause = sport
+      ? `AND game_id IN (SELECT id FROM games WHERE sport = '${sport}')`
+      : "";
     return db.prepare(`
       SELECT
         player,
@@ -582,6 +709,7 @@ export function getPlayerStatHitRate(): PlayerLegStats[] {
           ELSE NULL END AS drift
       FROM legs
       WHERE hit IS NOT NULL
+        ${sportClause}
       GROUP BY player, stat
       HAVING COUNT(*) >= 2
       ORDER BY drift ASC  -- worst model errors first (most overconfident)
@@ -604,10 +732,11 @@ export interface RecentGameSummary {
   hitLegs:       number;
 }
 
-/** Last N games with outcome summary. */
-export function getRecentGames(limit = 15): RecentGameSummary[] {
+/** Last N games with outcome summary. Optional sport filter. */
+export function getRecentGames(limit = 15, sport?: string): RecentGameSummary[] {
   try {
     const db = getDb();
+    const sportClause = sport ? `WHERE g.sport = '${sport}'` : "";
     return db.prepare(`
       SELECT
         g.id         AS gameId,
@@ -623,6 +752,7 @@ export function getRecentGames(limit = 15): RecentGameSummary[] {
       FROM games g
       LEFT JOIN slips s ON s.game_id = g.id
       LEFT JOIN legs l  ON l.slip_id = s.id
+      ${sportClause}
       GROUP BY g.id
       ORDER BY g.game_date DESC, g.created_at DESC
       LIMIT ?

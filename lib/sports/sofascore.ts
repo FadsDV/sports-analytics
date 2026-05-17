@@ -536,11 +536,12 @@ export async function fetchPlayerSeasonStats(
 
 export async function fetchPlayerRecentGames(
   playerId:        number,
-  opponentTeamId?: number
-): Promise<{ recentGames: SofascoreGameLog[]; vsOpponent: SofascoreGameLog | null }> {
+  opponentTeamId?: number,
+  playerTeamId?:   number,
+): Promise<{ recentGames: SofascoreGameLog[]; vsOpponent: SofascoreGameLog | null; vsHistory: SofascoreGameLog[] }> {
   const eventsUrl = `${BASE}/player/${playerId}/events/last/0`;
   const eventsData = await sofaFetch(eventsUrl, 1800) as Record<string, unknown> | null;
-  if (!eventsData) return { recentGames: [], vsOpponent: null };
+  if (!eventsData) return { recentGames: [], vsOpponent: null, vsHistory: [] };
 
   const events = (eventsData.events as unknown[]) ?? [];
   const finished = events.filter((e: unknown) => {
@@ -549,16 +550,16 @@ export async function fetchPlayerRecentGames(
     return status === "finished";
   });
 
-  const last5 = finished.slice(0, 8);
+  const last8 = finished.slice(0, 8);
 
-  const vsEvent = opponentTeamId
-    ? finished.find((e: unknown) => {
+  const vsEvents = opponentTeamId
+    ? finished.filter((e: unknown) => {
         const ev = e as Record<string, unknown>;
         const hId = ((ev.homeTeam as Record<string, unknown>)?.id as number);
         const aId = ((ev.awayTeam as Record<string, unknown>)?.id as number);
         return hId === opponentTeamId || aId === opponentTeamId;
-      })
-    : null;
+      }).slice(0, 5)
+    : [];
 
   const toGameLog = async (e: unknown): Promise<SofascoreGameLog> => {
     const ev = e as Record<string, unknown>;
@@ -575,7 +576,14 @@ export async function fetchPlayerRecentGames(
     const ps = (statsData?.statistics ?? statsData ?? {}) as Record<string, unknown>;
     const n = (k: string) => (typeof ps[k] === "number" ? ps[k] as number : null);
 
-    const playerTeamId = (ev.homeTeam as Record<string, unknown>)?.id as number ?? null;
+    // Resolve which team the player was on in this game
+    const htId = (ht?.id as number) ?? 0;
+    const atId = (at?.id as number) ?? 0;
+    let resolvedPlayerTeamId: number | null = null;
+    if (playerTeamId) {
+      if (htId === playerTeamId) resolvedPlayerTeamId = htId;
+      else if (atId === playerTeamId) resolvedPlayerTeamId = atId;
+    }
 
     return {
       eventId,
@@ -584,9 +592,9 @@ export async function fetchPlayerRecentGames(
       awayTeam:      (at?.name as string) ?? "",
       homeScore:     (hs?.current as number) ?? 0,
       awayScore:     (as_?.current as number) ?? 0,
-      homeTeamId:    (ht?.id as number) ?? 0,
-      awayTeamId:    (at?.id as number) ?? 0,
-      playerTeamId:  null, // resolved client-side from homeTeamId/awayTeamId
+      homeTeamId:    htId,
+      awayTeamId:    atId,
+      playerTeamId:  resolvedPlayerTeamId,
       goals:         n("goals"),
       assists:       n("goalAssist") ?? n("assists"),
       rating:        n("rating"),
@@ -606,12 +614,17 @@ export async function fetchPlayerRecentGames(
     };
   };
 
-  const [recentGames, vsOpponentLog] = await Promise.all([
-    Promise.all(last5.map(toGameLog)),
-    vsEvent ? toGameLog(vsEvent) : Promise.resolve(null),
+  // Fetch recent games and all vs-opponent history in parallel
+  const [recentGames, vsLogs] = await Promise.all([
+    Promise.all(last8.map(toGameLog)),
+    Promise.all(vsEvents.map(toGameLog)),
   ]);
 
-  return { recentGames, vsOpponent: vsOpponentLog };
+  return {
+    recentGames,
+    vsOpponent: vsLogs[0] ?? null,
+    vsHistory:  vsLogs,
+  };
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────────

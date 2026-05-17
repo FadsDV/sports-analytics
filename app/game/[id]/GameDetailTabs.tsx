@@ -32,6 +32,7 @@ import SoccerKitchen from "@/components/soccer/SoccerKitchen";
 import type { SoccerPlayerAnalyticsResult } from "@/lib/sports/soccer/types";
 import type { SofascorePlayer } from "@/lib/sports/sofascore";
 import type { SoccerKitchenSlip } from "@/lib/sports/soccer/kitchen";
+import { filterSoccerSlipsForBookie, SOCCER_BOOKIES } from "@/lib/sports/soccer/bookies";
 import { buildSlipColorMap, type SlipEntry } from "@/lib/sports/slipTracker";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1959,23 +1960,46 @@ export default function GameDetailTabs({
     setSoccerKitchenDrawer(null);
 
     try {
-      const oppId = sofascore?.homeTeamId === p.id ? sofascore?.awayTeamId : sofascore?.homeTeamId;
-      const res = await fetch(`/api/soccer/player/${p.id}?opponentTeamId=${oppId}&tournamentId=${sofascore?.tournamentId}`);
+      // Determine side first, then derive team/opponent IDs from that
+      const side        = (sofascore?.lineups?.home ?? []).some(x => x.id === p.id) ? "home" : "away";
+      const oppId       = side === "home" ? sofascore?.awayTeamId : sofascore?.homeTeamId;
+      const myTeamId    = side === "home" ? sofascore?.homeTeamId : sofascore?.awayTeamId;
+      const params      = new URLSearchParams();
+      if (oppId)        params.set("opponentTeamId", String(oppId));
+      if (myTeamId)     params.set("playerTeamId",   String(myTeamId));
+      if (sofascore?.tournamentId) params.set("tournamentId", String(sofascore.tournamentId));
+
+      const res = await fetch(`/api/soccer/player/${p.id}?${params}`);
       if (res.ok) {
         const result = await res.json();
-        // Transform API result to SoccerPlayerAnalyticsResult
-        const side = (sofascore?.lineups?.home ?? []).some(x => x.id === p.id) ? "home" : "away";
         const teamName = side === "home" ? game.homeTeam.name : game.awayTeam.name;
         const teamAbbr = side === "home" ? game.homeTeam.shortName : game.awayTeam.shortName;
         const opponent = side === "home" ? game.awayTeam.name : game.homeTeam.name;
 
-        // Trends (simplified)
-        const recent = result.recentGames || [];
+        // Compute home/away split averages from recent games (now that playerTeamId is set)
+        type RG = { playerTeamId: number | null; homeTeamId: number; goals: number | null; assists: number | null; shots: number | null; shotsOnTarget: number | null; rating: number | null };
+        const recent: RG[] = result.recentGames ?? [];
+        const homeGames = recent.filter((g: RG) => g.playerTeamId !== null && g.playerTeamId === g.homeTeamId);
+        const awayGames = recent.filter((g: RG) => g.playerTeamId !== null && g.playerTeamId !== g.homeTeamId);
+
+        const avgOf = (games: RG[], key: keyof RG): number | null => {
+          const vals = games.map(g => g[key] as number | null).filter((v): v is number => v !== null);
+          return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
+        };
+
+        const mkAvg = (games: RG[]): Record<string, number | null> =>
+          games.length >= 2
+            ? { goals: avgOf(games, "goals"), assists: avgOf(games, "assists"), shots: avgOf(games, "shots"), shotsOnTarget: avgOf(games, "shotsOnTarget"), rating: avgOf(games, "rating") }
+            : { goals: null, assists: null, shots: null, shotsOnTarget: null, rating: null };
+
+        const homeAvg = mkAvg(homeGames);
+        const awayAvg = mkAvg(awayGames);
+
         const trends = {
-          goals: recent.map((g: any) => g.goals ?? 0),
-          shots: recent.map((g: any) => g.totalShots ?? 0),
-          shotsOnTarget: recent.map((g: any) => g.shotsOnTarget ?? 0),
-          rating: recent.map((g: any) => g.rating ?? 0),
+          goals:         recent.map((g: RG) => g.goals         ?? 0),
+          shots:         recent.map((g: RG) => g.shots         ?? 0),
+          shotsOnTarget: recent.map((g: RG) => g.shotsOnTarget ?? 0),
+          rating:        recent.map((g: RG) => g.rating        ?? 0),
         };
 
         setSoccerKitchenDrawer({
@@ -1986,13 +2010,14 @@ export default function GameDetailTabs({
           jersey: p.jerseyNumber,
           headshot: `https://img.sofascore.com/api/v1/player/${p.id}/image`,
           teamName, teamAbbr, opponent, side,
-          seasonStats: result.seasonStats,
-          recentGames: result.recentGames,
+          seasonStats:  result.seasonStats,
+          recentGames:  result.recentGames,
           vsOpponent: {
-            lastMatchup: result.vsOpponent,
-            history: [],
+            lastMatchup: result.vsOpponent ?? null,
+            history:     result.vsHistory  ?? [],
           },
-          homeAvg: {}, awayAvg: {},
+          homeAvg,
+          awayAvg,
           trends,
         });
       }
@@ -2003,6 +2028,8 @@ export default function GameDetailTabs({
 
   // Bookie tab state for AFL kitchen
   const [bookieTab, setBookieTab] = useState<"generic" | "bet365" | "dabble">("generic");
+  // Bookie tab state for Soccer kitchen
+  const [soccerBookieTab, setSoccerBookieTab] = useState<"generic" | "bet365">("generic");
 
   // ── Slip logger: save AFL kitchen to local DB when kitchen tab opens ──────────
   const slipsSaved = useRef(false);
@@ -2101,6 +2128,99 @@ export default function GameDetailTabs({
       body:    JSON.stringify({ gameId: id, statLines }),
     }).catch(err => console.warn("[slips] outcome resolve failed:", err));
   }, [isAFL, game.status, game.boxScore, id]);
+
+  // ── Soccer slip logger: save soccer kitchen to local DB when slips are available ─
+  const soccerSlipsSaved = useRef(false);
+  useEffect(() => {
+    if (!isSoccer || !soccerKitchenSlips || soccerKitchenSlips.length === 0) return;
+    if (soccerSlipsSaved.current) return;
+    soccerSlipsSaved.current = true;
+
+    const gameDate = game.kickoff ? game.kickoff.slice(0, 10) : new Date().toISOString().slice(0, 10);
+
+    // Only log player-type legs — team/match legs cannot be resolved from Sofascore lineups
+    const mapLegs = (legs: typeof soccerKitchenSlips[0]["legs"]) =>
+      legs
+        .filter(l => l.legType === "player" && l.player)
+        .map(l => ({
+          player:        l.player!,
+          teamAbbr:      l.teamAbbr ?? "",
+          side:          l.side ?? "home",
+          stat:          l.stat,
+          statLabel:     l.statLabel,
+          threshold:     l.threshold,
+          avgStat:       l.avgStat,
+          hitRate:       l.hitRate,
+          reliability:   l.reliability,
+          isOnForm:      l.isOnForm,
+          isBounceBack:  l.isBounceBack,
+          gamesAnalyzed: l.gamesAnalyzed,
+          signalTotal:   l.signalTotal,
+          prop:          l.prop,
+          edge:          l.edge,
+        }));
+
+    const payload = {
+      game: {
+        id:       id,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name,
+        gameDate,
+        sport:    "soccer",
+      },
+      slips: soccerKitchenSlips
+        .map(s => ({
+          slipType: s.type,
+          bookie:   "generic",
+          legs:     mapLegs(s.legs),
+        }))
+        .filter(s => s.legs.length > 0),
+    };
+
+    if (payload.slips.length === 0) return;
+
+    fetch("/api/slips/save", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload),
+    }).catch(err => console.warn("[slips] soccer save failed:", err));
+  }, [isSoccer, soccerKitchenSlips, id, game]);
+
+  // ── Soccer outcome resolver: auto-check results when a finished soccer game loads ─
+  const soccerOutcomesResolved = useRef(false);
+  useEffect(() => {
+    if (!isSoccer || game.status !== "finished") return;
+    if (!sofascore?.lineups) return;
+    if (soccerOutcomesResolved.current) return;
+    soccerOutcomesResolved.current = true;
+
+    // Build SoccerStatLine from Sofascore lineup player statistics
+    // Sofascore stat keys: goals, goalAssist, onTargetScoringAttempt, totalScoringAttempt, yellowCard
+    const allPlayers = [
+      ...(sofascore.lineups.home ?? []),
+      ...(sofascore.lineups.away ?? []),
+    ];
+
+    const statLines = allPlayers
+      .filter(p => p.name && p.name !== "Unknown" && p.minutesPlayed != null && (p.minutesPlayed ?? 0) > 0)
+      .map(p => ({
+        player:        p.name,
+        playerId:      p.id,
+        goals:         Number(p.stats["goals"]                   ?? 0),
+        assists:       Number(p.stats["goalAssist"]              ?? 0),
+        shots:         Number(p.stats["totalScoringAttempt"]     ?? 0),
+        shotsOnTarget: Number(p.stats["onTargetScoringAttempt"]  ?? 0),
+        yellowCards:   Number(p.stats["yellowCard"]              ?? 0),
+      }));
+
+    if (statLines.length === 0) return;
+
+    fetch("/api/slips/soccer-outcome", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ gameId: id, statLines }),
+    }).catch(err => console.warn("[slips] soccer outcome resolve failed:", err));
+  }, [isSoccer, game.status, sofascore?.lineups, id]);
 
   async function handleKitchenPlayerClick(playerName: string) {
     const homePlayer = homeSquad.find(p => p.displayName === playerName);
@@ -2469,14 +2589,56 @@ export default function GameDetailTabs({
               <p className="text-[10px] text-text-2">Requires at least 3 completed games per team.</p>
             </div>
       )}
-      {tab === "kitchen" && isSoccer && (
-        soccerKitchenSlips && soccerKitchenSlips.some(s => s.legs.length > 0)
-          ? <SoccerKitchen slips={soccerKitchenSlips} onPlayerClick={onSoccerKitchenClick} />
-          : <div className="bg-surface rounded-xl p-8 border border-border text-center">
-              <p className="text-sm text-text-2 mb-1">Not enough data to cook slips yet.</p>
-              <p className="text-[10px] text-text-2">Requires lineup data and at least 3 recent games per player.</p>
-            </div>
-      )}
+      {tab === "kitchen" && isSoccer && (() => {
+        const bet365SoccerSlips = soccerKitchenSlips
+          ? filterSoccerSlipsForBookie(soccerKitchenSlips, SOCCER_BOOKIES.bet365)
+          : [];
+        const activeSoccerSlips = soccerBookieTab === "bet365" ? bet365SoccerSlips : (soccerKitchenSlips ?? []);
+        const hasLegs = activeSoccerSlips.some(s => s.legs.length > 0);
+        return (
+          <>
+            {/* Bookie tab selector */}
+            {soccerKitchenSlips && soccerKitchenSlips.some(s => s.legs.length > 0) && (
+              <div className="flex items-center gap-2 mb-4 px-1">
+                <span className="text-[10px] text-text-2 uppercase tracking-widest font-bold mr-1">Bookie</span>
+                {(["generic", "bet365"] as const).map(b => (
+                  <button
+                    key={b}
+                    onClick={() => setSoccerBookieTab(b)}
+                    className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all border ${
+                      soccerBookieTab === b
+                        ? b === "bet365"
+                          ? "bg-[#00A651]/20 border-[#00A651]/50 text-[#00A651]"
+                          : "bg-primary/20 border-primary/40 text-primary"
+                        : "bg-surface border-border text-text-2 hover:text-text-1"
+                    }`}
+                  >
+                    {b === "generic" ? "All Markets" : "Bet365"}
+                  </button>
+                ))}
+                {soccerBookieTab === "bet365" && (
+                  <span className="ml-auto text-[9px] text-text-2">
+                    SGM: Goals · Assists · SOT · Shots · Cards · Team Goals · Corners
+                  </span>
+                )}
+              </div>
+            )}
+            {hasLegs
+              ? <SoccerKitchen slips={activeSoccerSlips} onPlayerClick={onSoccerKitchenClick} />
+              : <div className="bg-surface rounded-xl p-8 border border-border text-center">
+                  <p className="text-sm text-text-2 mb-1">
+                    {soccerBookieTab === "bet365" ? "No Bet365-eligible legs found." : "Not enough data to cook slips yet."}
+                  </p>
+                  <p className="text-[10px] text-text-2">
+                    {soccerBookieTab === "bet365"
+                      ? "Tackles, fouls, and saves aren't available on Bet365 SGM."
+                      : "Requires lineup data and at least 3 recent games per player."}
+                  </p>
+                </div>
+            }
+          </>
+        );
+      })()}
 
       {/* ── Overlays ─────────────────────────────────────────────────────── */}
       {isAFL && (aflKitchenLoading || aflKitchenDrawer) && (

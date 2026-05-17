@@ -10,8 +10,10 @@ export async function GET(
   const playerId = Number(params.playerId);
   const opponentTeamIdParam = req.nextUrl.searchParams.get("opponentTeamId");
   const tournamentIdParam   = req.nextUrl.searchParams.get("tournamentId");
-  const opponentTeamId = opponentTeamIdParam ? Number(opponentTeamIdParam) : undefined;
-  const tournamentIdHint    = tournamentIdParam   ? Number(tournamentIdParam)   : undefined;
+  const playerTeamIdParam   = req.nextUrl.searchParams.get("playerTeamId");
+  const opponentTeamId  = opponentTeamIdParam ? Number(opponentTeamIdParam) : undefined;
+  const tournamentIdHint = tournamentIdParam  ? Number(tournamentIdParam)   : undefined;
+  const playerTeamId    = playerTeamIdParam   ? Number(playerTeamIdParam)   : undefined;
 
   if (!playerId || isNaN(playerId)) {
     return NextResponse.json({ error: "Invalid playerId" }, { status: 400 });
@@ -19,7 +21,7 @@ export async function GET(
 
   const [seasonResult, gamesResult] = await Promise.all([
     fetchPlayerSeasonStats(playerId, tournamentIdHint),
-    fetchPlayerRecentGames(playerId, opponentTeamId),
+    fetchPlayerRecentGames(playerId, opponentTeamId, playerTeamId),
   ]);
 
   return NextResponse.json({
@@ -28,5 +30,6 @@ export async function GET(
     seasonId:     seasonResult?.seasonId ?? null,
     recentGames:  gamesResult.recentGames,
     vsOpponent:   gamesResult.vsOpponent,
+    vsHistory:    gamesResult.vsHistory,
   });
 }

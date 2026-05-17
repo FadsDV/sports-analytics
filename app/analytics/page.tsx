@@ -16,6 +16,8 @@ import {
 } from "@/lib/local/slipDb";
 import ResetButton from "./ResetButton";
 
+import Link from "next/link";
+
 export const metadata: Metadata = { title: "Slip Analytics · DegenHUB" };
 export const dynamic = "force-dynamic";
 
@@ -41,16 +43,28 @@ function driftColor(drift: number | null): string {
 }
 
 const SLIP_LABELS: Record<string, { emoji: string; label: string }> = {
+  // AFL
   safe:        { emoji: "🛡️", label: "Safe"         },
   doable:      { emoji: "✅", label: "Doable"       },
   goalscorers: { emoji: "🎯", label: "Goal Scorers" },
   disposals:   { emoji: "📋", label: "Disposals"    },
   ballsy:      { emoji: "🔥", label: "Ballsy"       },
   value:       { emoji: "💰", label: "Value Picks"  },
+  // Soccer
+  shots:       { emoji: "🏹", label: "Shots"        },
+  cards:       { emoji: "🟨", label: "Cards"        },
 };
 
 const STAT_LABELS: Record<string, string> = {
-  D: "Disposals", G: "Goals", M: "Marks", T: "Tackles", HO: "Hitouts", K: "Kicks", H: "Handballs",
+  // AFL
+  D:  "Disposals", G: "Goals", M: "Marks", T: "Tackles", HO: "Hitouts", K: "Kicks", H: "Handballs",
+  // Soccer
+  goals:         "Goals",
+  assists:       "Assists",
+  scoreOrAssist: "Goal or Assist",
+  shots:         "Shots",
+  shotsOnTarget: "Shots on Target",
+  yellowCards:   "Yellow Cards",
 };
 
 function fmtDate(iso: string | null): string {
@@ -81,23 +95,39 @@ function SectionHeader({ title, sub }: { title: string; sub?: string }) {
   );
 }
 
-function EmptyState({ message }: { message: string }) {
+function EmptyState({ message, sub }: { message: string; sub?: string }) {
   return (
     <div className="bg-surface rounded-xl p-8 border border-border text-center">
       <p className="text-sm text-text-2">{message}</p>
-      <p className="text-[11px] text-text-2 mt-1 opacity-60">Open some AFL game Kitchen tabs to start collecting data.</p>
+      <p className="text-[11px] text-text-2 mt-1 opacity-60">
+        {sub ?? "Open AFL or Soccer game Kitchen tabs to start collecting data."}
+      </p>
     </div>
   );
 }
 
+// ─── Sport toggle ─────────────────────────────────────────────────────────────
+
+const SPORT_FILTERS = [
+  { key: undefined,  label: "All"    },
+  { key: "afl",      label: "AFL"    },
+  { key: "soccer",   label: "Soccer" },
+] as const;
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function AnalyticsPage() {
-  const overall     = getOverallStats();
-  const slipStats   = getSlipHitStats();
-  const calibration = getReliabilityCalibration();
-  const playerStats = getPlayerStatHitRate();
-  const recentGames = getRecentGames(15);
+export default function AnalyticsPage({
+  searchParams,
+}: {
+  searchParams: { sport?: string };
+}) {
+  const sport = ["afl", "soccer"].includes(searchParams.sport ?? "") ? searchParams.sport : undefined;
+
+  const overall     = getOverallStats(sport);
+  const slipStats   = getSlipHitStats(sport);
+  const calibration = getReliabilityCalibration(sport);
+  const playerStats = getPlayerStatHitRate(sport);
+  const recentGames = getRecentGames(15, sport);
 
   const hasData = overall.totalGames > 0;
   const coverage = overall.totalLegs > 0
@@ -108,12 +138,34 @@ export default function AnalyticsPage() {
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-8">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-lg font-black text-text-1">Slip Analytics</h1>
-          <p className="text-[11px] text-text-2 mt-0.5">Local data only — never synced. Tracks every AFL kitchen generated on this machine.</p>
+          <p className="text-[11px] text-text-2 mt-0.5">Local data only — never synced. Tracks AFL and Soccer kitchens generated on this machine.</p>
         </div>
-        <ResetButton />
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Sport filter */}
+          <div className="flex items-center gap-1">
+            {SPORT_FILTERS.map(f => {
+              const isActive = sport === f.key;
+              const href = f.key ? `/analytics?sport=${f.key}` : `/analytics`;
+              return (
+                <Link
+                  key={f.label}
+                  href={href}
+                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all border ${
+                    isActive
+                      ? "bg-primary/20 border-primary/40 text-primary"
+                      : "bg-surface border-border text-text-2 hover:text-text-1"
+                  }`}
+                >
+                  {f.label}
+                </Link>
+              );
+            })}
+          </div>
+          <ResetButton />
+        </div>
       </div>
 
       {/* ── Overview chips ─────────────────────────────────────────────────── */}

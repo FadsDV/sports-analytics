@@ -94,8 +94,12 @@ function StatPill({ label, value, hi }: { label: string; value: number | null; h
 
 function GameLogRow({ game }: { game: SofascoreGameLog }) {
   const dateStr = game.date.slice(5).replace("-", "/"); // MM/DD
-  const isW = (game.teamScore ?? 0) > (game.oppScore ?? 0);
-  const isL = (game.teamScore ?? 0) < (game.oppScore ?? 0);
+  // Determine result from player's team perspective using playerTeamId
+  const playerIsHome = game.playerTeamId != null && game.playerTeamId === game.homeTeamId;
+  const teamScore = playerIsHome ? game.homeScore : game.awayScore;
+  const oppScore  = playerIsHome ? game.awayScore : game.homeScore;
+  const isW = teamScore > oppScore;
+  const isL = teamScore < oppScore;
   const res = isW ? "W" : isL ? "L" : "D";
   const resCls = isW ? "bg-[#22C55E]/20 text-[#22C55E]" : isL ? "bg-[#EF4444]/20 text-[#EF4444]" : "bg-[#F59E0B]/20 text-[#F59E0B]";
 
