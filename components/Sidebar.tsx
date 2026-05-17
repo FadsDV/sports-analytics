@@ -20,6 +20,11 @@ const NAV_EXPLORE = [
   { href: "/sports/cs2",  icon: "⊕", label: "CS2", disabled: true },
 ];
 
+const NAV_TOOLS = [
+  { href: "/analytics",  icon: "📊", label: "Slip Analytics" },
+  { href: "/betslip",    icon: "🧾", label: "Slip Checker"   },
+];
+
 // Inner component uses useSearchParams — must be inside Suspense
 function NavLinks() {
   const pathname     = usePathname();
@@ -81,6 +86,31 @@ function NavLinks() {
             </span>
           );
         }
+        return (
+          <Link
+            key={item.label}
+            href={item.href}
+            className={`flex items-center gap-3 px-2 xl:px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              isActive
+                ? "bg-primary/15 text-primary"
+                : "text-text-2 hover:text-text-1 hover:bg-surface2"
+            }`}
+          >
+            <span className="text-base shrink-0 w-5 text-center">{item.icon}</span>
+            <span className="hidden xl:block">{item.label}</span>
+          </Link>
+        );
+      })}
+
+      <div className="pt-4 pb-1 hidden xl:block">
+        <div className="px-3 text-[10px] font-semibold uppercase tracking-widest text-border">
+          Tools
+        </div>
+      </div>
+      <div className="pt-2 xl:pt-0 border-t border-border xl:border-0 mt-2 xl:mt-0" />
+
+      {NAV_TOOLS.map((item) => {
+        const isActive = pathname === item.href;
         return (
           <Link
             key={item.label}

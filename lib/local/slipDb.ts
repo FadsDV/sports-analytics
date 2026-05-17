@@ -394,23 +394,34 @@ export interface SlipHitStats {
   slipType:    string;
   bookie:      string;
   totalSlips:  number;
+  resolvedSlips: number;
   fullHits:    number;
-  hitRate:     number;
+  partialHits: number;
+  busts:       number;
+  hitRate:     number | null;
   avgLegCount: number;
 }
 
-/** Overall hit rate per slip type (for future analytics dashboard). */
+/** Per-slip-type breakdown with full/partial/bust counts. */
 export function getSlipHitStats(): SlipHitStats[] {
   try {
     const db = getDb();
     return db.prepare(`
       SELECT
-        slip_type   AS slipType,
+        slip_type    AS slipType,
         bookie,
-        COUNT(*)                                        AS totalSlips,
-        SUM(all_hit)                                    AS fullHits,
-        ROUND(AVG(CASE WHEN all_hit IS NOT NULL THEN all_hit ELSE NULL END), 3) AS hitRate,
-        ROUND(AVG(leg_count), 1)                        AS avgLegCount
+        COUNT(*)     AS totalSlips,
+        SUM(CASE WHEN all_hit IS NOT NULL THEN 1 ELSE 0 END)           AS resolvedSlips,
+        SUM(CASE WHEN all_hit = 1 THEN 1 ELSE 0 END)                   AS fullHits,
+        SUM(CASE WHEN all_hit = 0 AND hit_count > 0 THEN 1 ELSE 0 END) AS partialHits,
+        SUM(CASE WHEN all_hit = 0 AND (hit_count = 0 OR hit_count IS NULL) AND all_hit IS NOT NULL THEN 1 ELSE 0 END) AS busts,
+        CASE WHEN SUM(CASE WHEN all_hit IS NOT NULL THEN 1 ELSE 0 END) > 0
+          THEN ROUND(
+            CAST(SUM(CASE WHEN all_hit = 1 THEN 1 ELSE 0 END) AS REAL)
+            / SUM(CASE WHEN all_hit IS NOT NULL THEN 1 ELSE 0 END), 3)
+          ELSE NULL
+        END          AS hitRate,
+        ROUND(AVG(leg_count), 1) AS avgLegCount
       FROM slips
       GROUP BY slip_type, bookie
       ORDER BY slip_type, bookie
@@ -420,27 +431,180 @@ export function getSlipHitStats(): SlipHitStats[] {
   }
 }
 
-/** Per-player, per-stat hit rate across all logged legs. */
-export function getPlayerStatHitRate(): {
-  player: string; stat: string; legs: number; hits: number; hitRate: number; avgThreshold: number; avgActual: number;
-}[] {
+export interface OverallStats {
+  totalGames:    number;
+  resolvedGames: number;
+  totalSlips:    number;
+  totalLegs:     number;
+  resolvedLegs:  number;
+  legHitRate:    number | null;
+  slipHitRate:   number | null;
+}
+
+/** Top-level summary numbers for the dashboard header. */
+export function getOverallStats(): OverallStats {
+  try {
+    const db = getDb();
+    const games  = db.prepare(`SELECT COUNT(*) as n FROM games`).get() as { n: number };
+    const resolved = db.prepare(
+      `SELECT COUNT(DISTINCT game_id) as n FROM legs WHERE actual_stat > 0 AND hit IS NOT NULL`
+    ).get() as { n: number };
+    const slips  = db.prepare(`SELECT COUNT(*) as n FROM slips`).get() as { n: number };
+    const legs   = db.prepare(`SELECT COUNT(*) as n FROM legs`).get() as { n: number };
+    const legRes = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE hit IS NOT NULL AND actual_stat > 0`).get() as { n: number };
+    const legHit = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE hit = 1`).get() as { n: number };
+    const slipHit = db.prepare(`
+      SELECT
+        CASE WHEN SUM(CASE WHEN all_hit IS NOT NULL THEN 1 ELSE 0 END) > 0
+          THEN ROUND(CAST(SUM(all_hit) AS REAL) / SUM(CASE WHEN all_hit IS NOT NULL THEN 1 ELSE 0 END), 3)
+          ELSE NULL END AS rate
+      FROM slips
+    `).get() as { rate: number | null };
+
+    return {
+      totalGames:    games.n,
+      resolvedGames: resolved.n,
+      totalSlips:    slips.n,
+      totalLegs:     legs.n,
+      resolvedLegs:  legRes.n,
+      legHitRate:    legRes.n > 0 ? Math.round((legHit.n / legRes.n) * 1000) / 1000 : null,
+      slipHitRate:   slipHit.rate,
+    };
+  } catch {
+    return { totalGames: 0, resolvedGames: 0, totalSlips: 0, totalLegs: 0, resolvedLegs: 0, legHitRate: null, slipHitRate: null };
+  }
+}
+
+export interface ReliabilityBandStats {
+  band:         string;
+  minRel:       number;
+  maxRel:       number;
+  legs:         number;
+  hits:         number;
+  actualHitRate: number | null;
+  predictedMid: number;  // midpoint of the band — what the model "said"
+}
+
+/**
+ * Model calibration: compare predicted reliability vs actual hit rate.
+ * Reveals whether the reliability engine is over/underconfident.
+ */
+export function getReliabilityCalibration(): ReliabilityBandStats[] {
+  try {
+    const db = getDb();
+    const bands = [
+      { band: "Elite",    min: 0.85, max: 1.01, mid: 0.92 },
+      { band: "High",     min: 0.70, max: 0.85, mid: 0.77 },
+      { band: "Strong",   min: 0.55, max: 0.70, mid: 0.62 },
+      { band: "Risky",    min: 0.38, max: 0.55, mid: 0.46 },
+      { band: "Longshot", min: 0.00, max: 0.38, mid: 0.19 },
+    ];
+
+    return bands.map(b => {
+      const row = db.prepare(`
+        SELECT
+          COUNT(*) as legs,
+          SUM(CASE WHEN hit = 1 THEN 1 ELSE 0 END) as hits
+        FROM legs
+        WHERE reliability >= @min AND reliability < @max
+          AND hit IS NOT NULL AND actual_stat > 0
+      `).get({ min: b.min, max: b.max }) as { legs: number; hits: number };
+
+      return {
+        band:          b.band,
+        minRel:        b.min,
+        maxRel:        b.max,
+        legs:          row.legs,
+        hits:          row.hits,
+        predictedMid:  b.mid,
+        actualHitRate: row.legs > 0 ? Math.round((row.hits / row.legs) * 1000) / 1000 : null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+export interface PlayerLegStats {
+  player:      string;
+  stat:        string;
+  statLabel:   string;
+  legs:        number;
+  hits:        number;
+  hitRate:     number | null;
+  avgThreshold: number;
+  avgActual:   number;
+  avgReliability: number;
+  drift:       number | null;  // actualHitRate - avgReliability (negative = model overconfident)
+}
+
+/** Per-player, per-stat accuracy. Minimum 2 resolved legs. */
+export function getPlayerStatHitRate(): PlayerLegStats[] {
   try {
     const db = getDb();
     return db.prepare(`
       SELECT
         player,
         stat,
-        COUNT(*)                                    AS legs,
-        SUM(CASE WHEN hit = 1 THEN 1 ELSE 0 END)   AS hits,
-        ROUND(AVG(CASE WHEN hit IS NOT NULL THEN hit ELSE NULL END), 3) AS hitRate,
-        ROUND(AVG(threshold), 1)                    AS avgThreshold,
-        ROUND(AVG(actual_stat), 1)                  AS avgActual
+        stat_label      AS statLabel,
+        COUNT(*)        AS legs,
+        SUM(CASE WHEN hit = 1 THEN 1 ELSE 0 END) AS hits,
+        CASE WHEN COUNT(*) > 0
+          THEN ROUND(CAST(SUM(hit) AS REAL) / COUNT(*), 3)
+          ELSE NULL END AS hitRate,
+        ROUND(AVG(threshold), 1)    AS avgThreshold,
+        ROUND(AVG(actual_stat), 1)  AS avgActual,
+        ROUND(AVG(reliability), 3)  AS avgReliability,
+        CASE WHEN COUNT(*) > 0
+          THEN ROUND(CAST(SUM(hit) AS REAL) / COUNT(*) - AVG(reliability), 3)
+          ELSE NULL END AS drift
       FROM legs
-      WHERE hit IS NOT NULL
+      WHERE hit IS NOT NULL AND actual_stat > 0
       GROUP BY player, stat
-      HAVING COUNT(*) >= 3
-      ORDER BY hitRate DESC
-    `).all() as any[];
+      HAVING COUNT(*) >= 2
+      ORDER BY drift ASC  -- worst model errors first (most overconfident)
+    `).all() as PlayerLegStats[];
+  } catch {
+    return [];
+  }
+}
+
+export interface RecentGameSummary {
+  gameId:        string;
+  homeTeam:      string;
+  awayTeam:      string;
+  gameDate:      string | null;
+  venue:         string | null;
+  totalSlips:    number;
+  resolvedSlips: number;
+  fullHits:      number;
+  totalLegs:     number;
+  hitLegs:       number;
+}
+
+/** Last N games with outcome summary. */
+export function getRecentGames(limit = 15): RecentGameSummary[] {
+  try {
+    const db = getDb();
+    return db.prepare(`
+      SELECT
+        g.id         AS gameId,
+        g.home_team  AS homeTeam,
+        g.away_team  AS awayTeam,
+        g.game_date  AS gameDate,
+        g.venue,
+        COUNT(DISTINCT s.id)                                              AS totalSlips,
+        COUNT(DISTINCT CASE WHEN s.all_hit IS NOT NULL THEN s.id END)    AS resolvedSlips,
+        COUNT(DISTINCT CASE WHEN s.all_hit = 1 THEN s.id END)           AS fullHits,
+        COUNT(l.id)                                                       AS totalLegs,
+        SUM(CASE WHEN l.hit = 1 THEN 1 ELSE 0 END)                      AS hitLegs
+      FROM games g
+      LEFT JOIN slips s ON s.game_id = g.id
+      LEFT JOIN legs l  ON l.slip_id = s.id
+      GROUP BY g.id
+      ORDER BY g.game_date DESC, g.created_at DESC
+      LIMIT ?
+    `).all(limit) as RecentGameSummary[];
   } catch {
     return [];
   }
