@@ -161,7 +161,108 @@ interface IntelligenceSignals {
   restDaysPenalty:   number;  // negative: fatigue from short turnaround
   venueBoost:        number;  // +/- based on player's history at this ground
   opponentRankBoost: number;  // +/- based on how much this stat opponent concedes
-  weatherPenalty:    number;  // negative: rain/wind hurts scoring stats
+  weatherPenalty:    number;  // negative: rain/wind hurts scoring stats; positive: ideal conditions
+  injuryUplift:      number;  // positive: player historically benefits when key teammate is absent
+}
+
+// ─── Injury uplift helper ─────────────────────────────────────────────────────
+
+/** Normalise a name to lowercase letters only for fuzzy matching. */
+function normName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z]/g, "");
+}
+
+/**
+ * Compute per-player, per-stat injury uplift signals.
+ *
+ * For each "key absent" player today (status Out/Suspended, high historical avg):
+ *   1. Find historical games where they didn't appear in the boxscore → "without" games
+ *   2. Compare each teammate's stat in "without" games vs their season average
+ *   3. Players who outperform by ≥15% when this player is absent get a boost
+ *
+ * Returns: Map<playerName, Map<stat, reliabilityBoost>>
+ */
+function computeInjuryUpliftMap(
+  gamesByGame: AFLGamePlayerStats[][],
+  teamId:      string,
+  injuries:    { playerName: string; status: string }[],
+): Map<string, Map<AFLPickStat, number>> {
+  const STATS: AFLPickStat[] = ["D", "G", "M", "T", "HO", "K", "H"];
+  const upliftMap = new Map<string, Map<AFLPickStat, number>>();
+
+  // Only care about players who are ruled out
+  const outNames = injuries
+    .filter(i => /out|suspended/i.test(i.status))
+    .map(i => normName(i.playerName));
+
+  if (outNames.length === 0) return upliftMap;
+
+  // For each injured player, detect which historical games they missed
+  for (const absNorm of outNames) {
+    // Find games where this player had a line (= was active) vs not
+    const presentInGame: boolean[] = gamesByGame.map(game =>
+      game.some(p => p.teamId === teamId && normName(p.name) === absNorm)
+    );
+
+    // Check they were actually a meaningful contributor (≥20 D avg when present)
+    const presentGames = gamesByGame.filter((_, i) => presentInGame[i]);
+    if (presentGames.length < 2) continue;
+    const absentPlayer = presentGames[0].find(p => p.teamId === teamId && normName(p.name) === absNorm);
+    if (!absentPlayer) continue;
+    const absentAvgD = presentGames.reduce((sum, g) => {
+      const p = g.find(pl => pl.teamId === teamId && normName(pl.name) === absNorm);
+      return sum + (p?.D ?? 0);
+    }, 0) / presentGames.length;
+    if (absentAvgD < 18) continue; // Only key high-disposal players trigger uplift
+
+    const absentGameIndices = presentInGame
+      .map((present, i) => (!present ? i : -1))
+      .filter(i => i >= 0);
+
+    if (absentGameIndices.length < 2) continue;
+
+    // For each teammate, compute their performance in "without" vs "with" games
+    const teammateSeen = new Set<string>();
+    for (const game of gamesByGame) {
+      for (const p of game) {
+        if (p.teamId === teamId) teammateSeen.add(p.name);
+      }
+    }
+
+    for (const teammateName of Array.from(teammateSeen)) {
+      if (normName(teammateName) === absNorm) continue;
+
+      for (const stat of STATS) {
+        // Season average (all games where they appeared)
+        const allVals = gamesByGame
+          .map(g => g.find(p => p.teamId === teamId && p.name === teammateName)?.[stat])
+          .filter((v): v is number => v !== undefined);
+        if (allVals.length < 4) continue;
+        const seasonAvg = allVals.reduce((a, b) => a + b, 0) / allVals.length;
+        if (seasonAvg < MIN_AVG[stat]) continue;
+
+        // "Without" game average
+        const withoutVals = absentGameIndices
+          .map(i => gamesByGame[i]?.find(p => p.teamId === teamId && p.name === teammateName)?.[stat])
+          .filter((v): v is number => v !== undefined);
+        if (withoutVals.length < 2) continue;
+
+        const withoutAvg = withoutVals.reduce((a, b) => a + b, 0) / withoutVals.length;
+        const ratio = seasonAvg > 0 ? withoutAvg / seasonAvg : 1;
+
+        if (ratio >= 1.15) {
+          // Player historically does better when absent player is out
+          // Boost = (ratio - 1.0) * 0.55, capped at 0.12
+          const boost = Math.min(0.12, (ratio - 1.0) * 0.55);
+          if (!upliftMap.has(teammateName)) upliftMap.set(teammateName, new Map());
+          const existing = upliftMap.get(teammateName)!.get(stat) ?? 0;
+          upliftMap.get(teammateName)!.set(stat, Math.max(existing, boost));
+        }
+      }
+    }
+  }
+
+  return upliftMap;
 }
 
 /**
@@ -204,28 +305,37 @@ function computeOpponentRankBoost(
   return Math.max(-0.10, Math.min(0.10, (ratio - 1.0) * 0.5));
 }
 
-/** Weather-derived reliability penalty per stat. */
+/** Weather-derived reliability adjustment per stat.
+ *  Penalties for rain/wind; small bonus for ideal calm sunny conditions.
+ */
 function computeWeatherPenalty(
   stat:    AFLPickStat,
   weather: { condition: string; windKph: number } | null | undefined,
 ): number {
   if (!weather) return 0;
-  const isWet  = ["Rain", "Storm"].includes(weather.condition);
-  const wind   = weather.windKph;
+  const isWet   = ["Rain", "Storm"].includes(weather.condition);
+  const isIdeal = ["Sunny", "Clear", "Partly Cloudy"].includes(weather.condition);
+  const wind    = weather.windKph;
+  const calmDay = wind < 15 && isIdeal;
 
   switch (stat) {
     case "G":
-      return Math.max(-0.10, (isWet ? -0.04 : 0) + (wind > 60 ? -0.06 : wind > 40 ? -0.03 : 0));
+      // Goals most affected: rain reduces kick-outs, high wind kills set shots
+      if (calmDay) return +0.03;  // ideal day boost
+      return Math.max(-0.10, (isWet ? -0.05 : 0) + (wind > 60 ? -0.06 : wind > 40 ? -0.04 : 0));
     case "D":
-      return (isWet ? -0.03 : 0) + (wind > 60 ? -0.02 : 0);
+      // Disposals drop 10-15% in heavy rain — stronger penalty than before
+      return (isWet ? -0.07 : 0) + (wind > 60 ? -0.02 : 0);
     case "M":
-      return (isWet ? -0.02 : 0) + (wind > 40 ? -0.02 : 0);
+      // Marks harder to take in wet/windy — especially contested marks
+      if (calmDay) return +0.02;
+      return (isWet ? -0.03 : 0) + (wind > 40 ? -0.03 : 0);
     case "K":
-      // Kicks are most affected by wind — high-ball kicking style becomes unreliable
-      return (isWet ? -0.02 : 0) + (wind > 60 ? -0.04 : wind > 40 ? -0.02 : 0);
+      // Kicks most affected by wind — high-ball style becomes unreliable
+      return (isWet ? -0.02 : 0) + (wind > 60 ? -0.05 : wind > 40 ? -0.03 : 0);
     case "H":
-      // Handballs slightly affected by wet conditions (ball harder to grip)
-      return isWet ? -0.01 : 0;
+      // Handballs slightly affected by wet (ball harder to grip)
+      return isWet ? -0.02 : 0;
     case "T":
     case "HO":
     default:
@@ -259,6 +369,7 @@ function buildProfiles(
   currentVenue:  string,
   restDays:      number,
   weather:       { condition: string; windKph: number } | null | undefined,
+  injuries:      { playerName: string; status: string }[],
 ): Profile[] {
   const STATS: AFLPickStat[] = ["D", "G", "M", "T", "HO", "K", "H"];
 
@@ -303,6 +414,9 @@ function buildProfiles(
     .map((m, i) => (m.venueName && currentVenue && m.venueName === currentVenue ? i : -1))
     .filter(i => i >= 0);
 
+  // Injury uplift: pre-compute who benefits when key players are absent
+  const injuryUpliftMap = computeInjuryUpliftMap(gamesByGame, teamId, injuries);
+
   const profiles: Profile[] = [];
 
   for (const [name, statMap] of Array.from(playerVals.entries())) {
@@ -336,6 +450,7 @@ function buildProfiles(
         venueBoost,
         opponentRankBoost: oppRankByStatCache.get(stat) ?? 0,
         weatherPenalty:    computeWeatherPenalty(stat, weather),
+        injuryUplift:      injuryUpliftMap.get(name)?.get(stat) ?? 0,
       };
 
       profiles.push({
@@ -406,7 +521,8 @@ function buildLegs(
       p.signals.restDaysPenalty +
       p.signals.venueBoost +
       p.signals.opponentRankBoost +
-      p.signals.weatherPenalty;
+      p.signals.weatherPenalty +
+      p.signals.injuryUplift;
     reliability = Math.max(0, Math.min(1.0, reliability + signalTotal));
 
     if (reliability < tier.minReliability || reliability > tier.maxReliability) continue;
@@ -436,7 +552,8 @@ function buildLegs(
       (p.signals.restDaysPenalty +
        p.signals.venueBoost +
        p.signals.opponentRankBoost +
-       p.signals.weatherPenalty) * 100
+       p.signals.weatherPenalty +
+       p.signals.injuryUplift) * 100
     ) / 100;
 
     legs.push({
@@ -567,21 +684,26 @@ export function computeAFLKitchen(params: {
   homeRestDays?:   number;
   /** Days since away team's last game (0 = unknown) */
   awayRestDays?:   number;
+  /** Home team injury list — used for injury uplift signal */
+  homeInjuries?:   { playerName: string; status: string }[];
+  /** Away team injury list — used for injury uplift signal */
+  awayInjuries?:   { playerName: string; status: string }[];
 }): KitchenSlip[] {
   const {
     homeGames, awayGames, homeTeamId, awayTeamId, homeAbbr, awayAbbr, propOdds,
     homeGameMeta = [], awayGameMeta = [],
     currentVenue = "", weather = null,
     homeRestDays = 0, awayRestDays = 0,
+    homeInjuries = [], awayInjuries = [],
   } = params;
 
   const homeProfiles = buildProfiles(
     homeGames, homeGameMeta, homeTeamId, awayTeamId,
-    "home", homeAbbr, currentVenue, homeRestDays, weather,
+    "home", homeAbbr, currentVenue, homeRestDays, weather, homeInjuries,
   );
   const awayProfiles = buildProfiles(
     awayGames, awayGameMeta, awayTeamId, homeTeamId,
-    "away", awayAbbr, currentVenue, awayRestDays, weather,
+    "away", awayAbbr, currentVenue, awayRestDays, weather, awayInjuries,
   );
   const all = [...homeProfiles, ...awayProfiles];
 

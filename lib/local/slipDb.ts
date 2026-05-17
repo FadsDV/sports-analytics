@@ -42,6 +42,7 @@ function getDb(): Database.Database {
   _db.pragma("foreign_keys = ON");
 
   initSchema(_db);
+  runMigrations(_db);
   return _db;
 }
 
@@ -79,8 +80,8 @@ function initSchema(db: Database.Database): void {
       player          TEXT NOT NULL,
       team_abbr       TEXT NOT NULL,
       side            TEXT NOT NULL,    -- home | away
-      stat            TEXT NOT NULL,    -- D | G | M | T | HO
-      stat_label      TEXT NOT NULL,    -- disposals | goals | marks | tackles | hitouts
+      stat            TEXT NOT NULL,    -- D | G | M | T | HO | K | H
+      stat_label      TEXT NOT NULL,    -- disposals | goals | marks | tackles | hitouts | kicks | handballs
       threshold       REAL NOT NULL,    -- recommended line
       avg_stat        REAL NOT NULL,    -- player's season average for this stat
       hit_rate        REAL NOT NULL,    -- historical hit rate at this threshold
@@ -88,6 +89,7 @@ function initSchema(db: Database.Database): void {
       is_on_form      INTEGER NOT NULL, -- 0 or 1
       is_bounce_back  INTEGER NOT NULL, -- 0 or 1
       games_analyzed  INTEGER NOT NULL,
+      signal_total    REAL,             -- net intelligence signal applied (±) — Phase 3
       prop_price      REAL,             -- bookmaker odds (if available)
       prop_line       REAL,             -- bookmaker line (if available)
       prop_bookmaker  TEXT,
@@ -103,6 +105,15 @@ function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_slips_game  ON slips(game_id);
     CREATE INDEX IF NOT EXISTS idx_slips_type  ON slips(slip_type, bookie);
   `);
+}
+
+// ─── Migrations (run after initSchema to patch existing DBs) ─────────────────
+
+function runMigrations(db: Database.Database): void {
+  // Phase 3 → add signal_total column to legs
+  try {
+    db.exec(`ALTER TABLE legs ADD COLUMN signal_total REAL`);
+  } catch { /* column already exists — safe to ignore */ }
 }
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -130,6 +141,7 @@ export interface SlipLogLeg {
   isOnForm:     boolean;
   isBounceBack: boolean;
   gamesAnalyzed: number;
+  signalTotal?: number;
   prop?: { price: number; line: number; bookmaker: string };
   edge?: number;
 }
@@ -175,15 +187,22 @@ export function logSlips(game: SlipLogGame, slips: SlipLogSlip[]): void {
       INSERT INTO legs (
         slip_id, game_id, player, team_abbr, side, stat, stat_label,
         threshold, avg_stat, hit_rate, reliability,
-        is_on_form, is_bounce_back, games_analyzed,
+        is_on_form, is_bounce_back, games_analyzed, signal_total,
         prop_price, prop_line, prop_bookmaker, edge
       ) VALUES (
         @slipId, @gameId, @player, @teamAbbr, @side, @stat, @statLabel,
         @threshold, @avgStat, @hitRate, @reliability,
-        @isOnForm, @isBounceBack, @gamesAnalyzed,
+        @isOnForm, @isBounceBack, @gamesAnalyzed, @signalTotal,
         @propPrice, @propLine, @propBookmaker, @edge
       )
     `);
+
+    // Guard: don't log if slips already exist for this game (prevents duplicate entries
+    // from opening the same game page multiple times before the match).
+    const existing = db.prepare(
+      `SELECT COUNT(*) as n FROM slips WHERE game_id = ?`
+    ).get(game.id) as { n: number };
+    if (existing.n > 0) return;
 
     const transaction = db.transaction(() => {
       for (const slip of slips) {
@@ -223,6 +242,7 @@ export function logSlips(game: SlipLogGame, slips: SlipLogSlip[]): void {
             isOnForm:      leg.isOnForm ? 1 : 0,
             isBounceBack:  leg.isBounceBack ? 1 : 0,
             gamesAnalyzed: leg.gamesAnalyzed,
+            signalTotal:   leg.signalTotal ?? null,
             propPrice:     leg.prop?.price ?? null,
             propLine:      leg.prop?.line  ?? null,
             propBookmaker: leg.prop?.bookmaker ?? null,
@@ -449,11 +469,11 @@ export function getOverallStats(): OverallStats {
     const db = getDb();
     const games  = db.prepare(`SELECT COUNT(*) as n FROM games`).get() as { n: number };
     const resolved = db.prepare(
-      `SELECT COUNT(DISTINCT game_id) as n FROM legs WHERE actual_stat > 0 AND hit IS NOT NULL`
+      `SELECT COUNT(DISTINCT game_id) as n FROM legs WHERE hit IS NOT NULL`
     ).get() as { n: number };
     const slips  = db.prepare(`SELECT COUNT(*) as n FROM slips`).get() as { n: number };
     const legs   = db.prepare(`SELECT COUNT(*) as n FROM legs`).get() as { n: number };
-    const legRes = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE hit IS NOT NULL AND actual_stat > 0`).get() as { n: number };
+    const legRes = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE hit IS NOT NULL`).get() as { n: number };
     const legHit = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE hit = 1`).get() as { n: number };
     const slipHit = db.prepare(`
       SELECT
@@ -509,7 +529,7 @@ export function getReliabilityCalibration(): ReliabilityBandStats[] {
           SUM(CASE WHEN hit = 1 THEN 1 ELSE 0 END) as hits
         FROM legs
         WHERE reliability >= @min AND reliability < @max
-          AND hit IS NOT NULL AND actual_stat > 0
+          AND hit IS NOT NULL
       `).get({ min: b.min, max: b.max }) as { legs: number; hits: number };
 
       return {
@@ -561,7 +581,7 @@ export function getPlayerStatHitRate(): PlayerLegStats[] {
           THEN ROUND(CAST(SUM(hit) AS REAL) / COUNT(*) - AVG(reliability), 3)
           ELSE NULL END AS drift
       FROM legs
-      WHERE hit IS NOT NULL AND actual_stat > 0
+      WHERE hit IS NOT NULL
       GROUP BY player, stat
       HAVING COUNT(*) >= 2
       ORDER BY drift ASC  -- worst model errors first (most overconfident)
@@ -613,18 +633,23 @@ export function getRecentGames(limit = 15): RecentGameSummary[] {
 }
 
 /**
- * Check if outcomes have already been correctly resolved for a game.
+ * Check if there are any unresolved legs for a game.
  *
- * Considers outcomes "resolved" only if at least one leg has actual_stat > 0
- * (guards against the old bug where everything was written as 0/false).
+ * Returns true (= "skip") only when ALL legs are resolved — i.e., there is
+ * nothing left to do. This replaces the old "any resolved?" check which caused
+ * partial resolutions to be silently skipped on subsequent visits.
  */
 export function hasOutcomes(gameId: string): boolean {
   try {
     const db = getDb();
-    const row = db.prepare(
-      `SELECT COUNT(*) as n FROM legs WHERE game_id = ? AND hit IS NOT NULL AND actual_stat > 0`
+    const unresolved = db.prepare(
+      `SELECT COUNT(*) as n FROM legs WHERE game_id = ? AND hit IS NULL`
     ).get(gameId) as { n: number };
-    return row.n > 0;
+    const total = db.prepare(
+      `SELECT COUNT(*) as n FROM legs WHERE game_id = ?`
+    ).get(gameId) as { n: number };
+    // "Done" = has legs AND none are unresolved
+    return total.n > 0 && unresolved.n === 0;
   } catch {
     return false;
   }

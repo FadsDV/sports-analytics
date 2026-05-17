@@ -270,13 +270,15 @@ export default async function GameDetailPage({
   let aflPropOdds = new Map<string, { price: number; line: number; bookmaker: string }>();
   let aflKitchenSlips: KitchenSlip[] = [];
   if (isAFL) {
-    // Extract last 5 completed games with full metadata for intelligence signals
+    // Extract last 8 completed games with full metadata for intelligence signals.
+    // 8 games gives venue/opponent signals enough overlapping data to fire reliably
+    // while keeping the boxscore fetch count manageable (all cached 24h).
     const completedHomeGames = homeSchedule
       .filter((e: any) => e.competitions?.[0]?.status?.type?.state === "post")
-      .slice(0, 5);
+      .slice(0, 8);
     const completedAwayGames = awaySchedule
       .filter((e: any) => e.competitions?.[0]?.status?.type?.state === "post")
-      .slice(0, 5);
+      .slice(0, 8);
 
     const completedHomeIds = completedHomeGames.map((e: any) => String(e.id));
     const completedAwayIds = completedAwayGames.map((e: any) => String(e.id));
@@ -365,6 +367,8 @@ export default async function GameDetailPage({
       weather:       game.weather ? { condition: game.weather.condition, windKph: game.weather.windKph } : null,
       homeRestDays,
       awayRestDays,
+      homeInjuries:  homeInjuries.map(i => ({ playerName: i.playerName, status: i.status })),
+      awayInjuries:  awayInjuries.map(i => ({ playerName: i.playerName, status: i.status })),
     });
   }
 

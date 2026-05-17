@@ -1957,6 +1957,34 @@ export default function GameDetailTabs({
     const gameDate = game.kickoff ? game.kickoff.slice(0, 10) : new Date().toISOString().slice(0, 10);
     const venue    = game.venue ?? undefined;
 
+    // Compute bookie-specific filtered slips for per-bookie analytics tracking
+    const bet365Slips = filterSlipsForBookie(kitchenSlips, BOOKIES.bet365);
+    const dabbleSlips = filterSlipsForBookie(kitchenSlips, BOOKIES.dabble);
+
+    const mapLegs = (legs: typeof kitchenSlips[0]["legs"]) => legs.map(l => ({
+      player:        l.player,
+      teamAbbr:      l.teamAbbr,
+      side:          l.side,
+      stat:          l.stat,
+      statLabel:     l.statLabel,
+      threshold:     l.threshold,
+      avgStat:       l.avgStat,
+      hitRate:       l.hitRate,
+      reliability:   l.reliability,
+      isOnForm:      l.isOnForm,
+      isBounceBack:  l.isBounceBack,
+      gamesAnalyzed: l.gamesAnalyzed,
+      signalTotal:   l.signalTotal,
+      prop:          l.prop,
+      edge:          l.edge,
+    }));
+
+    const allSlipSets: Array<{ slips: typeof kitchenSlips; bookie: string }> = [
+      { slips: kitchenSlips, bookie: "generic" },
+      { slips: bet365Slips,  bookie: "bet365"  },
+      { slips: dabbleSlips,  bookie: "dabble"  },
+    ];
+
     const payload = {
       game: {
         id:       id,
@@ -1965,28 +1993,15 @@ export default function GameDetailTabs({
         venue,
         gameDate,
       },
-      slips: kitchenSlips
-        .filter(s => s.legs.length > 0)
-        .map(s => ({
-          slipType: s.type,
-          bookie:   "generic",
-          legs: s.legs.map(l => ({
-            player:        l.player,
-            teamAbbr:      l.teamAbbr,
-            side:          l.side,
-            stat:          l.stat,
-            statLabel:     l.statLabel,
-            threshold:     l.threshold,
-            avgStat:       l.avgStat,
-            hitRate:       l.hitRate,
-            reliability:   l.reliability,
-            isOnForm:      l.isOnForm,
-            isBounceBack:  l.isBounceBack,
-            gamesAnalyzed: l.gamesAnalyzed,
-            prop:          l.prop,
-            edge:          l.edge,
-          })),
-        })),
+      slips: allSlipSets.flatMap(({ slips, bookie }) =>
+        slips
+          .filter(s => s.legs.length > 0)
+          .map(s => ({
+            slipType: s.type,
+            bookie,
+            legs: mapLegs(s.legs),
+          }))
+      ),
     };
 
     fetch("/api/slips/save", {

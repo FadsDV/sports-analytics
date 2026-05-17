@@ -50,8 +50,15 @@ const SLIP_LABELS: Record<string, { emoji: string; label: string }> = {
 };
 
 const STAT_LABELS: Record<string, string> = {
-  D: "Disposals", G: "Goals", M: "Marks", T: "Tackles", HO: "Hitouts",
+  D: "Disposals", G: "Goals", M: "Marks", T: "Tackles", HO: "Hitouts", K: "Kicks", H: "Handballs",
 };
+
+function fmtDate(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("en-AU", { day: "2-digit", month: "short" });
+  } catch { return iso.slice(0, 10); }
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -304,7 +311,7 @@ export default function AnalyticsPage() {
                             {g.venue && <span className="ml-2 text-[10px] text-text-2 opacity-60">{g.venue}</span>}
                           </td>
                           <td className="px-3 py-2.5 text-right text-text-2 tabular-nums">
-                            {g.gameDate ?? "—"}
+                            {fmtDate(g.gameDate)}
                           </td>
                           <td className="px-3 py-2.5 text-right text-text-2 tabular-nums">
                             {g.totalSlips}
