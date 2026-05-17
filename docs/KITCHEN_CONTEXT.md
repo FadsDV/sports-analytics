@@ -225,26 +225,73 @@ minFraction: 0.95, maxFraction: 1.50
 Merge: on-form legs get priority. Take top 3 by reliability. Max 3 legs.
 
 #### Value Picks
-**Different logic entirely — does NOT use findBestThreshold.**
+**Different logic entirely — does NOT use findBestThreshold (for the primary prop path).**
 
+Two branches in `buildValueLegs` (`lib/sports/afl/kitchen.ts`):
+
+**Branch 1 — Real odds available (pre-match):**
 ```
-For each player with a prop:
-  1. If prop.line >= player.avg → skip (no edge)
-  2. hitRate = calcHitRate(vals, prop.line)   ← uses ACTUAL book line
-  3. If hitRate < 0.65 → skip
-  4. If prop.price < 1.60 → skip
-  5. edge = player.avg - prop.line
-  6. score = (edge / player.avg) × prop.price × reliability
+For each player with a prop (prop.price >= 1.60 AND prop.line < player.avg):
+  1. hitRate = calcHitRate(vals, prop.line)   ← uses ACTUAL book line
+  2. If hitRate < 0.65 → skip
+  3. edge = player.avg - prop.line
+  4. score = (edge / player.avg) × prop.price × reliability
 Sort by score descending. Take top 10.
 ```
 
-**Intent**: Player averages 28 disposals, book line is 24.5 at 1.83 → edge of +3.5. The book is undervaluing the player. Show the raw edge clearly: `avg 28.0 → 24.5 line | +3.5 edge`.
+**Branch 2 — No odds / live game fallback:**
+```
+When The Odds API suspends props during live games (propOdds Map is empty):
+  1. findBestThreshold(vals, avg, stat, 0.65, 0.85, 0.65, 0.82)
+  2. If found.hitRate < 0.65 → skip
+  3. edge = avg - found.threshold
+  4. If edge <= 0 → skip
+  5. Generate leg WITHOUT prop field (no odds shown)
+```
+
+**Why this matters**: The Odds API suspends player props during live AFL games. Without the fallback, value picks disappear the moment a game starts. The fallback derives the natural book line using `findBestThreshold` so picks remain visible throughout the game.
+
+**Intent**: Player averages 28 disposals, book line is 24.5 at 1.83 → edge of +3.5. The book is undervaluing the player. Show the raw edge clearly: `↑ 25+ disposals | avg 28.0 | +3.5 edge`.
 
 The `edge` field on `KitchenLeg` is what drives the Value Picks UI display.
 
+**Value Picks UI** (`components/afl/AFLKitchen.tsx`):
+- Grid: `grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 p-3`
+- Each card: `rounded-xl border border-border/30 bg-surface/40` (standalone cards, not border-cell grid)
+- Card headline: `↑ {threshold}+ {statLabel}` in primary colour (most prominent element)
+- Subline: `avg {avgStat} · {gamesAnalyzed}g · +{edge} edge` (muted)
+- Odds price shown only if `leg.prop` exists (not in live fallback mode)
+
 ---
 
-## 5. Key UI Patterns
+## 5. Player Name Click (AFL Kitchen)
+
+All player names in `AFLKitchen` are rendered as `<button>` elements:
+
+```tsx
+<button
+  onClick={() => onPlayerClick?.(leg.player)}
+  className="text-xs font-semibold truncate text-left hover:underline hover:text-primary transition-colors"
+>
+  {lastName(leg.player)}
+</button>
+```
+
+The `onPlayerClick?: (name: string) => void` prop flows through:
+- `AFLKitchen` → `SlipCard` → `LegRow` (for slip legs)
+- `AFLKitchen` → `ValuePicks` → `ValuePickCard` (for value picks)
+
+In `GameDetailTabs.tsx`, `handleKitchenPlayerClick(name)` handles the click:
+1. Looks up the player name in `homeSquad`/`awaySquad` by `displayName` (exact match)
+2. Determines `matchContext` (home or away), `opponent`, `teamId`
+3. Fetches `GET /api/afl/player/{espnId}?matchContext=...&opponent=...&teamId=...`
+4. Sets `aflKitchenDrawer` state → renders `<PlayerDrawer>` overlay
+
+Middle-click (`onAuxClick`) opens the full player profile page in a new tab.
+
+---
+
+## 6. Key UI Patterns
 
 ### Confidence badge (Kitchen and PlayerDrawer)
 ```tsx
@@ -275,7 +322,7 @@ avg 27.8 → 24.5 line
 
 ---
 
-## 6. isOnForm / isBounceBack detection
+## 7. isOnForm / isBounceBack detection
 
 Calculated in `buildProfiles()` inside each kitchen file:
 
@@ -295,7 +342,7 @@ These are displayed as symbols in the UI:
 
 ---
 
-## 7. Minimum qualifications
+## 8. Minimum qualifications
 
 A player-stat combination is only eligible for any slip if:
 - At least **5 games** of history
@@ -304,7 +351,7 @@ A player-stat combination is only eligible for any slip if:
 
 ---
 
-## 8. Future contextual modules (plug-in architecture)
+## 9. Future contextual modules (plug-in architecture)
 
 The `contextualBonus` field in the engine accepts any additive signal (max 0.20).
 New modules should follow the pattern in `lib/sports/reliability/absence.ts`:
