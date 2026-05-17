@@ -2,9 +2,13 @@
  * Sofascore unofficial API — free, no key required.
  * Personal use only.
  *
- * NOTE: Sofascore returns 403 to Node.js built-in fetch (TLS fingerprint
- * detection). We route all requests through curl via execFile so the TLS
- * handshake looks like a real browser.
+ * Fetch strategy (tried in order):
+ *  1. curl via execFile — best TLS fingerprint, works locally
+ *  2. native fetch — fallback for Vercel serverless (curl not in PATH)
+ *
+ * If Sofascore ever starts blocking Vercel IPs, set SOFASCORE_PROXY to a
+ * residential HTTP proxy URL (e.g. http://user:pass@proxy.example.com:8080)
+ * and requests will be routed through it.
  */
 
 import { execFile } from "child_process";
@@ -16,6 +20,15 @@ const BASE = "https://api.sofascore.com/api/v1";
 const CURL_UA =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
+const SOFA_HEADERS: Record<string, string> = {
+  "User-Agent":      CURL_UA,
+  "Accept":          "application/json, text/plain, */*",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Referer":         "https://www.sofascore.com/",
+  "Origin":          "https://www.sofascore.com",
+  "Cache-Control":   "no-cache",
+};
+
 // ─── Simple in-process cache ──────────────────────────────────────────────────
 
 const CACHE = new Map<string, { data: unknown; expires: number }>();
@@ -24,19 +37,17 @@ async function sofaFetch(url: string, ttlSeconds = 300): Promise<unknown> {
   const now = Date.now();
   const hit = CACHE.get(url);
   if (hit && now < hit.expires) {
-    console.info("[SportsPulse/sofascore] cache hit", { url });
     return hit.data;
   }
 
-  console.info("[SportsPulse/sofascore] curl fetch", { url });
-  let stdout: string;
+  let raw: string | null = null;
+
+  // ── 1. Try curl (local dev — best TLS fingerprint) ────────────────────────
   try {
-    ({ stdout } = await execFileAsync(
+    const { stdout } = await execFileAsync(
       "curl",
       [
-        "-s",
-        "--compressed",
-        "--max-time", "12",
+        "-s", "--compressed", "--max-time", "12",
         "-H", "Accept: application/json",
         "-H", "Accept-Language: en-US,en;q=0.9",
         "-H", "Referer: https://www.sofascore.com/",
@@ -45,18 +56,52 @@ async function sofaFetch(url: string, ttlSeconds = 300): Promise<unknown> {
         url,
       ],
       { maxBuffer: 20 * 1024 * 1024 }
-    ));
+    );
+    raw = stdout;
     console.info("[SportsPulse/sofascore] curl ok", { url, bytes: stdout.length });
-  } catch (err) {
-    console.error("[SportsPulse/sofascore] curl error", { url, err: String(err) });
-    return null;
+  } catch {
+    // curl not in PATH (Vercel) — fall through to native fetch
+  }
+
+  // ── 2. Native fetch fallback (Vercel serverless) ──────────────────────────
+  if (raw === null) {
+    try {
+      console.info("[SportsPulse/sofascore] native fetch", { url });
+      const proxyUrl = process.env.SOFASCORE_PROXY;
+      let fetchUrl = url;
+      const fetchOpts: RequestInit = { headers: SOFA_HEADERS, cache: "no-store" };
+
+      // Optional proxy support via undici dispatcher
+      if (proxyUrl) {
+        const { ProxyAgent } = await import("undici");
+        // @ts-expect-error undici dispatcher not in RequestInit types
+        fetchOpts.dispatcher = new ProxyAgent(proxyUrl);
+        console.info("[SportsPulse/sofascore] using proxy", { proxyUrl });
+      }
+
+      const resp = await fetch(fetchUrl, fetchOpts);
+      if (!resp.ok) {
+        console.error("[SportsPulse/sofascore] fetch status", { url, status: resp.status });
+        return null;
+      }
+      raw = await resp.text();
+      console.info("[SportsPulse/sofascore] native fetch ok", { url, bytes: raw.length });
+    } catch (err) {
+      console.error("[SportsPulse/sofascore] fetch error", { url, err: String(err) });
+      return null;
+    }
   }
 
   let data: unknown;
   try {
-    data = JSON.parse(stdout);
+    data = JSON.parse(raw);
   } catch (err) {
-    console.error("[SportsPulse/sofascore] JSON parse error", { url, err: String(err), preview: stdout.slice(0, 200) });
+    console.error("[SportsPulse/sofascore] JSON parse error", { url, err: String(err), preview: raw.slice(0, 200) });
+    return null;
+  }
+
+  if (data && typeof data === "object" && (data as Record<string, unknown>).error) {
+    console.error("[SportsPulse/sofascore] API error", { url, error: (data as Record<string, unknown>).error });
     return null;
   }
 
