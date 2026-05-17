@@ -253,6 +253,8 @@ export interface PlayerStatLine {
   M:  number;      // marks
   T:  number;      // tackles
   HO: number;      // hitouts
+  K:  number;      // kicks
+  H:  number;      // handballs
 }
 
 // ── Fuzzy name normalisation (mirrors slipTracker.ts findRow) ─────────────────

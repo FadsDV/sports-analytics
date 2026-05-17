@@ -50,9 +50,11 @@ export const BET365: BookieConfig = {
       validLines: [0.5, 2, 3],
       snapDown:   true,
     },
-    M: { available: false, validLines: [] },
-    T: { available: false, validLines: [] },
+    M:  { available: false, validLines: [] },
+    T:  { available: false, validLines: [] },
     HO: { available: false, validLines: [] },
+    K:  { available: false, validLines: [] },
+    H:  { available: false, validLines: [] },
   },
 };
 
@@ -93,6 +95,18 @@ export const DABBLE: BookieConfig = {
       // Hitouts not available on either bookie
       available:  false,
       validLines: [],
+    },
+    K: {
+      available:  true,
+      // Dabble: 5+ through 12+, every integer
+      validLines: [5, 6, 7, 8, 9, 10, 11, 12],
+      snapDown:   true,
+    },
+    H: {
+      available:  true,
+      // Dabble: 4+ through 13+, every integer
+      validLines: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+      snapDown:   true,
     },
   },
 };

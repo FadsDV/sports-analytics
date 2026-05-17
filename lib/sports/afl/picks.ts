@@ -9,7 +9,7 @@ import type { ESPNInjury } from "@/lib/sports/espnPlayers";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
-export type AFLPickStat = "D" | "G" | "M" | "T" | "HO";
+export type AFLPickStat = "D" | "G" | "M" | "T" | "HO" | "K" | "H";
 
 export interface AFLPlayerPick {
   player:        string;
@@ -35,6 +35,8 @@ const STAT_LABELS: Record<AFLPickStat, string> = {
   M:  "marks",
   T:  "tackles",
   HO: "hitouts",
+  K:  "kicks",
+  H:  "handballs",
 };
 
 const STAT_WEIGHTS: Record<AFLPickStat, number> = {
@@ -43,13 +45,15 @@ const STAT_WEIGHTS: Record<AFLPickStat, number> = {
   M:  0.75,
   T:  0.70,
   HO: 0.60,
+  K:  0.80,  // Dabble-specific, very popular
+  H:  0.75,
 };
 
 // Minimum average needed to even generate a pick for each stat
-const MIN_AVG: Record<AFLPickStat, number> = { D: 12, G: 0.4, M: 3, T: 3, HO: 4 };
+const MIN_AVG: Record<AFLPickStat, number> = { D: 12, G: 0.4, M: 3, T: 3, HO: 4, K: 5, H: 4 };
 
 // Step size for threshold search
-const STEP: Record<AFLPickStat, number> = { D: 1, G: 0.5, M: 1, T: 1, HO: 2 };
+const STEP: Record<AFLPickStat, number> = { D: 1, G: 0.5, M: 1, T: 1, HO: 2, K: 1, H: 1 };
 
 function mean(vals: number[]): number {
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
@@ -97,7 +101,7 @@ function buildPlayerHistories(
       if (!map.has(p.name)) {
         map.set(p.name, { name: p.name, side, teamAbbr, games: [] });
       }
-      map.get(p.name)!.games.push({ D: p.D, G: p.G, M: p.M, T: p.T, HO: p.HO });
+      map.get(p.name)!.games.push({ D: p.D, G: p.G, M: p.M, T: p.T, HO: p.HO, K: p.K, H: p.H });
     }
   }
 
@@ -108,7 +112,7 @@ function buildPlayerHistories(
 
 function picksForPlayer(h: PlayerHistory): AFLPlayerPick[] {
   const picks: AFLPlayerPick[] = [];
-  const STATS: AFLPickStat[] = ["D", "G", "M", "T", "HO"];
+  const STATS: AFLPickStat[] = ["D", "G", "M", "T", "HO", "K", "H"];
 
   for (const stat of STATS) {
     const vals = h.games.map(g => g[stat]);

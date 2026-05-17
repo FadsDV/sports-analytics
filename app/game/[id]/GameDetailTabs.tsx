@@ -2017,6 +2017,8 @@ export default function GameDetailTabs({
         M:  Number(row.stats["M"]  ?? 0),
         T:  Number(row.stats["T"]  ?? 0),
         HO: Number(row.stats["HO"] ?? 0),
+        K:  Number(row.stats["K"]  ?? 0),
+        H:  Number(row.stats["H"]  ?? 0),
       }));
 
     if (statLines.length === 0) return;

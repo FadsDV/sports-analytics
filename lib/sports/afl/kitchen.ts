@@ -96,14 +96,15 @@ export interface KitchenSlip {
 
 const STAT_LABELS: Record<AFLPickStat, string> = {
   D: "disposals", G: "goals", M: "marks", T: "tackles", HO: "hitouts",
+  K: "kicks", H: "handballs",
 };
 
 const STEP: Record<AFLPickStat, number> = {
-  D: 1, G: 0.5, M: 1, T: 1, HO: 2,
+  D: 1, G: 0.5, M: 1, T: 1, HO: 2, K: 1, H: 1,
 };
 
 const MIN_AVG: Record<AFLPickStat, number> = {
-  D: 8, G: 0.35, M: 2, T: 2, HO: 3,
+  D: 8, G: 0.35, M: 2, T: 2, HO: 3, K: 4, H: 3,
 };
 
 // ─── Math ─────────────────────────────────────────────────────────────────────
@@ -219,6 +220,12 @@ function computeWeatherPenalty(
       return (isWet ? -0.03 : 0) + (wind > 60 ? -0.02 : 0);
     case "M":
       return (isWet ? -0.02 : 0) + (wind > 40 ? -0.02 : 0);
+    case "K":
+      // Kicks are most affected by wind — high-ball kicking style becomes unreliable
+      return (isWet ? -0.02 : 0) + (wind > 60 ? -0.04 : wind > 40 ? -0.02 : 0);
+    case "H":
+      // Handballs slightly affected by wet conditions (ball harder to grip)
+      return isWet ? -0.01 : 0;
     case "T":
     case "HO":
     default:
@@ -253,7 +260,7 @@ function buildProfiles(
   restDays:      number,
   weather:       { condition: string; windKph: number } | null | undefined,
 ): Profile[] {
-  const STATS: AFLPickStat[] = ["D", "G", "M", "T", "HO"];
+  const STATS: AFLPickStat[] = ["D", "G", "M", "T", "HO", "K", "H"];
 
   // Build per-player, per-stat: ordered vals AND a gameIndex→value map for venue lookup
   const playerVals     = new Map<string, Record<AFLPickStat, number[]>>();
@@ -263,10 +270,10 @@ function buildProfiles(
     for (const p of game) {
       if (p.teamId !== teamId) continue;
       if (!playerVals.has(p.name)) {
-        playerVals.set(p.name,     { D: [], G: [], M: [], T: [], HO: [] });
+        playerVals.set(p.name,     { D: [], G: [], M: [], T: [], HO: [], K: [], H: [] });
         playerGameVals.set(p.name, {
           D:  new Map(), G: new Map(), M:  new Map(),
-          T:  new Map(), HO: new Map(),
+          T:  new Map(), HO: new Map(), K: new Map(), H: new Map(),
         });
       }
       const v  = playerVals.get(p.name)!;
