@@ -17,6 +17,16 @@ import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 
 const BASE = "https://api.sofascore.com/api/v1";
+
+// SOFASCORE_PROXY_BASE: Cloudflare Worker URL that forwards requests to Sofascore.
+// Rewrites every API URL so requests go through Cloudflare IPs instead of Vercel AWS.
+// e.g. SOFASCORE_PROXY_BASE=https://sofa.yourname.workers.dev
+function resolveUrl(url: string): string {
+  const proxy = process.env.SOFASCORE_PROXY_BASE;
+  if (!proxy) return url;
+  return url.replace(BASE, proxy.replace(/\/$/, ""));
+}
+
 const CURL_UA =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
@@ -68,7 +78,7 @@ async function sofaFetch(url: string, ttlSeconds = 300): Promise<unknown> {
     try {
       console.info("[SportsPulse/sofascore] native fetch", { url });
       const proxyUrl = process.env.SOFASCORE_PROXY;
-      let fetchUrl = url;
+      let fetchUrl = resolveUrl(url);
       const fetchOpts: RequestInit = { headers: SOFA_HEADERS, cache: "no-store" };
 
       // Optional proxy support via undici dispatcher
