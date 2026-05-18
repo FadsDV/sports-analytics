@@ -341,7 +341,7 @@ export default async function GameDetailPage({
   }
   // Soccer: ESPN (free, no Vercel IP blocks). Basketball: Sofascore.
   if (isSoccer) {
-    sofascore = await fetchESPNSoccerMatchData(sport, id);
+    sofascore = await fetchESPNSoccerMatchData(sport, sourceId);
   } else if (["basketball"].includes(sport) && game.homeTeam.espnId) {
     const { fetchSofascoreMatchData } = await import("@/lib/sports/sofascore");
     sofascore = await fetchSofascoreMatchData(sport, game.homeTeam.name, game.awayTeam.name, game.kickoff ?? "");
