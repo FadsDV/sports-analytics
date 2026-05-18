@@ -23,8 +23,9 @@ import {
 import { fetchWeather } from "@/lib/sports/weather";
 import { calcBetRisk } from "@/lib/sports/betRisk";
 import { formatKickoffFull, formatAFLKickoff } from "@/lib/utils";
-import { fetchSofascoreMatchData, fetchPlayerRecentGames, fetchPlayerSeasonStats } from "@/lib/sports/sofascore";
+import { fetchPlayerSeasonStats } from "@/lib/sports/sofascore";
 import type { SofascorePlayer, SofascoreGameLog } from "@/lib/sports/sofascore";
+import { fetchESPNSoccerMatchData, fetchESPNSoccerPlayerHistory } from "@/lib/sports/soccer/espnSoccerData";
 import { computeSoccerKitchen, type SoccerKitchenSlip, type SoccerPlayerProfile, type SoccerProp } from "@/lib/sports/soccer/kitchen";
 import { getSlipCache, saveSlipCache } from "@/lib/slipCache";
 import { computeAFLMatchAnalytics, type LadderEntry } from "@/lib/sports/afl/analytics";
@@ -328,23 +329,22 @@ export default async function GameDetailPage({
   let homeInjuries: ESPNInjury[] = [], awayInjuries: ESPNInjury[] = [];
   let sofascore = null;
 
-  const sofascoreSports = ["soccer","ucl","uel","laliga","bundesliga","aleague","basketball"];
-  const needSofascore = sofascoreSports.includes(sport);
-
   if (game.homeTeam.espnId && game.awayTeam.espnId) {
     const sp = ESPN_PATHS[espnSport];
-    const fetches: Promise<any>[] = [
+    const res = await Promise.all([
       fetchTeamRoster(sp, game.homeTeam.espnId),
       fetchTeamRoster(sp, game.awayTeam.espnId),
       fetchTeamInjuries(sp, game.homeTeam.espnId),
       fetchTeamInjuries(sp, game.awayTeam.espnId),
-      ...(needSofascore ? [fetchSofascoreMatchData(sport, game.homeTeam.name, game.awayTeam.name, game.kickoff)] : []),
-    ];
-    const res = await Promise.all(fetches);
+    ]);
     [homeSquad, awaySquad, homeInjuries, awayInjuries] = res;
-    if (needSofascore) sofascore = res[4] ?? null;
-  } else if (needSofascore) {
-    sofascore = await fetchSofascoreMatchData(sport, game.homeTeam.name, game.awayTeam.name, game.kickoff);
+  }
+  // Soccer: ESPN (free, no Vercel IP blocks). Basketball: Sofascore.
+  if (isSoccer) {
+    sofascore = await fetchESPNSoccerMatchData(sport, id);
+  } else if (["basketball"].includes(sport) && game.homeTeam.espnId) {
+    const { fetchSofascoreMatchData } = await import("@/lib/sports/sofascore");
+    sofascore = await fetchSofascoreMatchData(sport, game.homeTeam.name, game.awayTeam.name, game.kickoff ?? "");
   }
 
   // Fetch AFL ladder + player pick history in parallel (AFL only)
@@ -500,29 +500,22 @@ export default async function GameDetailPage({
     });
   }
 
-  // Soccer kitchen — fetch key player game logs and compute slips
+  // Soccer kitchen — ESPN player history + compute slips (all server-side, no Sofascore needed)
   let soccerKitchenSlips: SoccerKitchenSlip[] = [];
   if (isSoccer && sofascore) {
-    const daysBetween = (a: string, b: string): number => {
-      const d1 = new Date(a).getTime();
-      const d2 = new Date(b).getTime();
-      return Math.round(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24));
-    };
+    const daysBetween = (a: string, b: string): number =>
+      Math.round(Math.abs(new Date(a).getTime() - new Date(b).getTime()) / (1000 * 60 * 60 * 24));
     const kickoffStr = game.kickoff ?? new Date().toISOString();
 
     const lastHomeDate = homeSchedule
       .filter((e: any) => e.competitions?.[0]?.status?.type?.state === "post")
-      .map((e: any) => e.date)
-      .filter(Boolean).sort().pop() ?? "";
+      .map((e: any) => e.date).filter(Boolean).sort().pop() ?? "";
     const lastAwayDate = awaySchedule
       .filter((e: any) => e.competitions?.[0]?.status?.type?.state === "post")
-      .map((e: any) => e.date)
-      .filter(Boolean).sort().pop() ?? "";
-
+      .map((e: any) => e.date).filter(Boolean).sort().pop() ?? "";
     const homeRestDays = lastHomeDate ? daysBetween(lastHomeDate, kickoffStr) : 0;
     const awayRestDays = lastAwayDate ? daysBetween(lastAwayDate, kickoffStr) : 0;
 
-    // Pick top outfield starters (FWD + MID) — max 6 per team, skip GK
     const pickPlayers = (players: SofascorePlayer[], side: "home" | "away", teamName: string, teamAbbr: string): SoccerPlayerProfile[] =>
       players
         .filter(p => p.starter && !["G", "GK", "GL"].includes(p.position.toUpperCase()))
@@ -533,12 +526,20 @@ export default async function GameDetailPage({
     const awayPlayers = pickPlayers(sofascore.lineups?.away ?? [], "away", game.awayTeam.name, game.awayTeam.shortName);
     const allKitchenPlayers = [...homePlayers, ...awayPlayers];
 
-    if (allKitchenPlayers.length > 0) {
-      const [propOdds, ...gameResults] = await Promise.all([
+    if (allKitchenPlayers.length > 0 && game.homeTeam.espnId && game.awayTeam.espnId) {
+      // Fetch player histories from ESPN (works on Vercel — same API as AFL/NBA)
+      const [propOdds, homeHistoryMap, awayHistoryMap] = await Promise.all([
         fetchSoccerPlayerProps(game.homeTeam.name, game.awayTeam.name),
-        ...allKitchenPlayers.map(p => fetchPlayerRecentGames(p.sofaId).catch(() => ({ recentGames: [], vsOpponent: null })))
-      ]) as [Map<string, SoccerProp>, ...{ recentGames: SofascoreGameLog[], vsOpponent: SofascoreGameLog | null }[]];
-      gameResults.forEach((r, i) => { allKitchenPlayers[i].games = r.recentGames; });
+        fetchESPNSoccerPlayerHistory(sport, game.homeTeam.espnId),
+        fetchESPNSoccerPlayerHistory(sport, game.awayTeam.espnId),
+      ]);
+
+      // Match player names to their history entries
+      for (const p of allKitchenPlayers) {
+        const map = p.side === "home" ? homeHistoryMap : awayHistoryMap;
+        const games = map.get(p.name) ?? map.get(p.shortName) ?? [];
+        p.games = games;
+      }
 
       soccerKitchenSlips = computeSoccerKitchen({
         homeAbbr:      game.homeTeam.shortName,
