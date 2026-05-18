@@ -213,13 +213,170 @@ function useSofascoreClientFetch(
         }
       }
 
-      setData({ sofascoreId: eventId, lineups, incidents, homeTeamId, awayTeamId, tournamentId, seasonId, matchStats: matchStats.length > 0 ? matchStats : undefined });
+      // Parse team stats
+      const parseTeamStats = (raw: Record<string, unknown> | null): import("@/lib/sports/sofascore").SofascoreTeamStats | null => {
+        if (!raw) return null;
+        const s = (raw.statistics ?? {}) as Record<string, unknown>;
+        const n = (k: string) => (typeof s[k] === "number" ? s[k] as number : null);
+        return {
+          matches:                  (n("matches") ?? 0),
+          goalsScored:              (n("goalsScored") ?? 0),
+          goalsConceded:            (n("goalsConceded") ?? 0),
+          shots:                    n("shots"),
+          shotsOnTarget:            n("shotsOnTarget"),
+          corners:                  n("corners"),
+          fouls:                    n("fouls"),
+          yellowCards:              n("yellowCards"),
+          redCards:                 n("redCards"),
+          saves:                    n("saves"),
+          averageBallPossession:    n("averageBallPossession"),
+          accuratePassesPercentage: n("accuratePassesPercentage"),
+        };
+      };
+
+      const [homeTeamStatsRaw, awayTeamStatsRaw] = (homeTeamId && awayTeamId && tournamentId && seasonId)
+        ? await Promise.all([
+            sofaGet(`/team/${homeTeamId}/unique-tournament/${tournamentId}/season/${seasonId}/statistics/overall`),
+            sofaGet(`/team/${awayTeamId}/unique-tournament/${tournamentId}/season/${seasonId}/statistics/overall`),
+          ])
+        : [null, null];
+
+      setData({
+        sofascoreId:   eventId,
+        lineups, incidents,
+        homeTeamId, awayTeamId, tournamentId, seasonId,
+        homeTeamStats: parseTeamStats(homeTeamStatsRaw),
+        awayTeamStats: parseTeamStats(awayTeamStatsRaw),
+        matchStats:    matchStats.length > 0 ? matchStats : undefined,
+      });
     }
 
     run();
   }, [isSoccer, serverData, game.homeTeam.name, game.awayTeam.name, game.kickoff]);
 
   return serverData ?? data;
+}
+
+// ─── Browser-side player game fetch (for kitchen) ─────────────────────────────
+
+async function fetchPlayerGamesClient(playerId: number): Promise<import("@/lib/sports/sofascore").SofascoreGameLog[]> {
+  const eventsData = await sofaGet(`/player/${playerId}/events/last/0`);
+  if (!eventsData) return [];
+
+  const finished = ((eventsData.events as unknown[]) ?? []).filter((e: unknown) => {
+    const ev = e as Record<string, unknown>;
+    return (ev.status as Record<string, unknown>)?.type === "finished";
+  });
+
+  return Promise.all(finished.slice(0, 8).map(async (e): Promise<import("@/lib/sports/sofascore").SofascoreGameLog> => {
+    const ev  = e as Record<string, unknown>;
+    const eid = ev.id as number;
+    const ht  = (ev.homeTeam as Record<string, unknown>) ?? {};
+    const at  = (ev.awayTeam as Record<string, unknown>) ?? {};
+    const hs  = (ev.homeScore as Record<string, unknown>) ?? {};
+    const as_ = (ev.awayScore as Record<string, unknown>) ?? {};
+
+    const sd = await sofaGet(`/event/${eid}/player/${playerId}/statistics`);
+    const ps = ((sd?.statistics ?? sd ?? {}) as Record<string, unknown>);
+    const n  = (k: string) => (typeof ps[k] === "number" ? ps[k] as number : null);
+    const mins: number | null =
+      ps.minutesPlayed != null ? (ps.minutesPlayed as number)
+      : ps.secondsPlayed != null ? Math.round((ps.secondsPlayed as number) / 60)
+      : null;
+
+    return {
+      eventId:        eid,
+      date:           new Date((ev.startTimestamp as number) * 1000).toISOString().slice(0, 10),
+      homeTeam:       (ht.name as string) ?? "",
+      awayTeam:       (at.name as string) ?? "",
+      homeScore:      (hs.current ?? hs.display ?? 0) as number,
+      awayScore:      (as_.current ?? as_.display ?? 0) as number,
+      homeTeamId:     (ht.id as number) ?? 0,
+      awayTeamId:     (at.id as number) ?? 0,
+      playerTeamId:   null,
+      goals:          n("goals"),
+      assists:        n("goalAssist"),
+      rating:         n("rating"),
+      minutesPlayed:  mins,
+      shots:          n("totalShot") ?? n("shots"),
+      shotsOnTarget:  n("onTargetScoringAttempt") ?? n("shotsOnTarget"),
+      keyPasses:      n("keyPass") ?? n("keyPasses"),
+      passes:         n("totalPass") ?? n("passes"),
+      passAccuracy:   null,
+      tackles:        n("totalTackle") ?? n("tackles"),
+      interceptions:  n("interceptionWon") ?? n("interceptions"),
+      yellowCards:    n("yellowCard") ?? n("yellowCards"),
+      foulsCommitted: n("fouls") ?? n("foulsCommitted"),
+      saves:          n("savedShotsFromInsideTheBox") ?? n("saves"),
+      xG:             n("expectedGoals"),
+      xA:             n("expectedAssists"),
+    };
+  }));
+}
+
+// ─── Soccer kitchen client hook ───────────────────────────────────────────────
+
+function useSoccerKitchenClient(
+  isSoccer:      boolean,
+  sofascore:     import("@/lib/sports/sofascore").SofascoreMatchData | null,
+  serverSlips:   import("@/lib/sports/soccer/kitchen").SoccerKitchenSlip[] | undefined,
+  game:          Game,
+  homeHistories: HistoryVariants,
+  awayHistories: HistoryVariants,
+): import("@/lib/sports/soccer/kitchen").SoccerKitchenSlip[] | undefined {
+  const [clientSlips, setClientSlips] = useState<import("@/lib/sports/soccer/kitchen").SoccerKitchenSlip[] | undefined>(undefined);
+  const fetchedRef = useRef(false);
+  const hasServerSlips = serverSlips?.some(s => s.legs.length > 0) ?? false;
+
+  useEffect(() => {
+    if (!isSoccer || hasServerSlips) return;
+    if (!sofascore?.lineups) return;
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+
+    async function run() {
+      const lineups = sofascore!.lineups!;
+      const pickPlayers = (players: import("@/lib/sports/sofascore").SofascorePlayer[], side: "home" | "away", teamName: string, teamAbbr: string) =>
+        players
+          .filter(p => p.starter && !["G", "GK", "GL"].includes(p.position.toUpperCase()))
+          .slice(0, 6)
+          .map(p => ({ sofaId: p.id, name: p.name, shortName: p.shortName, position: p.position, side, teamAbbr, teamName, games: [] as import("@/lib/sports/sofascore").SofascoreGameLog[] }));
+
+      const allPlayers = [
+        ...pickPlayers(lineups.home, "home", game.homeTeam.name, game.homeTeam.shortName),
+        ...pickPlayers(lineups.away, "away", game.awayTeam.name, game.awayTeam.shortName),
+      ];
+      if (allPlayers.length === 0) return;
+
+      const gameResults = await Promise.all(allPlayers.map(p => fetchPlayerGamesClient(p.sofaId)));
+      gameResults.forEach((games, i) => { allPlayers[i].games = games; });
+
+      try {
+        const res = await fetch("/api/soccer/kitchen", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            homeAbbr:      game.homeTeam.shortName,
+            awayAbbr:      game.awayTeam.shortName,
+            homeTeamName:  game.homeTeam.name,
+            awayTeamName:  game.awayTeam.name,
+            homeHistory:   homeHistories.home,
+            awayHistory:   awayHistories.away,
+            homeTeamStats: sofascore!.homeTeamStats ?? null,
+            awayTeamStats: sofascore!.awayTeamStats ?? null,
+            players:       allPlayers,
+            weather:       game.weather ? { condition: game.weather.condition, windKph: game.weather.windKph } : null,
+          }),
+        });
+        if (res.ok) setClientSlips(await res.json());
+      } catch { /* silent */ }
+    }
+
+    run();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSoccer, sofascore?.lineups, hasServerSlips]);
+
+  return hasServerSlips ? serverSlips : clientSlips;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -2097,6 +2254,9 @@ export default function GameDetailTabs({
 
   // Client-side fetch: browser bypasses Vercel IP blocks (Sofascore allows CORS *)
   const sofascore = useSofascoreClientFetch(isSoccer, sofascoreProp, game);
+  const effectiveSoccerKitchenSlips = useSoccerKitchenClient(isSoccer, sofascore, soccerKitchenSlips, game, homeHistories, awayHistories);
+  // Re-evaluate kitchen availability once client slips load
+  const effectiveHasKitchen = isAFL || isBasketball || (isSoccer && (effectiveSoccerKitchenSlips?.some(s => s.legs.length > 0) ?? false));
 
   // AFL kitchen player drawer
   const [aflKitchenDrawer, setAflKitchenDrawer] = useState<import("@/lib/sports/afl/players/types").AFLPlayerAnalyticsResult | null>(null);
@@ -2288,14 +2448,14 @@ export default function GameDetailTabs({
   // ── Soccer slip logger: save soccer kitchen to local DB when slips are available ─
   const soccerSlipsSaved = useRef(false);
   useEffect(() => {
-    if (!isSoccer || !soccerKitchenSlips || soccerKitchenSlips.length === 0) return;
+    if (!isSoccer || !effectiveSoccerKitchenSlips || effectiveSoccerKitchenSlips.length === 0) return;
     if (soccerSlipsSaved.current) return;
     soccerSlipsSaved.current = true;
 
     const gameDate = game.kickoff ? game.kickoff.slice(0, 10) : new Date().toISOString().slice(0, 10);
 
     // Only log player-type legs — team/match legs cannot be resolved from Sofascore lineups
-    const mapLegs = (legs: typeof soccerKitchenSlips[0]["legs"]) =>
+    const mapLegs = (legs: typeof effectiveSoccerKitchenSlips[0]["legs"]) =>
       legs
         .filter(l => l.legType === "player" && l.player)
         .map(l => ({
@@ -2324,7 +2484,7 @@ export default function GameDetailTabs({
         gameDate,
         sport:    "soccer",
       },
-      slips: soccerKitchenSlips
+      slips: effectiveSoccerKitchenSlips
         .map(s => ({
           slipType: s.type,
           bookie:   "generic",
@@ -2340,7 +2500,7 @@ export default function GameDetailTabs({
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify(payload),
     }).catch(err => console.warn("[slips] soccer save failed:", err));
-  }, [isSoccer, soccerKitchenSlips, id, game]);
+  }, [isSoccer, effectiveSoccerKitchenSlips, id, game]);
 
   // ── Soccer outcome resolver: auto-check results when a finished soccer game loads ─
   const soccerOutcomesResolved = useRef(false);
@@ -2419,7 +2579,7 @@ export default function GameDetailTabs({
       {/* Tab bar — visually continues the hero card */}
       <div className="bg-surface rounded-b-2xl overflow-hidden mb-4">
         <div className="flex border-t border-white/5">
-          {TABS.filter(t => (!t.kitchenOnly || hasKitchen) && (!t.soccerOnly || isSoccer)).map(t => (
+          {TABS.filter(t => (!t.kitchenOnly || effectiveHasKitchen) && (!t.soccerOnly || isSoccer)).map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key as any)}
@@ -2746,15 +2906,15 @@ export default function GameDetailTabs({
             </div>
       )}
       {tab === "kitchen" && isSoccer && (() => {
-        const bet365SoccerSlips = soccerKitchenSlips
-          ? filterSoccerSlipsForBookie(soccerKitchenSlips, SOCCER_BOOKIES.bet365)
+        const bet365SoccerSlips = effectiveSoccerKitchenSlips
+          ? filterSoccerSlipsForBookie(effectiveSoccerKitchenSlips, SOCCER_BOOKIES.bet365)
           : [];
-        const activeSoccerSlips = soccerBookieTab === "bet365" ? bet365SoccerSlips : (soccerKitchenSlips ?? []);
+        const activeSoccerSlips = soccerBookieTab === "bet365" ? bet365SoccerSlips : (effectiveSoccerKitchenSlips ?? []);
         const hasLegs = activeSoccerSlips.some(s => s.legs.length > 0);
         return (
           <>
             {/* Bookie tab selector */}
-            {soccerKitchenSlips && soccerKitchenSlips.some(s => s.legs.length > 0) && (
+            {effectiveSoccerKitchenSlips && effectiveSoccerKitchenSlips.some(s => s.legs.length > 0) && (
               <div className="flex items-center gap-2 mb-4 px-1">
                 <span className="text-[10px] text-text-2 uppercase tracking-widest font-bold mr-1">Bookie</span>
                 {(["generic", "bet365"] as const).map(b => (
