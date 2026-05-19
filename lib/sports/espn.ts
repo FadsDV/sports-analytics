@@ -490,10 +490,11 @@ function parseSummary(raw: any, sport: ESPNSport, fantasyMap: Map<string, number
   if (bsTeams.length >= 2) {
     const parseTeamStats = (t: any): Record<string, string | number | null> =>
       Object.fromEntries(
-        (t.statistics ?? []).map((s: any) => [
-          s.abbreviation ?? s.name ?? s.displayName ?? "stat",
-          s.displayValue ?? s.value ?? null,
-        ])
+        (t.statistics ?? []).map((s: any) => {
+          // Prefer `label` ("Fouls", "Yellow Cards") over raw `name` ("foulsCommitted")
+          const key = (s.label && s.label.trim()) || s.abbreviation || s.name || s.displayName || "stat";
+          return [key, s.displayValue ?? s.value ?? null];
+        })
       );
     result.teamStats = {
       home: parseTeamStats(bsTeams[0]),

@@ -39,11 +39,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
 
     // Check if already fully resolved
-    if (hasOutcomes(body.gameId)) {
+    if (await hasOutcomes(body.gameId)) {
       return Response.json({ ok: true, skipped: true, reason: "Already resolved" });
     }
 
-    resolveOutcomes(body.gameId, body.statLines);
+    await resolveOutcomes(body.gameId, body.statLines);
 
     return Response.json({ ok: true, processed: body.statLines.length });
   } catch (err: any) {
@@ -60,11 +60,11 @@ export async function DELETE(req: NextRequest): Promise<Response> {
     }
 
     if (gameId === "ALL") {
-      resetAllOutcomes();
+      await resetAllOutcomes();
       return Response.json({ ok: true, reset: "ALL" });
     }
 
-    resetOutcomes(gameId);
+    await resetOutcomes(gameId);
     return Response.json({ ok: true, reset: gameId });
   } catch (err: any) {
     console.error("[/api/slips/outcome DELETE]", err);

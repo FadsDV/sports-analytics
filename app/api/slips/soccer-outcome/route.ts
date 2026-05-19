@@ -35,11 +35,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
 
     // Check if already fully resolved
-    if (hasOutcomes(body.gameId)) {
+    if (await hasOutcomes(body.gameId)) {
       return Response.json({ ok: true, skipped: true, reason: "Already resolved" });
     }
 
-    resolveSoccerOutcomes(body.gameId, body.statLines);
+    await resolveSoccerOutcomes(body.gameId, body.statLines);
 
     return Response.json({ ok: true, processed: body.statLines.length });
   } catch (err: any) {

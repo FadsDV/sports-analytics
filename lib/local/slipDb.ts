@@ -1,124 +1,118 @@
 /**
- * Local slip database — SQLite via better-sqlite3.
+ * Slip database — Vercel Blob (replaces better-sqlite3 which doesn't work on Vercel).
  *
- * Stored at: data/local/slips.db
- * NEVER committed to git (data/local/ is in .gitignore).
+ * Each game is stored as `slip-analytics/{gameId}.json`.
+ * Analytics queries fetch all blobs and aggregate in memory.
  *
- * Purpose:
- *  - Log every AFL kitchen slip generated on the local server
- *  - Track outcome (did each leg hit? did the full slip hit?)
- *  - Feed data back into analytics to improve the picker over time
+ * Falls back silently when BLOB_READ_WRITE_TOKEN is not set (local dev without Blob).
  *
- * Schema:
- *   games        — one row per AFL game that had a kitchen generated
- *   slips        — one row per slip type (safe, doable, etc.) per game
- *   legs         — one row per leg within each slip
- *   outcomes     — one row per game, written after result is known
+ * Note: uses `slip-analytics/` prefix (not `slips/`) to avoid colliding with
+ * the kitchen freeze cache in lib/slipCache.ts which uses `slips/`.
  */
 
-import Database from "better-sqlite3";
-import path from "path";
-import fs from "fs";
+const BLOB_PREFIX = "slip-analytics/";
 
-// ─── DB path ──────────────────────────────────────────────────────────────────
+function blobAvailable(): boolean {
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+}
 
-const DB_DIR  = path.join(process.cwd(), "data", "local");
-const DB_PATH = path.join(DB_DIR, "slips.db");
+// ─── Stored data shapes ───────────────────────────────────────────────────────
 
-// ─── Singleton connection ─────────────────────────────────────────────────────
+interface StoredLeg {
+  id:            number;
+  player:        string;
+  teamAbbr:      string;
+  side:          "home" | "away";
+  stat:          string;
+  statLabel:     string;
+  threshold:     number;
+  avgStat:       number;
+  hitRate:       number;
+  reliability:   number;
+  isOnForm:      number;
+  isBounceBack:  number;
+  gamesAnalyzed: number;
+  signalTotal?:  number;
+  propPrice?:    number;
+  propLine?:     number;
+  propBookmaker?: string;
+  edge?:         number;
+  actualStat?:   number;
+  hit?:          number; // 0 | 1 | undefined (undefined = unresolved)
+}
 
-let _db: Database.Database | null = null;
+interface StoredSlip {
+  id:           number;
+  slipType:     string;
+  bookie:       string;
+  legCount:     number;
+  combinedOdds?: number;
+  hitCount?:    number;
+  allHit?:      number;
+  legs:         StoredLeg[];
+}
 
-function getDb(): Database.Database {
-  if (_db) return _db;
+interface StoredGame {
+  id:        string;
+  homeTeam:  string;
+  awayTeam:  string;
+  venue?:    string;
+  gameDate?: string;
+  round?:    string;
+  season?:   number;
+  sport:     string;
+  createdAt: string;
+  slips:     StoredSlip[];
+}
 
-  // Ensure directory exists
-  if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
+// ─── Blob helpers ─────────────────────────────────────────────────────────────
+
+async function readGame(gameId: string): Promise<StoredGame | null> {
+  if (!blobAvailable()) return null;
+  try {
+    const { list } = await import("@vercel/blob");
+    const { blobs } = await list({ prefix: `${BLOB_PREFIX}${gameId}.json`, limit: 1 });
+    if (!blobs.length) return null;
+    const res = await fetch(blobs[0].url, { cache: "no-store" });
+    if (!res.ok) return null;
+    return await res.json() as StoredGame;
+  } catch {
+    return null;
   }
-
-  _db = new Database(DB_PATH);
-  _db.pragma("journal_mode = WAL");
-  _db.pragma("foreign_keys = ON");
-
-  initSchema(_db);
-  runMigrations(_db);
-  return _db;
 }
 
-// ─── Schema ───────────────────────────────────────────────────────────────────
-
-function initSchema(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS games (
-      id            TEXT PRIMARY KEY,   -- ESPN game ID e.g. "afl-1133570"
-      home_team     TEXT NOT NULL,
-      away_team     TEXT NOT NULL,
-      venue         TEXT,
-      game_date     TEXT,               -- ISO date string
-      round         TEXT,
-      season        INTEGER,
-      created_at    TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS slips (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      game_id       TEXT NOT NULL REFERENCES games(id),
-      slip_type     TEXT NOT NULL,      -- safe | doable | goalscorers | disposals | ballsy | value
-      bookie        TEXT DEFAULT 'generic', -- generic | bet365 | dabble
-      leg_count     INTEGER NOT NULL,
-      combined_odds REAL,               -- product of all leg odds (if available)
-      hit_count     INTEGER,            -- filled after outcome check
-      all_hit       INTEGER,            -- 0 or 1, filled after outcome check
-      created_at    TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS legs (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      slip_id         INTEGER NOT NULL REFERENCES slips(id),
-      game_id         TEXT NOT NULL,
-      player          TEXT NOT NULL,
-      team_abbr       TEXT NOT NULL,
-      side            TEXT NOT NULL,    -- home | away
-      stat            TEXT NOT NULL,    -- D | G | M | T | HO | K | H
-      stat_label      TEXT NOT NULL,    -- disposals | goals | marks | tackles | hitouts | kicks | handballs
-      threshold       REAL NOT NULL,    -- recommended line
-      avg_stat        REAL NOT NULL,    -- player's season average for this stat
-      hit_rate        REAL NOT NULL,    -- historical hit rate at this threshold
-      reliability     REAL NOT NULL,    -- 0-1 reliability score
-      is_on_form      INTEGER NOT NULL, -- 0 or 1
-      is_bounce_back  INTEGER NOT NULL, -- 0 or 1
-      games_analyzed  INTEGER NOT NULL,
-      signal_total    REAL,             -- net intelligence signal applied (±) — Phase 3
-      prop_price      REAL,             -- bookmaker odds (if available)
-      prop_line       REAL,             -- bookmaker line (if available)
-      prop_bookmaker  TEXT,
-      edge            REAL,             -- avg - line (value picks only)
-      -- Outcome fields (filled after game finishes)
-      actual_stat     REAL,             -- player's actual final stat
-      hit             INTEGER,          -- 0 or 1
-      created_at      TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_legs_game   ON legs(game_id);
-    CREATE INDEX IF NOT EXISTS idx_legs_player ON legs(player, stat);
-    CREATE INDEX IF NOT EXISTS idx_slips_game  ON slips(game_id);
-    CREATE INDEX IF NOT EXISTS idx_slips_type  ON slips(slip_type, bookie);
-  `);
+async function writeGame(game: StoredGame): Promise<void> {
+  if (!blobAvailable()) return;
+  const { put } = await import("@vercel/blob");
+  await put(`${BLOB_PREFIX}${game.id}.json`, JSON.stringify(game), {
+    access:          "public",
+    addRandomSuffix: false,
+    allowOverwrite:  true,
+    contentType:     "application/json",
+  });
 }
 
-// ─── Migrations (run after initSchema to patch existing DBs) ─────────────────
-
-function runMigrations(db: Database.Database): void {
-  // Add signal_total column to legs
+async function readAllGames(): Promise<StoredGame[]> {
+  if (!blobAvailable()) return [];
   try {
-    db.exec(`ALTER TABLE legs ADD COLUMN signal_total REAL`);
-  } catch { /* column already exists — safe to ignore */ }
-
-  // Add sport column to games (afl | soccer | nba)
-  try {
-    db.exec(`ALTER TABLE games ADD COLUMN sport TEXT DEFAULT 'afl'`);
-  } catch { /* column already exists — safe to ignore */ }
+    const { list } = await import("@vercel/blob");
+    const { blobs } = await list({ prefix: BLOB_PREFIX });
+    if (!blobs.length) return [];
+    const results = await Promise.all(
+      blobs.map(async b => {
+        try {
+          const res = await fetch(b.url, { cache: "no-store" });
+          if (!res.ok) return null;
+          return await res.json() as StoredGame;
+        } catch {
+          return null;
+        }
+      })
+    );
+    return results.filter((g): g is StoredGame => g !== null);
+  } catch {
+    return [];
+  }
 }
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -131,7 +125,7 @@ export interface SlipLogGame {
   gameDate?: string;
   round?:    string;
   season?:   number;
-  sport?:    string;  // 'afl' | 'soccer' | 'nba' — defaults to 'afl'
+  sport?:    string;
 }
 
 export interface SlipLogLeg {
@@ -161,230 +155,132 @@ export interface SlipLogSlip {
 
 // ─── Write operations ─────────────────────────────────────────────────────────
 
-/**
- * Log a full kitchen for a game.
- * Safe to call multiple times — uses INSERT OR IGNORE for the game row
- * and replaces existing slips for the same game+type+bookie.
- */
-export function logSlips(game: SlipLogGame, slips: SlipLogSlip[]): void {
+export async function logSlips(game: SlipLogGame, slips: SlipLogSlip[]): Promise<void> {
   try {
-    const db = getDb();
+    // Guard: don't log if slips already exist for this game
+    const existing = await readGame(game.id);
+    if (existing && existing.slips.length > 0) return;
 
-    // Upsert game
-    db.prepare(`
-      INSERT OR IGNORE INTO games (id, home_team, away_team, venue, game_date, round, season, sport)
-      VALUES (@id, @homeTeam, @awayTeam, @venue, @gameDate, @round, @season, @sport)
-    `).run({
-      id:       game.id,
-      homeTeam: game.homeTeam,
-      awayTeam: game.awayTeam,
-      venue:    game.venue ?? null,
-      gameDate: game.gameDate ?? null,
-      round:    game.round ?? null,
-      season:   game.season ?? null,
-      sport:    game.sport ?? "afl",
-    });
+    let slipId = 0;
+    let legId  = 0;
 
-    const insertSlip = db.prepare(`
-      INSERT INTO slips (game_id, slip_type, bookie, leg_count, combined_odds)
-      VALUES (@gameId, @slipType, @bookie, @legCount, @combinedOdds)
-    `);
-
-    const insertLeg = db.prepare(`
-      INSERT INTO legs (
-        slip_id, game_id, player, team_abbr, side, stat, stat_label,
-        threshold, avg_stat, hit_rate, reliability,
-        is_on_form, is_bounce_back, games_analyzed, signal_total,
-        prop_price, prop_line, prop_bookmaker, edge
-      ) VALUES (
-        @slipId, @gameId, @player, @teamAbbr, @side, @stat, @statLabel,
-        @threshold, @avgStat, @hitRate, @reliability,
-        @isOnForm, @isBounceBack, @gamesAnalyzed, @signalTotal,
-        @propPrice, @propLine, @propBookmaker, @edge
-      )
-    `);
-
-    // Guard: don't log if slips already exist for this game (prevents duplicate entries
-    // from opening the same game page multiple times before the match).
-    const existing = db.prepare(
-      `SELECT COUNT(*) as n FROM slips WHERE game_id = ?`
-    ).get(game.id) as { n: number };
-    if (existing.n > 0) return;
-
-    const transaction = db.transaction(() => {
-      for (const slip of slips) {
-        if (slip.legs.length === 0) continue;
-
-        // Compute combined odds from legs that have props
-        let combinedOdds: number | null = null;
-        const priced = slip.legs.filter(l => l.prop?.price);
+    const storedSlips: StoredSlip[] = slips
+      .filter(s => s.legs.length > 0)
+      .map(s => {
+        let combinedOdds: number | undefined;
+        const priced = s.legs.filter(l => l.prop?.price);
         if (priced.length > 0) {
-          combinedOdds = priced.reduce((acc, l) => acc * (l.prop!.price), 1);
-          combinedOdds = Math.round(combinedOdds * 100) / 100;
+          combinedOdds = Math.round(priced.reduce((acc, l) => acc * l.prop!.price, 1) * 100) / 100;
         }
 
-        const slipRow = insertSlip.run({
-          gameId:       game.id,
-          slipType:     slip.slipType,
-          bookie:       slip.bookie,
-          legCount:     slip.legs.length,
-          combinedOdds: combinedOdds ?? slip.combinedOdds ?? null,
-        });
+        return {
+          id:           ++slipId,
+          slipType:     s.slipType,
+          bookie:       s.bookie,
+          legCount:     s.legs.length,
+          combinedOdds: combinedOdds ?? s.combinedOdds,
+          legs: s.legs.map(l => ({
+            id:            ++legId,
+            player:        l.player,
+            teamAbbr:      l.teamAbbr,
+            side:          l.side,
+            stat:          l.stat,
+            statLabel:     l.statLabel,
+            threshold:     l.threshold,
+            avgStat:       l.avgStat,
+            hitRate:       l.hitRate,
+            reliability:   l.reliability,
+            isOnForm:      l.isOnForm ? 1 : 0,
+            isBounceBack:  l.isBounceBack ? 1 : 0,
+            gamesAnalyzed: l.gamesAnalyzed,
+            signalTotal:   l.signalTotal,
+            propPrice:     l.prop?.price,
+            propLine:      l.prop?.line,
+            propBookmaker: l.prop?.bookmaker,
+            edge:          l.edge,
+          })),
+        };
+      });
 
-        const slipId = slipRow.lastInsertRowid;
+    if (storedSlips.length === 0) return;
 
-        for (const leg of slip.legs) {
-          insertLeg.run({
-            slipId,
-            gameId:        game.id,
-            player:        leg.player,
-            teamAbbr:      leg.teamAbbr,
-            side:          leg.side,
-            stat:          leg.stat,
-            statLabel:     leg.statLabel,
-            threshold:     leg.threshold,
-            avgStat:       leg.avgStat,
-            hitRate:       leg.hitRate,
-            reliability:   leg.reliability,
-            isOnForm:      leg.isOnForm ? 1 : 0,
-            isBounceBack:  leg.isBounceBack ? 1 : 0,
-            gamesAnalyzed: leg.gamesAnalyzed,
-            signalTotal:   leg.signalTotal ?? null,
-            propPrice:     leg.prop?.price ?? null,
-            propLine:      leg.prop?.line  ?? null,
-            propBookmaker: leg.prop?.bookmaker ?? null,
-            edge:          leg.edge ?? null,
-          });
-        }
-      }
-    });
+    const stored: StoredGame = {
+      id:        game.id,
+      homeTeam:  game.homeTeam,
+      awayTeam:  game.awayTeam,
+      venue:     game.venue,
+      gameDate:  game.gameDate,
+      round:     game.round,
+      season:    game.season,
+      sport:     game.sport ?? "afl",
+      createdAt: new Date().toISOString(),
+      slips:     storedSlips,
+    };
 
-    transaction();
+    await writeGame(stored);
   } catch (err) {
-    // Never let logging crash the app
     console.error("[slipDb] logSlips error:", err);
   }
 }
 
 // ─── Outcome resolution ───────────────────────────────────────────────────────
 
-/**
- * Final boxscore stat line for one player.
- * Sent from the client after a game finishes.
- * `hit` is NOT included — computed server-side against stored threshold.
- */
 export interface PlayerStatLine {
-  player: string;  // displayName from ESPN boxscore
-  D:  number;      // disposals (direct ESPN column, not K+H)
-  G:  number;      // goals
-  M:  number;      // marks
-  T:  number;      // tackles
-  HO: number;      // hitouts
-  K:  number;      // kicks
-  H:  number;      // handballs
+  player: string;
+  D:  number;
+  G:  number;
+  M:  number;
+  T:  number;
+  HO: number;
+  K:  number;
+  H:  number;
 }
-
-// ── Fuzzy name normalisation (mirrors slipTracker.ts findRow) ─────────────────
 
 function normName(s: string): string {
   return s.toLowerCase().replace(/[^a-z]/g, "");
 }
 
-/**
- * Find a PlayerStatLine whose name fuzzy-matches `target`.
- * Uses exact normalised match first, then last-name suffix (≥5 chars).
- */
-function findPlayerLine(
-  target: string,
-  lines:  PlayerStatLine[],
-): PlayerStatLine | undefined {
+function findPlayerLine(target: string, lines: PlayerStatLine[]): PlayerStatLine | undefined {
   const norm = normName(target);
-
-  // 1. Exact normalised match
   const exact = lines.find(l => normName(l.player) === norm);
   if (exact) return exact;
-
-  // 2. Last-name suffix match (≥5 chars)
   const suffix = norm.slice(-7);
-  if (suffix.length >= 5) {
-    return lines.find(l => normName(l.player).endsWith(suffix));
-  }
-
+  if (suffix.length >= 5) return lines.find(l => normName(l.player).endsWith(suffix));
   return undefined;
 }
 
-/**
- * Update leg outcomes for a finished game.
- *
- * - Fetches all unresolved legs from the DB for this game
- * - Fuzzy-matches each leg's player name against the boxscore lines
- * - Computes hit = actualStat >= threshold SERVER-SIDE
- * - Updates legs and rolls up slip hit counts
- *
- * Safe to call multiple times (only updates legs where hit IS NULL).
- */
-export function resolveOutcomes(gameId: string, statLines: PlayerStatLine[]): void {
+function rollUpSlip(slip: StoredSlip): StoredSlip {
+  const resolved = slip.legs.filter(l => l.hit !== undefined);
+  if (resolved.length === 0) return slip;
+  const hits = resolved.filter(l => l.hit === 1).length;
+  return {
+    ...slip,
+    hitCount: hits,
+    allHit:   hits >= slip.legCount ? 1 : 0,
+  };
+}
+
+export async function resolveOutcomes(gameId: string, statLines: PlayerStatLine[]): Promise<void> {
   try {
-    const db = getDb();
+    const game = await readGame(gameId);
+    if (!game) return;
 
-    // Fetch all unresolved legs for this game
-    type LegRow = {
-      id:        number;
-      slip_id:   number;
-      player:    string;
-      stat:      string;
-      threshold: number;
-    };
-    const unresolved = db.prepare(`
-      SELECT id, slip_id, player, stat, threshold
-      FROM legs
-      WHERE game_id = ? AND hit IS NULL
-    `).all(gameId) as LegRow[];
-
-    if (unresolved.length === 0) return;
-
-    const updateLeg = db.prepare(`
-      UPDATE legs
-      SET actual_stat = @actualStat, hit = @hit
-      WHERE id = @id
-    `);
-
-    const transaction = db.transaction(() => {
-      for (const leg of unresolved) {
+    let changed = false;
+    const updatedSlips = game.slips.map(slip => {
+      const updatedLegs = slip.legs.map(leg => {
+        if (leg.hit !== undefined) return leg; // already resolved
         const line = findPlayerLine(leg.player, statLines);
-        if (!line) continue;  // player not in boxscore (did not play)
-
+        if (!line) return leg;
         const actualStat = line[leg.stat as keyof PlayerStatLine] as number ?? 0;
-        const hit        = actualStat >= leg.threshold ? 1 : 0;
-
-        updateLeg.run({ id: leg.id, actualStat, hit });
-      }
-
-      // Roll up hit_count and all_hit on each slip
-      const slips = db.prepare(
-        `SELECT id, leg_count FROM slips WHERE game_id = ?`
-      ).all(gameId) as { id: number; leg_count: number }[];
-
-      const countHits  = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE slip_id = ? AND hit = 1`);
-      const countResolved = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE slip_id = ? AND hit IS NOT NULL`);
-      const updateSlip = db.prepare(`
-        UPDATE slips SET hit_count = @hitCount, all_hit = @allHit WHERE id = @slipId
-      `);
-
-      for (const slip of slips) {
-        const resolved = (countResolved.get(slip.id) as { n: number }).n;
-        if (resolved === 0) continue;  // none resolved for this slip yet
-        const hits = (countHits.get(slip.id) as { n: number }).n;
-        updateSlip.run({
-          slipId:   slip.id,
-          hitCount: hits,
-          allHit:   hits >= slip.leg_count ? 1 : 0,
-        });
-      }
+        changed = true;
+        return { ...leg, actualStat, hit: actualStat >= leg.threshold ? 1 : 0 };
+      });
+      return rollUpSlip({ ...slip, legs: updatedLegs });
     });
 
-    transaction();
-    console.info(`[slipDb] resolved outcomes for ${gameId}: ${unresolved.length} legs processed`);
+    if (!changed) return;
+    await writeGame({ ...game, slips: updatedSlips });
+    console.info(`[slipDb] resolved outcomes for ${gameId}`);
   } catch (err) {
     console.error("[slipDb] resolveOutcomes error:", err);
   }
@@ -392,179 +288,180 @@ export function resolveOutcomes(gameId: string, statLines: PlayerStatLine[]): vo
 
 // ─── Soccer outcome resolution ────────────────────────────────────────────────
 
-/**
- * Final player stats for a soccer match, sourced from Sofascore lineup data.
- * Sent from the client after the game finishes.
- */
 export interface SoccerStatLine {
-  player:        string;   // player.name from Sofascore
-  playerId:      number;   // Sofascore player ID
-  goals:         number;   // stats.goals
-  assists:       number;   // stats.goalAssist
-  shots:         number;   // stats.totalScoringAttempt
-  shotsOnTarget: number;   // stats.onTargetScoringAttempt
-  yellowCards:   number;   // stats.yellowCard
+  player:        string;
+  playerId:      number;
+  goals:         number;
+  assists:       number;
+  shots:         number;
+  shotsOnTarget: number;
+  yellowCards:   number;
 }
 
-/**
- * Resolve outcomes for a finished soccer game.
- *
- * Handles soccer-specific stat keys including the composite `scoreOrAssist`
- * (= goals + assists). All other mapping is 1:1 with SoccerStatLine fields.
- * Only updates legs where hit IS NULL (idempotent).
- */
-export function resolveSoccerOutcomes(gameId: string, statLines: SoccerStatLine[]): void {
+function getSoccerStatValue(line: SoccerStatLine, stat: string): number {
+  switch (stat) {
+    case "goals":         return line.goals;
+    case "assists":       return line.assists;
+    case "scoreOrAssist": return line.goals + line.assists;
+    case "shots":         return line.shots;
+    case "shotsOnTarget": return line.shotsOnTarget;
+    case "yellowCards":   return line.yellowCards;
+    default:              return 0;
+  }
+}
+
+export async function resolveSoccerOutcomes(gameId: string, statLines: SoccerStatLine[]): Promise<void> {
   try {
-    const db = getDb();
+    const game = await readGame(gameId);
+    if (!game) return;
 
-    type LegRow = { id: number; slip_id: number; player: string; stat: string; threshold: number };
-    const unresolved = db.prepare(`
-      SELECT id, slip_id, player, stat, threshold
-      FROM legs
-      WHERE game_id = ? AND hit IS NULL
-    `).all(gameId) as LegRow[];
-
-    if (unresolved.length === 0) return;
-
-    const updateLeg = db.prepare(`
-      UPDATE legs SET actual_stat = @actualStat, hit = @hit WHERE id = @id
-    `);
-
-    // Index lines by normalised name for fast lookup (plain object, no Map)
     const byName: Record<string, SoccerStatLine> = {};
-    for (const line of statLines) {
-      byName[normName(line.player)] = line;
-    }
+    for (const line of statLines) byName[normName(line.player)] = line;
 
     const findSoccerLine = (target: string): SoccerStatLine | undefined => {
       const norm = normName(target);
       if (byName[norm]) return byName[norm];
-      // Last-name suffix fallback (≥5 chars)
       const suffix = norm.slice(-7);
       if (suffix.length >= 5) {
-        const keys = Object.keys(byName);
-        for (let i = 0; i < keys.length; i++) {
-          if (keys[i].endsWith(suffix)) return byName[keys[i]];
+        for (const key of Object.keys(byName)) {
+          if (key.endsWith(suffix)) return byName[key];
         }
       }
       return undefined;
     };
 
-    const getSoccerStatValue = (line: SoccerStatLine, stat: string): number => {
-      switch (stat) {
-        case "goals":         return line.goals;
-        case "assists":       return line.assists;
-        case "scoreOrAssist": return line.goals + line.assists;
-        case "shots":         return line.shots;
-        case "shotsOnTarget": return line.shotsOnTarget;
-        case "yellowCards":   return line.yellowCards;
-        default:              return 0;
-      }
-    };
-
-    const transaction = db.transaction(() => {
-      for (const leg of unresolved) {
+    let changed = false;
+    const updatedSlips = game.slips.map(slip => {
+      const updatedLegs = slip.legs.map(leg => {
+        if (leg.hit !== undefined) return leg;
         const line = findSoccerLine(leg.player);
-        if (!line) continue;
-
+        if (!line) return leg;
         const actualStat = getSoccerStatValue(line, leg.stat);
-        const hit        = actualStat >= leg.threshold ? 1 : 0;
-        updateLeg.run({ id: leg.id, actualStat, hit });
-      }
-
-      // Roll up hit_count and all_hit on each affected slip
-      const slips = db.prepare(
-        `SELECT id, leg_count FROM slips WHERE game_id = ?`
-      ).all(gameId) as { id: number; leg_count: number }[];
-
-      const countHits     = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE slip_id = ? AND hit = 1`);
-      const countResolved = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE slip_id = ? AND hit IS NOT NULL`);
-      const updateSlip    = db.prepare(
-        `UPDATE slips SET hit_count = @hitCount, all_hit = @allHit WHERE id = @slipId`
-      );
-
-      for (const slip of slips) {
-        const resolved = (countResolved.get(slip.id) as { n: number }).n;
-        if (resolved === 0) continue;
-        const hits = (countHits.get(slip.id) as { n: number }).n;
-        updateSlip.run({ slipId: slip.id, hitCount: hits, allHit: hits >= slip.leg_count ? 1 : 0 });
-      }
+        changed = true;
+        return { ...leg, actualStat, hit: actualStat >= leg.threshold ? 1 : 0 };
+      });
+      return rollUpSlip({ ...slip, legs: updatedLegs });
     });
 
-    transaction();
-    console.info(`[slipDb] resolveSoccerOutcomes ${gameId}: ${unresolved.length} legs processed`);
+    if (!changed) return;
+    await writeGame({ ...game, slips: updatedSlips });
+    console.info(`[slipDb] resolveSoccerOutcomes ${gameId}`);
   } catch (err) {
     console.error("[slipDb] resolveSoccerOutcomes error:", err);
   }
 }
 
-/**
- * Reset outcomes for a game — sets hit = NULL so resolveOutcomes can re-run.
- * Use this to clear incorrect data from the bug where hit was hardcoded false.
- */
-export function resetOutcomes(gameId: string): void {
+export async function resetOutcomes(gameId: string): Promise<void> {
   try {
-    const db = getDb();
-    db.prepare(`UPDATE legs  SET actual_stat = NULL, hit = NULL WHERE game_id = ?`).run(gameId);
-    db.prepare(`UPDATE slips SET hit_count   = NULL, all_hit = NULL WHERE game_id = ?`).run(gameId);
+    const game = await readGame(gameId);
+    if (!game) return;
+    const updatedSlips = game.slips.map(slip => ({
+      ...slip,
+      hitCount: undefined,
+      allHit:   undefined,
+      legs: slip.legs.map(leg => ({ ...leg, actualStat: undefined, hit: undefined })),
+    }));
+    await writeGame({ ...game, slips: updatedSlips });
     console.info(`[slipDb] reset outcomes for ${gameId}`);
   } catch (err) {
     console.error("[slipDb] resetOutcomes error:", err);
   }
 }
 
-/** Reset ALL outcomes — nuclear option to clear all bad data from the old bug. */
-export function resetAllOutcomes(): void {
+export async function resetAllOutcomes(): Promise<void> {
   try {
-    const db = getDb();
-    db.prepare(`UPDATE legs  SET actual_stat = NULL, hit = NULL`).run();
-    db.prepare(`UPDATE slips SET hit_count   = NULL, all_hit = NULL`).run();
+    const games = await readAllGames();
+    await Promise.all(games.map(game => {
+      const updatedSlips = game.slips.map(slip => ({
+        ...slip,
+        hitCount: undefined,
+        allHit:   undefined,
+        legs: slip.legs.map(leg => ({ ...leg, actualStat: undefined, hit: undefined })),
+      }));
+      return writeGame({ ...game, slips: updatedSlips });
+    }));
     console.info(`[slipDb] reset ALL outcomes`);
   } catch (err) {
     console.error("[slipDb] resetAllOutcomes error:", err);
   }
 }
 
+export async function hasOutcomes(gameId: string): Promise<boolean> {
+  try {
+    const game = await readGame(gameId);
+    if (!game || !game.slips.length) return false;
+    const allLegs = game.slips.flatMap(s => s.legs);
+    if (allLegs.length === 0) return false;
+    return allLegs.every(l => l.hit !== undefined);
+  } catch {
+    return false;
+  }
+}
+
+export async function hasSlips(gameId: string): Promise<boolean> {
+  try {
+    const game = await readGame(gameId);
+    return (game?.slips.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Analytics queries ────────────────────────────────────────────────────────
 
 export interface SlipHitStats {
-  slipType:    string;
-  bookie:      string;
-  totalSlips:  number;
+  slipType:     string;
+  bookie:       string;
+  totalSlips:   number;
   resolvedSlips: number;
-  fullHits:    number;
-  partialHits: number;
-  busts:       number;
-  hitRate:     number | null;
-  avgLegCount: number;
+  fullHits:     number;
+  partialHits:  number;
+  busts:        number;
+  hitRate:      number | null;
+  avgLegCount:  number;
 }
 
-/** Per-slip-type breakdown with full/partial/bust counts. Optional sport filter. */
-export function getSlipHitStats(sport?: string): SlipHitStats[] {
+export async function getSlipHitStats(sport?: string): Promise<SlipHitStats[]> {
   try {
-    const db = getDb();
-    const sportClause = sport ? `JOIN games g ON g.id = s.game_id WHERE g.sport = '${sport}'` : "";
-    return db.prepare(`
-      SELECT
-        s.slip_type  AS slipType,
-        s.bookie,
-        COUNT(*)     AS totalSlips,
-        SUM(CASE WHEN s.all_hit IS NOT NULL THEN 1 ELSE 0 END)           AS resolvedSlips,
-        SUM(CASE WHEN s.all_hit = 1 THEN 1 ELSE 0 END)                   AS fullHits,
-        SUM(CASE WHEN s.all_hit = 0 AND s.hit_count > 0 THEN 1 ELSE 0 END) AS partialHits,
-        SUM(CASE WHEN s.all_hit = 0 AND (s.hit_count = 0 OR s.hit_count IS NULL) AND s.all_hit IS NOT NULL THEN 1 ELSE 0 END) AS busts,
-        CASE WHEN SUM(CASE WHEN s.all_hit IS NOT NULL THEN 1 ELSE 0 END) > 0
-          THEN ROUND(
-            CAST(SUM(CASE WHEN s.all_hit = 1 THEN 1 ELSE 0 END) AS REAL)
-            / SUM(CASE WHEN s.all_hit IS NOT NULL THEN 1 ELSE 0 END), 3)
-          ELSE NULL
-        END          AS hitRate,
-        ROUND(AVG(s.leg_count), 1) AS avgLegCount
-      FROM slips s
-      ${sportClause}
-      GROUP BY s.slip_type, s.bookie
-      ORDER BY s.slip_type, s.bookie
-    `).all() as SlipHitStats[];
+    const games = await readAllGames();
+    const filtered = sport ? games.filter(g => g.sport === sport) : games;
+    const buckets = new Map<string, {
+      totalSlips: number; resolvedSlips: number; fullHits: number;
+      partialHits: number; busts: number; legCountSum: number;
+    }>();
+
+    for (const game of filtered) {
+      for (const slip of game.slips) {
+        const key = `${slip.slipType}|${slip.bookie}`;
+        const b = buckets.get(key) ?? { totalSlips: 0, resolvedSlips: 0, fullHits: 0, partialHits: 0, busts: 0, legCountSum: 0 };
+        b.totalSlips++;
+        b.legCountSum += slip.legCount;
+        if (slip.allHit !== undefined) {
+          b.resolvedSlips++;
+          if (slip.allHit === 1) b.fullHits++;
+          else if ((slip.hitCount ?? 0) > 0) b.partialHits++;
+          else b.busts++;
+        }
+        buckets.set(key, b);
+      }
+    }
+
+    return Array.from(buckets.entries())
+      .map(([key, b]) => {
+        const [slipType, bookie] = key.split("|");
+        return {
+          slipType: slipType!,
+          bookie:   bookie!,
+          totalSlips:   b.totalSlips,
+          resolvedSlips: b.resolvedSlips,
+          fullHits:    b.fullHits,
+          partialHits: b.partialHits,
+          busts:       b.busts,
+          hitRate:     b.resolvedSlips > 0 ? Math.round((b.fullHits / b.resolvedSlips) * 1000) / 1000 : null,
+          avgLegCount: b.totalSlips > 0 ? Math.round((b.legCountSum / b.totalSlips) * 10) / 10 : 0,
+        };
+      })
+      .sort((a, b) => a.slipType.localeCompare(b.slipType) || a.bookie.localeCompare(b.bookie));
   } catch {
     return [];
   }
@@ -580,37 +477,38 @@ export interface OverallStats {
   slipHitRate:   number | null;
 }
 
-/** Top-level summary numbers for the dashboard header. Optional sport filter. */
-export function getOverallStats(sport?: string): OverallStats {
+export async function getOverallStats(sport?: string): Promise<OverallStats> {
   try {
-    const db = getDb();
-    // Build reusable sport-scoped subqueries
-    const sportGames  = sport ? `SELECT id FROM games WHERE sport = '${sport}'` : `SELECT id FROM games`;
-    const gameFilter  = `game_id IN (${sportGames})`;
-    const slipFilter  = `game_id IN (${sportGames})`;
+    const games = await readAllGames();
+    const filtered = sport ? games.filter(g => g.sport === sport) : games;
 
-    const games    = db.prepare(`SELECT COUNT(*) as n FROM games ${sport ? `WHERE sport = '${sport}'` : ""}`).get() as { n: number };
-    const resolved = db.prepare(`SELECT COUNT(DISTINCT game_id) as n FROM legs WHERE hit IS NOT NULL AND ${gameFilter}`).get() as { n: number };
-    const slips    = db.prepare(`SELECT COUNT(*) as n FROM slips WHERE ${slipFilter}`).get() as { n: number };
-    const legs     = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE ${gameFilter}`).get() as { n: number };
-    const legRes   = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE hit IS NOT NULL AND ${gameFilter}`).get() as { n: number };
-    const legHit   = db.prepare(`SELECT COUNT(*) as n FROM legs WHERE hit = 1 AND ${gameFilter}`).get() as { n: number };
-    const slipHit  = db.prepare(`
-      SELECT
-        CASE WHEN SUM(CASE WHEN all_hit IS NOT NULL THEN 1 ELSE 0 END) > 0
-          THEN ROUND(CAST(SUM(all_hit) AS REAL) / SUM(CASE WHEN all_hit IS NOT NULL THEN 1 ELSE 0 END), 3)
-          ELSE NULL END AS rate
-      FROM slips WHERE ${slipFilter}
-    `).get() as { rate: number | null };
+    let totalSlips = 0, totalLegs = 0, resolvedLegs = 0, hitLegs = 0;
+    let resolvedSlips = 0, hitSlips = 0;
+    let resolvedGames = 0;
+
+    for (const game of filtered) {
+      let gameHasResolved = false;
+      for (const slip of game.slips) {
+        totalSlips++;
+        if (slip.allHit !== undefined) resolvedSlips++;
+        if (slip.allHit === 1) hitSlips++;
+        for (const leg of slip.legs) {
+          totalLegs++;
+          if (leg.hit !== undefined) { resolvedLegs++; gameHasResolved = true; }
+          if (leg.hit === 1) hitLegs++;
+        }
+      }
+      if (gameHasResolved) resolvedGames++;
+    }
 
     return {
-      totalGames:    games.n,
-      resolvedGames: resolved.n,
-      totalSlips:    slips.n,
-      totalLegs:     legs.n,
-      resolvedLegs:  legRes.n,
-      legHitRate:    legRes.n > 0 ? Math.round((legHit.n / legRes.n) * 1000) / 1000 : null,
-      slipHitRate:   slipHit.rate,
+      totalGames:    filtered.length,
+      resolvedGames,
+      totalSlips,
+      totalLegs,
+      resolvedLegs,
+      legHitRate:    resolvedLegs > 0 ? Math.round((hitLegs / resolvedLegs) * 1000) / 1000 : null,
+      slipHitRate:   resolvedSlips > 0 ? Math.round((hitSlips / resolvedSlips) * 1000) / 1000 : null,
     };
   } catch {
     return { totalGames: 0, resolvedGames: 0, totalSlips: 0, totalLegs: 0, resolvedLegs: 0, legHitRate: null, slipHitRate: null };
@@ -618,25 +516,20 @@ export function getOverallStats(sport?: string): OverallStats {
 }
 
 export interface ReliabilityBandStats {
-  band:         string;
-  minRel:       number;
-  maxRel:       number;
-  legs:         number;
-  hits:         number;
+  band:          string;
+  minRel:        number;
+  maxRel:        number;
+  legs:          number;
+  hits:          number;
   actualHitRate: number | null;
-  predictedMid: number;  // midpoint of the band — what the model "said"
+  predictedMid:  number;
 }
 
-/**
- * Model calibration: compare predicted reliability vs actual hit rate.
- * Reveals whether the reliability engine is over/underconfident.
- */
-export function getReliabilityCalibration(sport?: string): ReliabilityBandStats[] {
+export async function getReliabilityCalibration(sport?: string): Promise<ReliabilityBandStats[]> {
   try {
-    const db = getDb();
-    const sportClause = sport
-      ? `AND game_id IN (SELECT id FROM games WHERE sport = '${sport}')`
-      : "";
+    const games = await readAllGames();
+    const filtered = sport ? games.filter(g => g.sport === sport) : games;
+
     const bands = [
       { band: "Elite",    min: 0.85, max: 1.01, mid: 0.92 },
       { band: "High",     min: 0.70, max: 0.85, mid: 0.77 },
@@ -646,24 +539,22 @@ export function getReliabilityCalibration(sport?: string): ReliabilityBandStats[
     ];
 
     return bands.map(b => {
-      const row = db.prepare(`
-        SELECT
-          COUNT(*) as legs,
-          SUM(CASE WHEN hit = 1 THEN 1 ELSE 0 END) as hits
-        FROM legs
-        WHERE reliability >= @min AND reliability < @max
-          AND hit IS NOT NULL
-          ${sportClause}
-      `).get({ min: b.min, max: b.max }) as { legs: number; hits: number };
-
+      let legs = 0, hits = 0;
+      for (const game of filtered) {
+        for (const slip of game.slips) {
+          for (const leg of slip.legs) {
+            if (leg.hit === undefined) continue;
+            if (leg.reliability >= b.min && leg.reliability < b.max) {
+              legs++;
+              if (leg.hit === 1) hits++;
+            }
+          }
+        }
+      }
       return {
-        band:          b.band,
-        minRel:        b.min,
-        maxRel:        b.max,
-        legs:          row.legs,
-        hits:          row.hits,
+        band: b.band, minRel: b.min, maxRel: b.max, legs, hits,
         predictedMid:  b.mid,
-        actualHitRate: row.legs > 0 ? Math.round((row.hits / row.legs) * 1000) / 1000 : null,
+        actualHitRate: legs > 0 ? Math.round((hits / legs) * 1000) / 1000 : null,
       };
     });
   } catch {
@@ -672,48 +563,65 @@ export function getReliabilityCalibration(sport?: string): ReliabilityBandStats[
 }
 
 export interface PlayerLegStats {
-  player:      string;
-  stat:        string;
-  statLabel:   string;
-  legs:        number;
-  hits:        number;
-  hitRate:     number | null;
-  avgThreshold: number;
-  avgActual:   number;
+  player:         string;
+  stat:           string;
+  statLabel:      string;
+  legs:           number;
+  hits:           number;
+  hitRate:        number | null;
+  avgThreshold:   number;
+  avgActual:      number;
   avgReliability: number;
-  drift:       number | null;  // actualHitRate - avgReliability (negative = model overconfident)
+  drift:          number | null;
 }
 
-/** Per-player, per-stat accuracy. Minimum 2 resolved legs. Optional sport filter. */
-export function getPlayerStatHitRate(sport?: string): PlayerLegStats[] {
+export async function getPlayerStatHitRate(sport?: string): Promise<PlayerLegStats[]> {
   try {
-    const db = getDb();
-    const sportClause = sport
-      ? `AND game_id IN (SELECT id FROM games WHERE sport = '${sport}')`
-      : "";
-    return db.prepare(`
-      SELECT
-        player,
-        stat,
-        stat_label      AS statLabel,
-        COUNT(*)        AS legs,
-        SUM(CASE WHEN hit = 1 THEN 1 ELSE 0 END) AS hits,
-        CASE WHEN COUNT(*) > 0
-          THEN ROUND(CAST(SUM(hit) AS REAL) / COUNT(*), 3)
-          ELSE NULL END AS hitRate,
-        ROUND(AVG(threshold), 1)    AS avgThreshold,
-        ROUND(AVG(actual_stat), 1)  AS avgActual,
-        ROUND(AVG(reliability), 3)  AS avgReliability,
-        CASE WHEN COUNT(*) > 0
-          THEN ROUND(CAST(SUM(hit) AS REAL) / COUNT(*) - AVG(reliability), 3)
-          ELSE NULL END AS drift
-      FROM legs
-      WHERE hit IS NOT NULL
-        ${sportClause}
-      GROUP BY player, stat
-      HAVING COUNT(*) >= 2
-      ORDER BY drift ASC  -- worst model errors first (most overconfident)
-    `).all() as PlayerLegStats[];
+    const games = await readAllGames();
+    const filtered = sport ? games.filter(g => g.sport === sport) : games;
+
+    const buckets = new Map<string, {
+      stat: string; statLabel: string;
+      legs: number; hits: number;
+      thresholdSum: number; actualSum: number; relSum: number;
+    }>();
+
+    for (const game of filtered) {
+      for (const slip of game.slips) {
+        for (const leg of slip.legs) {
+          if (leg.hit === undefined || leg.actualStat === undefined) continue;
+          const key = `${leg.player}|${leg.stat}`;
+          const b = buckets.get(key) ?? { stat: leg.stat, statLabel: leg.statLabel, legs: 0, hits: 0, thresholdSum: 0, actualSum: 0, relSum: 0 };
+          b.legs++;
+          b.hits += leg.hit;
+          b.thresholdSum   += leg.threshold;
+          b.actualSum      += leg.actualStat;
+          b.relSum         += leg.reliability;
+          buckets.set(key, b);
+        }
+      }
+    }
+
+    return Array.from(buckets.entries())
+      .filter(([, b]) => b.legs >= 2)
+      .map(([key, b]) => {
+        const [player] = key.split("|");
+        const hitRate = Math.round((b.hits / b.legs) * 1000) / 1000;
+        const avgRel  = Math.round((b.relSum / b.legs) * 1000) / 1000;
+        return {
+          player:         player!,
+          stat:           b.stat,
+          statLabel:      b.statLabel,
+          legs:           b.legs,
+          hits:           b.hits,
+          hitRate,
+          avgThreshold:   Math.round((b.thresholdSum / b.legs) * 10) / 10,
+          avgActual:      Math.round((b.actualSum / b.legs) * 10) / 10,
+          avgReliability: avgRel,
+          drift:          Math.round((hitRate - avgRel) * 1000) / 1000,
+        };
+      })
+      .sort((a, b) => (a.drift ?? 0) - (b.drift ?? 0));
   } catch {
     return [];
   }
@@ -732,68 +640,42 @@ export interface RecentGameSummary {
   hitLegs:       number;
 }
 
-/** Last N games with outcome summary. Optional sport filter. */
-export function getRecentGames(limit = 15, sport?: string): RecentGameSummary[] {
+export async function getRecentGames(limit = 15, sport?: string): Promise<RecentGameSummary[]> {
   try {
-    const db = getDb();
-    const sportClause = sport ? `WHERE g.sport = '${sport}'` : "";
-    return db.prepare(`
-      SELECT
-        g.id         AS gameId,
-        g.home_team  AS homeTeam,
-        g.away_team  AS awayTeam,
-        g.game_date  AS gameDate,
-        g.venue,
-        COUNT(DISTINCT s.id)                                              AS totalSlips,
-        COUNT(DISTINCT CASE WHEN s.all_hit IS NOT NULL THEN s.id END)    AS resolvedSlips,
-        COUNT(DISTINCT CASE WHEN s.all_hit = 1 THEN s.id END)           AS fullHits,
-        COUNT(l.id)                                                       AS totalLegs,
-        SUM(CASE WHEN l.hit = 1 THEN 1 ELSE 0 END)                      AS hitLegs
-      FROM games g
-      LEFT JOIN slips s ON s.game_id = g.id
-      LEFT JOIN legs l  ON l.slip_id = s.id
-      ${sportClause}
-      GROUP BY g.id
-      ORDER BY g.game_date DESC, g.created_at DESC
-      LIMIT ?
-    `).all(limit) as RecentGameSummary[];
+    const games = await readAllGames();
+    const filtered = (sport ? games.filter(g => g.sport === sport) : games)
+      .sort((a, b) => {
+        const da = a.gameDate ?? a.createdAt;
+        const db = b.gameDate ?? b.createdAt;
+        return db.localeCompare(da);
+      })
+      .slice(0, limit);
+
+    return filtered.map(game => {
+      let totalSlips = 0, resolvedSlips = 0, fullHits = 0, totalLegs = 0, hitLegs = 0;
+      for (const slip of game.slips) {
+        totalSlips++;
+        if (slip.allHit !== undefined) resolvedSlips++;
+        if (slip.allHit === 1) fullHits++;
+        for (const leg of slip.legs) {
+          totalLegs++;
+          if (leg.hit === 1) hitLegs++;
+        }
+      }
+      return {
+        gameId:       game.id,
+        homeTeam:     game.homeTeam,
+        awayTeam:     game.awayTeam,
+        gameDate:     game.gameDate ?? null,
+        venue:        game.venue ?? null,
+        totalSlips,
+        resolvedSlips,
+        fullHits,
+        totalLegs,
+        hitLegs,
+      };
+    });
   } catch {
     return [];
-  }
-}
-
-/**
- * Check if there are any unresolved legs for a game.
- *
- * Returns true (= "skip") only when ALL legs are resolved — i.e., there is
- * nothing left to do. This replaces the old "any resolved?" check which caused
- * partial resolutions to be silently skipped on subsequent visits.
- */
-export function hasOutcomes(gameId: string): boolean {
-  try {
-    const db = getDb();
-    const unresolved = db.prepare(
-      `SELECT COUNT(*) as n FROM legs WHERE game_id = ? AND hit IS NULL`
-    ).get(gameId) as { n: number };
-    const total = db.prepare(
-      `SELECT COUNT(*) as n FROM legs WHERE game_id = ?`
-    ).get(gameId) as { n: number };
-    // "Done" = has legs AND none are unresolved
-    return total.n > 0 && unresolved.n === 0;
-  } catch {
-    return false;
-  }
-}
-
-/** Check if a game has any logged slips. */
-export function hasSlips(gameId: string): boolean {
-  try {
-    const db = getDb();
-    const row = db.prepare(
-      `SELECT COUNT(*) as n FROM slips WHERE game_id = ?`
-    ).get(gameId) as { n: number };
-    return row.n > 0;
-  } catch {
-    return false;
   }
 }

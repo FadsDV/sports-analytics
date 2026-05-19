@@ -116,18 +116,20 @@ const SPORT_FILTERS = [
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function AnalyticsPage({
+export default async function AnalyticsPage({
   searchParams,
 }: {
   searchParams: { sport?: string };
 }) {
   const sport = ["afl", "soccer"].includes(searchParams.sport ?? "") ? searchParams.sport : undefined;
 
-  const overall     = getOverallStats(sport);
-  const slipStats   = getSlipHitStats(sport);
-  const calibration = getReliabilityCalibration(sport);
-  const playerStats = getPlayerStatHitRate(sport);
-  const recentGames = getRecentGames(15, sport);
+  const [overall, slipStats, calibration, playerStats, recentGames] = await Promise.all([
+    getOverallStats(sport),
+    getSlipHitStats(sport),
+    getReliabilityCalibration(sport),
+    getPlayerStatHitRate(sport),
+    getRecentGames(15, sport),
+  ]);
 
   const hasData = overall.totalGames > 0;
   const coverage = overall.totalLegs > 0

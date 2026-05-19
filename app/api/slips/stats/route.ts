@@ -17,13 +17,13 @@ export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<Response> {
   try {
-    const [overall, slipStats, calibration, playerStats, recentGames] = [
+    const [overall, slipStats, calibration, playerStats, recentGames] = await Promise.all([
       getOverallStats(),
       getSlipHitStats(),
       getReliabilityCalibration(),
       getPlayerStatHitRate(),
       getRecentGames(15),
-    ];
+    ]);
 
     return Response.json({ ok: true, overall, slipStats, calibration, playerStats, recentGames });
   } catch (err: any) {

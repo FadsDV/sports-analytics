@@ -22,7 +22,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       return Response.json({ ok: false, error: "Invalid payload" }, { status: 400 });
     }
 
-    logSlips(body.game, body.slips);
+    await logSlips(body.game, body.slips);
 
     return Response.json({ ok: true });
   } catch (err: any) {
