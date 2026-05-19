@@ -44,32 +44,19 @@ function fmt(v: number | null, decimals = 0): string {
   return decimals > 0 ? v.toFixed(decimals) : String(Math.round(v));
 }
 
-// ─── Player photo with Sofascore CDN ─────────────────────────────────────────
+// ─── Player photo — initials only (Sofascore lineup IDs ≠ profile photo IDs) ──
 
-function PlayerPhoto({ id, name, size = 44 }: { id: number; name: string; size?: number }) {
-  const [failed, setFailed] = useState(false);
-  const initials = name.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
-
-  if (failed) {
-    return (
-      <div
-        className="rounded-full bg-surface2 border border-border flex items-center justify-center shrink-0 text-text-2 font-bold"
-        style={{ width: size, height: size, fontSize: size * 0.33 }}
-      >
-        {initials}
-      </div>
-    );
-  }
+function PlayerPhoto({ name, size = 44 }: { id?: number; name: string; size?: number }) {
+  // NO FAKE DATA: Sofascore lineup player IDs don't map to profile photo IDs.
+  // Showing initials is correct — wrong photo is worse than no photo.
+  const initials = name.split(" ").map((w: string) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
   return (
-    <img
-      src={`https://img.sofascore.com/api/v1/player/${id}/image`}
-      alt={name}
-      width={size}
-      height={size}
-      onError={() => setFailed(true)}
-      className="rounded-full object-cover shrink-0 bg-surface2 border border-border/40"
-      style={{ width: size, height: size }}
-    />
+    <div
+      className="rounded-full bg-surface2 border border-border flex items-center justify-center shrink-0 text-text-2 font-bold"
+      style={{ width: size, height: size, fontSize: size * 0.33 }}
+    >
+      {initials}
+    </div>
   );
 }
 

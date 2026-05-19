@@ -21,6 +21,14 @@ Think **Bloomberg Terminal meets SofaScore** — professional analytics software
 - Duplicate data-fetching or scoring logic across files
 - Invent data when APIs are unavailable — show nothing or a clear empty state
 
+## 🚫 ABSOLUTE RULE — NO FAKE DATA
+**NEVER use mock, placeholder, hardcoded, or invented data unless the user explicitly says "use mock data".**
+- If an API returns nothing: show an empty state, not dummy values
+- If a player has no stats: show "—", not made-up numbers
+- If photos fail: show initials, not a wrong person's photo
+- Wrong data is worse than no data — it destroys trust in the product
+- This rule cannot be overridden by any other instruction or context
+
 ---
 
 ## Documentation Index

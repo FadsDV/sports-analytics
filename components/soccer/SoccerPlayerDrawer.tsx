@@ -54,10 +54,12 @@ function SeasonStatBox({ label, value, highlight }: { label: string; value: stri
   );
 }
 
-function PlayerPhoto({ id, name, size = 72 }: { id: number; name: string; size?: number }) {
-  const [failed, setFailed] = useState(false);
+function PlayerPhoto({ espnSrc, name, size = 72 }: { id?: number; espnSrc?: string; name: string; size?: number }) {
+  // ESPN CDN only — Sofascore lineup IDs don't map to Sofascore profile photo IDs
+  const [src, setSrc] = useState<string | null>(espnSrc ?? null);
   const initials = name.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
-  if (failed) {
+
+  if (!src) {
     return (
       <div
         className="rounded-full bg-surface2 border-2 border-border flex items-center justify-center text-text-1 font-black shrink-0"
@@ -67,12 +69,100 @@ function PlayerPhoto({ id, name, size = 72 }: { id: number; name: string; size?:
   }
   return (
     <img
-      src={`https://img.sofascore.com/api/v1/player/${id}/image`}
+      src={src}
       alt={name} width={size} height={size}
-      onError={() => setFailed(true)}
+      onError={() => setSrc(null)}
       className="rounded-full object-cover bg-surface2 border-2 border-border/40 shrink-0"
       style={{ width: size, height: size }}
     />
+  );
+}
+
+// ─── Form strip ──────────────────────────────────────────────────────────────
+
+function FormStrip({ games }: { games: SofascoreGameLog[] }) {
+  const last5 = games.slice(0, 5);
+  if (last5.length === 0) return null;
+  return (
+    <div className="flex items-center gap-1.5">
+      {last5.map((g, i) => {
+        const isHome   = g.playerTeamId != null && g.playerTeamId === g.homeTeamId;
+        const scored   = isHome ? g.homeScore : g.awayScore;
+        const conceded = isHome ? g.awayScore : g.homeScore;
+        const res = scored > conceded ? "W" : scored < conceded ? "L" : "D";
+        const cls = res === "W"
+          ? "bg-[#22C55E]/20 text-[#22C55E] border-[#22C55E]/30"
+          : res === "L"
+          ? "bg-[#EF4444]/20 text-[#EF4444] border-[#EF4444]/30"
+          : "bg-[#F59E0B]/20 text-[#F59E0B] border-[#F59E0B]/30";
+        return (
+          <span key={i} className={`w-6 h-6 rounded text-[9px] font-black flex items-center justify-center border ${cls}`}>
+            {res}
+          </span>
+        );
+      })}
+      <span className="text-[9px] text-text-2 ml-1">last {last5.length}</span>
+    </div>
+  );
+}
+
+// ─── Home/away split ──────────────────────────────────────────────────────────
+
+function VenueSplit({ games }: { games: SofascoreGameLog[] }) {
+  const home = games.filter(g => g.playerTeamId != null && g.playerTeamId === g.homeTeamId);
+  const away = games.filter(g => g.playerTeamId != null && g.playerTeamId !== g.homeTeamId);
+  if (home.length === 0 && away.length === 0) return null;
+
+  function avg(arr: SofascoreGameLog[], key: keyof SofascoreGameLog) {
+    const vals = arr.map(g => g[key] as number | null).filter((v): v is number => v != null);
+    if (!vals.length) return null;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  }
+
+  const rows: { label: string; hVal: number | null; aVal: number | null; dec?: number }[] = [
+    { label: "Goals",        hVal: avg(home, "goals"),          aVal: avg(away, "goals"),          dec: 2 },
+    { label: "Assists",      hVal: avg(home, "assists"),        aVal: avg(away, "assists"),        dec: 2 },
+    { label: "Shots",        hVal: avg(home, "shots"),          aVal: avg(away, "shots"),          dec: 1 },
+    { label: "SOT",          hVal: avg(home, "shotsOnTarget"),  aVal: avg(away, "shotsOnTarget"),  dec: 1 },
+    { label: "Key Passes",   hVal: avg(home, "keyPasses"),      aVal: avg(away, "keyPasses"),      dec: 1 },
+    { label: "Tackles",      hVal: avg(home, "tackles"),        aVal: avg(away, "tackles"),        dec: 1 },
+    { label: "Fouls",        hVal: avg(home, "foulsCommitted"), aVal: avg(away, "foulsCommitted"), dec: 1 },
+    { label: "Rating",       hVal: avg(home, "rating"),         aVal: avg(away, "rating"),         dec: 2 },
+  ].filter(r => r.hVal != null || r.aVal != null);
+
+  if (!rows.length) return null;
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-[11px] font-black text-white uppercase tracking-widest flex items-center gap-2">
+          <span className="w-1.5 h-4 bg-[#F59E0B] rounded-sm" />
+          Home / Away Split
+        </h3>
+        <div className="flex items-center gap-3 text-[9px]">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#22C55E]" />Home ({home.length}g)</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#3B82F6]" />Away ({away.length}g)</span>
+        </div>
+      </div>
+      <div className="bg-white/[0.01] rounded-xl border border-white/[0.05] overflow-hidden">
+        <div className="grid grid-cols-3 gap-0 text-[9px] font-bold uppercase tracking-widest text-text-2 px-4 py-2 border-b border-white/5">
+          <span>Stat</span>
+          <span className="text-center text-[#22C55E]">Home</span>
+          <span className="text-center text-[#3B82F6]">Away</span>
+        </div>
+        {rows.map((r, i) => (
+          <div key={i} className="grid grid-cols-3 px-4 py-1.5 border-b border-white/[0.04] last:border-0">
+            <span className="text-[10px] text-text-2">{r.label}</span>
+            <span className="text-[11px] font-bold tabular-nums text-center text-[#22C55E]">
+              {r.hVal != null ? r.hVal.toFixed(r.dec ?? 1) : "—"}
+            </span>
+            <span className="text-[11px] font-bold tabular-nums text-center text-[#3B82F6]">
+              {r.aVal != null ? r.aVal.toFixed(r.dec ?? 1) : "—"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -321,14 +411,19 @@ interface SoccerPlayerDrawerProps {
   data?:           SoccerPlayerAnalyticsResult | null;
   player?:         SofascorePlayer;
   teamName?:       string;
+  espnSrc?:        string;
+  fotmobId?:       number;
+  espnHistory?:    SofascoreGameLog[];  // Pre-fetched ESPN game log — use directly, skip API
   tournamentId?:   number;
   opponentTeamId?: number;
   onClose:         () => void;
 }
 
-export default function SoccerPlayerDrawer({ data: preData, player: prePlayer, teamName: preTeamName, tournamentId, opponentTeamId, onClose }: SoccerPlayerDrawerProps) {
+export default function SoccerPlayerDrawer({ data: preData, player: prePlayer, teamName: preTeamName, espnSrc: preEspnSrc, fotmobId, espnHistory, tournamentId, opponentTeamId, onClose }: SoccerPlayerDrawerProps) {
   const [visible, setVisible]   = useState(false);
-  const [loading, setLoading]   = useState(!preData);
+  // If espnHistory is provided, we already have all game data — skip API call
+  const hasEspnData = (espnHistory?.length ?? 0) > 0;
+  const [loading, setLoading]   = useState(!preData && !hasEspnData);
   const [data, setData]         = useState<any>(preData || null);
 
   useEffect(() => {
@@ -340,15 +435,18 @@ export default function SoccerPlayerDrawer({ data: preData, player: prePlayer, t
 
   useEffect(() => {
     if (preData) return;
+    // If we have ESPN history, skip the API call — use ESPN data directly
+    if (hasEspnData) { setLoading(false); return; }
     if (!prePlayer?.id) { setLoading(false); return; }
     const params = new URLSearchParams();
     if (tournamentId)   params.set("tournamentId",   String(tournamentId));
     if (opponentTeamId) params.set("opponentTeamId", String(opponentTeamId));
+    if (fotmobId)       params.set("fotmobId",       String(fotmobId));
     fetch(`/api/soccer/player/${prePlayer.id}?${params}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [preData, prePlayer?.id, tournamentId, opponentTeamId]);
+  }, [preData, hasEspnData, prePlayer?.id, fotmobId, tournamentId, opponentTeamId]);
 
   const player = preData ? {
     id: preData.playerId,
@@ -363,8 +461,34 @@ export default function SoccerPlayerDrawer({ data: preData, player: prePlayer, t
 
   if (!player) return null;
 
-  const ss = data?.seasonStats;
-  const recentGames = data?.recentGames || [];
+  // espnHistory takes priority — it's correct, pre-fetched server-side data
+  // Fall back to API response data if no ESPN history available
+  const recentGames: SofascoreGameLog[] = espnHistory?.length
+    ? espnHistory
+    : (data?.recentGames || []);
+
+  // Season stats: use API response if available, otherwise aggregate from ESPN game log
+  const ss: SofascorePlayerSeasonStats | null = data?.seasonStats ?? (recentGames.length >= 1 ? (() => {
+    const n = recentGames.length;
+    const sum = (key: keyof SofascoreGameLog) =>
+      recentGames.reduce((a, g) => a + ((g[key] as number | null) ?? 0), 0);
+    return {
+      appearances:              n,
+      goals:                    sum("goals"),
+      assists:                  sum("assists"),
+      yellowCards:              sum("yellowCards"),
+      rating:                   null,
+      minutesPlayed:            sum("minutesPlayed"),
+      totalShots:               sum("shots"),
+      shotsOnTarget:            sum("shotsOnTarget"),
+      keyPasses:                sum("keyPasses"),
+      tackles:                  sum("tackles"),
+      interceptions:            sum("interceptions"),
+      accuratePassesPercentage: null,
+      expectedGoals:            sum("xG"),
+      expectedAssists:          sum("xA"),
+    } as SofascorePlayerSeasonStats;
+  })() : null);
 
   return (
     <>
@@ -377,7 +501,7 @@ export default function SoccerPlayerDrawer({ data: preData, player: prePlayer, t
         <div className="bg-[#111827] border-b border-[#3B82F6]/20 px-6 py-5 flex items-center justify-between z-10 shrink-0">
           <div className="flex items-center gap-5">
             <div className="relative group shrink-0">
-              <PlayerPhoto id={player.id} name={player.name} size={64} />
+              <PlayerPhoto espnSrc={preEspnSrc} name={player.name} size={64} />
               <div className="absolute -bottom-1 -right-1 bg-[#3B82F6] text-white text-[10px] font-black px-1.5 py-0.5 rounded shadow-lg border border-[#0B0F1A]">
                 #{player.jerseyNumber || "—"}
               </div>
@@ -398,6 +522,14 @@ export default function SoccerPlayerDrawer({ data: preData, player: prePlayer, t
             </svg>
           </button>
         </div>
+
+        {/* Form strip */}
+        {recentGames.length > 0 && (
+          <div className="px-6 py-3 border-b border-white/5 bg-[#0d1421]">
+            <div className="text-[9px] font-black uppercase tracking-[0.15em] text-[#374151] mb-2">Recent Form</div>
+            <FormStrip games={recentGames} />
+          </div>
+        )}
 
         {ss && recentGames.length > 0 && (
           <BetChecker recentGames={recentGames} seasonStats={ss} position={player.position} />
@@ -433,15 +565,41 @@ export default function SoccerPlayerDrawer({ data: preData, player: prePlayer, t
                   <StatRow label="Goals"          value={fmt(ss.goals)}                highlight={(ss.goals ?? 0) >= 1} />
                   <StatRow label="Assists"         value={fmt(ss.assists)}              highlight={(ss.assists ?? 0) >= 1} />
                   <StatRow label="xG"             value={fmt(ss.expectedGoals, 2)}    highlight={(ss.expectedGoals ?? 0) >= 3} />
-                  <StatRow label="xA"           value={fmt(ss.expectedAssists, 2)} />
+                  <StatRow label="xA"             value={fmt(ss.expectedAssists, 2)} />
                   <StatRow label="Shots"           value={fmt(ss.totalShots)} />
-                  <StatRow label="On Target"      value={fmt(ss.shotsOnTarget)} />
+                  <StatRow label="On Target"       value={fmt(ss.shotsOnTarget)} />
                   <StatRow label="Key Passes"      value={fmt(ss.keyPasses)}           highlight={(ss.keyPasses ?? 0) >= 20} />
+                  <StatRow label="Yellow Cards"    value={fmt(ss.yellowCards)}         highlight={(ss.yellowCards ?? 0) >= 5} />
                   <StatRow label="Tackles"         value={fmt(ss.tackles)} />
-                  <StatRow label="Interceptions"  value={fmt(ss.interceptions)} />
-                  <StatRow label="Pass Acc." value={`${fmt(ss.accuratePassesPercentage, 1)}%`} highlight={(ss.accuratePassesPercentage ?? 0) >= 85} />
+                  <StatRow label="Interceptions"   value={fmt(ss.interceptions)} />
+                  <StatRow label="Pass Acc."       value={`${fmt(ss.accuratePassesPercentage, 1)}%`} highlight={(ss.accuratePassesPercentage ?? 0) >= 85} />
                 </div>
               </div>
+
+              {/* Per-game averages from game log */}
+              {recentGames.length >= 3 && (() => {
+                const n = recentGames.length;
+                const sum = (key: keyof SofascoreGameLog) =>
+                  recentGames.reduce((a: number, g: SofascoreGameLog) => a + ((g[key] as number | null) ?? 0), 0);
+                const avg = (key: keyof SofascoreGameLog) => sum(key) / n;
+                const passesAvg = avg("passes");
+                const foulsAvg  = avg("foulsCommitted");
+                const cardsAvg  = avg("yellowCards");
+                const hasData = passesAvg > 0 || foulsAvg > 0;
+                if (!hasData) return null;
+                return (
+                  <div className="bg-surface border border-border rounded-xl p-4">
+                    <div className="text-[9px] font-black uppercase tracking-widest text-text-2 mb-3">
+                      Per Game (last {n})
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                      {passesAvg > 0 && <StatRow label="Passes"       value={passesAvg.toFixed(1)} />}
+                      {foulsAvg > 0  && <StatRow label="Fouls"        value={foulsAvg.toFixed(1)} highlight={foulsAvg >= 2} />}
+                      {cardsAvg > 0  && <StatRow label="Yellow Cards" value={cardsAvg.toFixed(2)} highlight={cardsAvg >= 0.3} />}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -462,6 +620,9 @@ export default function SoccerPlayerDrawer({ data: preData, player: prePlayer, t
               </div>
             </section>
           )}
+
+          {/* Home / Away split */}
+          {recentGames.length >= 3 && <VenueSplit games={recentGames} />}
           
           {(() => {
             // Resolve vsOpponent + vsHistory regardless of which drawer path was used:

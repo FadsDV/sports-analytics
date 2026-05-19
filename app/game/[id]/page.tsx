@@ -25,7 +25,9 @@ import { calcBetRisk } from "@/lib/sports/betRisk";
 import { formatKickoffFull, formatAFLKickoff } from "@/lib/utils";
 import { fetchPlayerSeasonStats } from "@/lib/sports/sofascore";
 import type { SofascorePlayer, SofascoreGameLog } from "@/lib/sports/sofascore";
-import { fetchESPNSoccerMatchData, fetchESPNSoccerPlayerHistory } from "@/lib/sports/soccer/espnSoccerData";
+import { fetchESPNSoccerMatchData, fetchESPNSoccerPlayerHistory, fetchESPNSoccerTeamHistory, type TeamGameStat } from "@/lib/sports/soccer/espnSoccerData";
+import { fetch365ScoresForGame, type Scores365MatchData } from "@/lib/sports/soccer/365scoresData";
+import { buildFotMobPlayerMap } from "@/lib/sports/soccer/fotmobData";
 import { computeSoccerKitchen, type SoccerKitchenSlip, type SoccerPlayerProfile, type SoccerProp } from "@/lib/sports/soccer/kitchen";
 import { getSlipCache, saveSlipCache } from "@/lib/slipCache";
 import { computeAFLMatchAnalytics, type LadderEntry } from "@/lib/sports/afl/analytics";
@@ -342,6 +344,10 @@ export default async function GameDetailPage({
   // Soccer: ESPN (free, no Vercel IP blocks). Basketball: Sofascore.
   if (isSoccer) {
     sofascore = await fetchESPNSoccerMatchData(sport, sourceId);
+    // NOTE: Do NOT build fake lineups from the squad.
+    // Pre-match lineups come from Sofascore client-side fetch (browser bypasses Vercel IP blocks).
+    // The client hook runs when sofascore.lineups is null/undefined.
+    // Wrong squad-derived lineups are worse than showing "not announced yet".
   } else if (["basketball"].includes(sport) && game.homeTeam.espnId) {
     const { fetchSofascoreMatchData } = await import("@/lib/sports/sofascore");
     sofascore = await fetchSofascoreMatchData(sport, game.homeTeam.name, game.awayTeam.name, game.kickoff ?? "");
@@ -500,8 +506,28 @@ export default async function GameDetailPage({
     });
   }
 
+  // 365Scores enrichment: xG, player ratings, shot chart for live/finished soccer
+  let scores365Data: Scores365MatchData | null = null;
+  // FotMob player ID map: normalised player name → FotMob player ID (for correct photos + stats)
+  let fotmobPlayerMap: { [playerName: string]: number } = {};
+  if (isSoccer && game.kickoff) {
+    const dateStr = game.kickoff.slice(0, 10); // "YYYY-MM-DD"
+    const [scores365, fotmobMap] = await Promise.all([
+      (game.status === "live" || game.status === "finished")
+        ? fetch365ScoresForGame(game.homeTeam.name, game.awayTeam.name, dateStr)
+        : Promise.resolve(null),
+      buildFotMobPlayerMap(game.homeTeam.name, game.awayTeam.name, dateStr),
+    ]);
+    scores365Data  = scores365;
+    fotmobPlayerMap = fotmobMap ?? {};
+  }
+
   // Soccer kitchen — ESPN player history + compute slips (all server-side, no Sofascore needed)
   let soccerKitchenSlips: SoccerKitchenSlip[] = [];
+  let homeTeamGameStats: TeamGameStat[] = [];
+  let awayTeamGameStats: TeamGameStat[] = [];
+  let homePlayerHistory: Map<string, SofascoreGameLog[]> = new Map();
+  let awayPlayerHistory: Map<string, SofascoreGameLog[]> = new Map();
   if (isSoccer && sofascore) {
     const daysBetween = (a: string, b: string): number =>
       Math.round(Math.abs(new Date(a).getTime() - new Date(b).getTime()) / (1000 * 60 * 60 * 24));
@@ -528,11 +554,17 @@ export default async function GameDetailPage({
 
     if (allKitchenPlayers.length > 0 && game.homeTeam.espnId && game.awayTeam.espnId) {
       // Fetch player histories from ESPN (works on Vercel — same API as AFL/NBA)
-      const [propOdds, homeHistoryMap, awayHistoryMap] = await Promise.all([
+      const [propOdds, homeHistoryMap, awayHistoryMap, homeTGS, awayTGS] = await Promise.all([
         fetchSoccerPlayerProps(game.homeTeam.name, game.awayTeam.name),
         fetchESPNSoccerPlayerHistory(sport, game.homeTeam.espnId),
         fetchESPNSoccerPlayerHistory(sport, game.awayTeam.espnId),
+        fetchESPNSoccerTeamHistory(sport, game.homeTeam.espnId),
+        fetchESPNSoccerTeamHistory(sport, game.awayTeam.espnId),
       ]);
+      homeTeamGameStats = homeTGS;
+      awayTeamGameStats = awayTGS;
+      homePlayerHistory = homeHistoryMap;
+      awayPlayerHistory = awayHistoryMap;
 
       // Match player names to their history entries
       for (const p of allKitchenPlayers) {
@@ -599,7 +631,7 @@ export default async function GameDetailPage({
         awayShortName: awayTeam.shortName,
         weather:       game.weather ?? null,
       })
-    : generateInsights(game, h2hVariants.all, homeHistories.all, awayHistories.all, isSoccer, false);
+    : generateInsights(game, h2hVariants.all, homeHistories.all, awayHistories.all, isSoccer, false, homeTeamGameStats, awayTeamGameStats, homePlayerHistory, awayPlayerHistory);
 
   const LEAGUE: Record<string, { name: string; logo: string }> = {
     soccer:     { name: "Premier League",  logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/23.png" },
@@ -1537,6 +1569,12 @@ export default async function GameDetailPage({
               isBasketball={false}
               isAFL={false}
               soccerKitchenSlips={soccerKitchenSlips}
+              homeTeamGameStats={homeTeamGameStats}
+              awayTeamGameStats={awayTeamGameStats}
+              scores365Data={scores365Data}
+              fotmobPlayerMap={fotmobPlayerMap}
+              homePlayerHistory={homePlayerHistory}
+              awayPlayerHistory={awayPlayerHistory}
               initialTab={activeTab}
               initialH2hFilter={h2hFilter as VenueFilter}
               initialHistoryFilter={historyFilter as VenueFilter}
@@ -1852,7 +1890,18 @@ function computeProbs(h2h: H2HGame[], homeTeam: string): ProbCard[] {
   ];
 }
 
-function generateInsights(game: Game, h2h: H2HGame[], homeHist: any[], awayHist: any[], isSoccer: boolean, isAFL: boolean): AFLInsight[] {
+function generateInsights(
+  game: Game,
+  h2h: H2HGame[],
+  homeHist: any[],
+  awayHist: any[],
+  isSoccer: boolean,
+  isAFL: boolean,
+  homeTeamGameStats: TeamGameStat[] = [],
+  awayTeamGameStats: TeamGameStat[] = [],
+  homePlayerHistory: Map<string, any[]> = new Map(),
+  awayPlayerHistory: Map<string, any[]> = new Map(),
+): AFLInsight[] {
   const out: AFLInsight[] = [];
   const { homeTeam, awayTeam } = game;
   const n = h2h.length;
@@ -1863,39 +1912,151 @@ function generateInsights(game: Game, h2h: H2HGame[], homeHist: any[], awayHist:
     category: "h2h", direction: "neutral", severity: "medium", confidence: 60, title: text.split(" ").slice(0, 3).join(" "),
   });
 
-  if (n>=3) {
-    const hw = h2h.filter(g=>g.winner===homeTeam.name).length;
-    const aw = n-hw-h2h.filter(g=>g.winner==="Draw").length;
-    if (hw>aw) out.push(mk("◆", `${homeTeam.shortName} lead ${hw}-${aw} in last ${n} meetings`));
-    else if (aw>hw) out.push(mk("◆", `${awayTeam.shortName} lead ${aw}-${hw} in last ${n} meetings`));
+  // ── H2H record ────────────────────────────────────────────────────────────
+  if (n >= 3) {
+    const hw = h2h.filter(g => g.winner === homeTeam.name).length;
+    const aw = n - hw - h2h.filter(g => g.winner === "Draw").length;
+    if (hw > aw) out.push(mk("◆", `${homeTeam.shortName} lead ${hw}-${aw} in last ${n} meetings`));
+    else if (aw > hw) out.push(mk("◆", `${awayTeam.shortName} lead ${aw}-${hw} in last ${n} meetings`));
     else out.push(mk("◆", `Evenly matched — ${hw} wins each in last ${n} meetings`));
   }
 
-  const homeAtHome = homeHist.filter(g=>g.homeAway==="home"&&g.result);
-  const homeHomeW  = homeAtHome.filter(g=>g.result==="W").length;
-  if (homeAtHome.length>=3 && homeHomeW>=homeAtHome.length-1)
+  // ── Team form at venue ────────────────────────────────────────────────────
+  const homeAtHome = homeHist.filter(g => g.homeAway === "home" && g.result);
+  const homeHomeW  = homeAtHome.filter(g => g.result === "W").length;
+  if (homeAtHome.length >= 3 && homeHomeW >= homeAtHome.length - 1)
     out.push(mk("◈", `${homeTeam.shortName} unbeaten in last ${homeAtHome.length} home games`));
-  else if (homeAtHome.length>=3 && homeHomeW>=Math.ceil(homeAtHome.length*0.6))
+  else if (homeAtHome.length >= 3 && homeHomeW >= Math.ceil(homeAtHome.length * 0.6))
     out.push(mk("◈", `${homeTeam.shortName} win ${homeHomeW} of last ${homeAtHome.length} at home`));
 
-  const awayAway = awayHist.filter(g=>g.homeAway==="away"&&g.result);
-  const awayAwayW = awayAway.filter(g=>g.result==="W").length;
-  if (awayAway.length>=3 && awayAwayW>=Math.ceil(awayAway.length*0.5))
+  const awayAway  = awayHist.filter(g => g.homeAway === "away" && g.result);
+  const awayAwayW = awayAway.filter(g => g.result === "W").length;
+  if (awayAway.length >= 3 && awayAwayW >= Math.ceil(awayAway.length * 0.5))
     out.push(mk("◇", `${awayTeam.shortName} win ${awayAwayW} of last ${awayAway.length} away`));
 
-  if (isSoccer && n>=3) {
-    const goals  = h2h.map(g=>{const p=g.score.split("-").map(Number);return(p[0]??0)+(p[1]??0);});
-    const over25 = goals.filter(v=>v>2.5).length;
-    if (over25>=Math.ceil(n*0.6)) out.push(mk("⚽", `Over 2.5 goals in ${over25} of last ${n} H2H`));
-    const btts = h2h.filter(g=>{const p=g.score.split("-").map(Number);return(p[0]??0)>0&&(p[1]??0)>0;}).length;
-    if (btts>=Math.ceil(n*0.6)) out.push(mk("⚽", `Both teams scored in ${btts} of last ${n} H2H`));
+  // ── H2H goals ────────────────────────────────────────────────────────────
+  if (isSoccer && n >= 3) {
+    const goals  = h2h.map(g => { const p = g.score.split("-").map(Number); return (p[0] ?? 0) + (p[1] ?? 0); });
+    const over25 = goals.filter(v => v > 2.5).length;
+    if (over25 >= Math.ceil(n * 0.6)) out.push(mk("⚽", `Over 2.5 goals in ${over25} of last ${n} H2H`));
+    const btts = h2h.filter(g => { const p = g.score.split("-").map(Number); return (p[0] ?? 0) > 0 && (p[1] ?? 0) > 0; }).length;
+    if (btts >= Math.ceil(n * 0.6)) out.push(mk("⚽", `Both teams scored in ${btts} of last ${n} H2H`));
   }
 
-  const streak = (form: string[], r: string) => { let s=0; for (const x of form){if(x===r)s++;else break;} return s; };
-  const hs = streak(homeTeam.form,"W");
-  const as_ = streak(awayTeam.form,"W");
-  if (hs>=3) out.push(mk("◉", `${homeTeam.shortName} on a ${hs}-match winning streak`));
-  if (as_>=3) out.push(mk("◉", `${awayTeam.shortName} on a ${as_}-match winning streak`));
+  // ── Winning streaks ───────────────────────────────────────────────────────
+  const winStreak = (form: string[]) => { let s = 0; for (const x of form) { if (x === "W") s++; else break; } return s; };
+  const hs  = winStreak(homeTeam.form);
+  const as_ = winStreak(awayTeam.form);
+  if (hs  >= 3) out.push(mk("◉", `${homeTeam.shortName} on a ${hs}-match winning streak`));
+  if (as_ >= 3) out.push(mk("◉", `${awayTeam.shortName} on a ${as_}-match winning streak`));
 
-  return out.slice(0,6);
+  // ── Soccer-specific insights ───────────────────────────────────────────────
+  if (isSoccer) {
+
+    // ── 1. Player card & goal streaks (highest punter value) ─────────────────
+    // homePlayerHistory = home team players, venue-context = home
+    // awayPlayerHistory = away team players, venue-context = away
+    const shortName = (n: string) => n.split(" ").pop() ?? n;
+    const playerInsights: AFLInsight[] = [];
+    const addedPlayers = new Set<string>();
+
+    for (const [histMap, teamShort, venueSide] of [
+      [homePlayerHistory, homeTeam.shortName, "home"],
+      [awayPlayerHistory, awayTeam.shortName, "away"],
+    ] as [Map<string, any[]>, string, "home" | "away"][]) {
+      for (const [name, logs] of Array.from(histMap.entries())) {
+        if (addedPlayers.size >= 6) break; // cap total player insights
+
+        // Only games where player actually appeared
+        const played = logs.filter((g: any) =>
+          g.minutesPlayed != null ? g.minutesPlayed > 0
+          : (g.goals != null || g.yellowCards != null || g.shots != null)
+        );
+        if (played.length < 3) continue;
+
+        // Venue-specific games (home team → their home form, away team → their away form)
+        const venuePlayed = played.filter((g: any) =>
+          venueSide === "home"
+            ? g.playerTeamId === g.homeTeamId     // player's team was home
+            : g.playerTeamId !== g.homeTeamId     // player's team was away
+        );
+        const relevant = venuePlayed.length >= 3 ? venuePlayed : played;
+        const last5    = relevant.slice(0, 5);
+        const pName    = shortName(name);
+        const venueTag = venuePlayed.length >= 3 ? ` ${venueSide}` : "";
+
+        // Yellow card frequency: 3 in last 5 (or 2 in last 3) → worth flagging
+        const cardsN = last5.filter((g: any) => (g.yellowCards ?? 0) > 0).length;
+        if (cardsN >= 2 && cardsN >= Math.ceil(last5.length * 0.5) && !addedPlayers.has(`card-${name}`)) {
+          playerInsights.push(mk("🟨", `${pName} (${teamShort}) carded in ${cardsN} of last ${last5.length}${venueTag} games`));
+          addedPlayers.add(`card-${name}`);
+        }
+
+        // Consecutive goal streak: 2+ in a row
+        let goalStreak = 0;
+        for (const g of relevant) {
+          if ((g.goals ?? 0) > 0) goalStreak++;
+          else break;
+        }
+        if (goalStreak >= 2 && !addedPlayers.has(`goal-${name}`)) {
+          playerInsights.push(mk("⚽", `${pName} (${teamShort}) scored in ${goalStreak} consecutive${venueTag} games`));
+          addedPlayers.add(`goal-${name}`);
+        }
+
+        // Goal involvement (goal or assist) in N of last 5
+        const involvN = last5.filter((g: any) => ((g.goals ?? 0) + (g.assists ?? 0)) > 0).length;
+        if (involvN >= 3 && goalStreak < 2 && !addedPlayers.has(`inv-${name}`)) {
+          playerInsights.push(mk("⚽", `${pName} (${teamShort}) involved in a goal in ${involvN} of last ${last5.length}${venueTag} games`));
+          addedPlayers.add(`inv-${name}`);
+        }
+      }
+    }
+
+    // Push card streaks first (highest bet signal), then goal/involvement
+    const cardInsights = playerInsights.filter(i => i.icon === "🟨");
+    const goalInsights = playerInsights.filter(i => i.icon !== "🟨");
+    out.push(...cardInsights.slice(0, 3), ...goalInsights.slice(0, 3));
+
+    // ── 2. Team venue insights (corners, clean sheets, BTTS, goals) ───────────
+    const homeGames = homeTeamGameStats.filter(g => g.isHome);
+    const awayGames = awayTeamGameStats.filter(g => !g.isHome);
+
+    const avg = (arr: TeamGameStat[], fn: (g: TeamGameStat) => number | null): number | null => {
+      const vals = arr.map(fn).filter((v): v is number => v != null);
+      return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    };
+
+    // Corners
+    const homeCorners = avg(homeGames, g => g.corners);
+    const awayCorners = avg(awayGames, g => g.corners);
+    if (homeCorners != null && homeGames.length >= 3)
+      out.push(mk("⛳", `${homeTeam.shortName} average ${homeCorners.toFixed(1)} corners per home game (last ${homeGames.length})`));
+    if (awayCorners != null && awayGames.length >= 3)
+      out.push(mk("⛳", `${awayTeam.shortName} average ${awayCorners.toFixed(1)} corners per away game (last ${awayGames.length})`));
+
+    // Clean sheets
+    const homeCS = homeGames.filter(g => g.goalsAgainst === 0).length;
+    if (homeGames.length >= 4 && homeCS >= Math.ceil(homeGames.length * 0.4))
+      out.push(mk("🛡", `${homeTeam.shortName} kept ${homeCS} clean sheets in last ${homeGames.length} home games`));
+    const awayCS = awayGames.filter(g => g.goalsAgainst === 0).length;
+    if (awayGames.length >= 4 && awayCS >= Math.ceil(awayGames.length * 0.4))
+      out.push(mk("🛡", `${awayTeam.shortName} kept ${awayCS} clean sheets in last ${awayGames.length} away games`));
+
+    // BTTS
+    const homeBTTS = homeGames.filter(g => g.goalsFor > 0 && g.goalsAgainst > 0).length;
+    if (homeGames.length >= 4 && homeBTTS >= Math.ceil(homeGames.length * 0.6))
+      out.push(mk("⚽", `Both teams scored in ${homeBTTS} of ${homeTeam.shortName}'s last ${homeGames.length} home games`));
+
+    // Away goal drought
+    const awayGoalsFor = avg(awayGames, g => g.goalsFor);
+    if (awayGoalsFor != null && awayGames.length >= 4 && awayGoalsFor < 1.0)
+      out.push(mk("📉", `${awayTeam.shortName} score under 1 goal per away game on average (${awayGoalsFor.toFixed(1)}/game, last ${awayGames.length})`));
+
+    // Yellow cards heavy away
+    const awayYC = avg(awayGames, g => g.yellowCards);
+    if (awayYC != null && awayGames.length >= 4 && awayYC >= 2.0)
+      out.push(mk("🟨", `${awayTeam.shortName} average ${awayYC.toFixed(1)} yellow cards per away game (last ${awayGames.length})`));
+  }
+
+  return out.slice(0, 10);
 }

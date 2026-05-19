@@ -7,6 +7,8 @@ import type { Game, Team, H2HGame, BoxScore, BoxScoreRow, Insight } from "@/lib/
 import type { AFLInsight } from "@/lib/sports/afl/insights";
 import type { ESPNPlayer, ESPNInjury } from "@/lib/sports/espnPlayers";
 import type { SofascoreMatchData, SofascoreIncident, SofascoreMatchStats } from "@/lib/sports/sofascore";
+import type { TeamGameStat } from "@/lib/sports/soccer/espnSoccerData";
+import type { Scores365MatchData } from "@/lib/sports/soccer/365scoresData";
 import type { AFLMatchAnalytics } from "@/lib/sports/afl/analytics";
 import type { TeamHistoryGame, VenueFilter } from "@/lib/sports/espn";
 import FormPills from "@/components/FormPills";
@@ -30,7 +32,7 @@ import SoccerPlayerDrawer from "@/components/soccer/SoccerPlayerDrawer";
 import SoccerMatchInsights from "@/components/soccer/SoccerMatchInsights";
 import SoccerKitchen from "@/components/soccer/SoccerKitchen";
 import type { SoccerPlayerAnalyticsResult } from "@/lib/sports/soccer/types";
-import type { SofascorePlayer } from "@/lib/sports/sofascore";
+import type { SofascorePlayer, SofascoreGameLog } from "@/lib/sports/sofascore";
 import type { SoccerKitchenSlip } from "@/lib/sports/soccer/kitchen";
 import { filterSoccerSlipsForBookie, SOCCER_BOOKIES } from "@/lib/sports/soccer/bookies";
 import { buildSlipColorMap, type SlipEntry } from "@/lib/sports/slipTracker";
@@ -88,7 +90,8 @@ function useSofascoreClientFetch(
   const [data, setData] = useState<import("@/lib/sports/sofascore").SofascoreMatchData | null>(null);
 
   useEffect(() => {
-    if (!isSoccer || serverData !== null) return;
+    // Run if: no server data at all, OR server has match data but no lineups
+    if (!isSoccer || (serverData !== null && serverData?.lineups != null)) return;
 
     async function run() {
       const kickoff = game.kickoff ?? new Date().toISOString();
@@ -384,7 +387,6 @@ function useSoccerKitchenClient(
 const TABS = [
   { key: "overview", label: "Overview",     kitchenOnly: false, soccerOnly: false },
   { key: "players",  label: "Players",      kitchenOnly: false, soccerOnly: false },
-  { key: "intel",    label: "⚡ Intel",     kitchenOnly: false, soccerOnly: true  },
   { key: "stats",    label: "Stats",        kitchenOnly: false, soccerOnly: false },
   { key: "h2h",      label: "H2H",          kitchenOnly: false, soccerOnly: false },
   { key: "kitchen",  label: "🍳 Kitchen",   kitchenOnly: true,  soccerOnly: false },
@@ -429,6 +431,12 @@ export interface GameDetailTabsProps {
   kitchenSlips?:        KitchenSlip[];
   nbaKitchenSlips?:     NBAKitchenSlip[];
   soccerKitchenSlips?:  SoccerKitchenSlip[];
+  homeTeamGameStats?:   TeamGameStat[];
+  awayTeamGameStats?:   TeamGameStat[];
+  scores365Data?:       Scores365MatchData | null;
+  fotmobPlayerMap?:     { [playerName: string]: number };
+  homePlayerHistory?:   Map<string, SofascoreGameLog[]>;
+  awayPlayerHistory?:   Map<string, SofascoreGameLog[]>;
   initialTab:         string;
   initialH2hFilter:   VenueFilter;
   initialHistoryFilter: VenueFilter;
@@ -557,6 +565,143 @@ function CompactBoxScore({ boxScore, homeTeam, awayTeam }: {
           </table>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Soccer 365Scores Player Stats ───────────────────────────────────────────
+
+function Soccer365PlayerStats({
+  homePlayers, awayPlayers, homeTeam, awayTeam,
+}: {
+  homePlayers: import("@/lib/sports/soccer/365scoresData").Scores365Player[];
+  awayPlayers: import("@/lib/sports/soccer/365scoresData").Scores365Player[];
+  homeTeam: Team;
+  awayTeam: Team;
+}) {
+  const posOrder: Record<string, number> = { Goalkeeper: 0, Defender: 1, Midfielder: 2, Forward: 3, Attacker: 3 };
+  const sortPlayers = (players: typeof homePlayers) =>
+    [...players].sort((a, b) => {
+      const pa = posOrder[a.position] ?? 4;
+      const pb = posOrder[b.position] ?? 4;
+      if (pa !== pb) return pa - pb;
+      return (b.starter ? 1 : 0) - (a.starter ? 1 : 0);
+    });
+
+  const posBadge = (pos: string) => {
+    if (pos === "Goalkeeper") return { label: "GK", color: "text-[#FBBF24]" };
+    if (pos === "Defender")   return { label: "DEF", color: "text-[#60A5FA]" };
+    if (pos === "Midfielder") return { label: "MID", color: "text-[#34D399]" };
+    return { label: "FWD", color: "text-[#F87171]" };
+  };
+
+  const ratingColor = (r: number | null) => {
+    if (r == null) return "text-text-2";
+    if (r >= 7.5)  return "text-[#22C55E]";
+    if (r >= 6.5)  return "text-[#F59E0B]";
+    return "text-[#EF4444]";
+  };
+
+  const sides = [
+    { team: homeTeam, players: sortPlayers(homePlayers) },
+    { team: awayTeam, players: sortPlayers(awayPlayers) },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {sides.map(({ team, players }) => {
+        const ratedPlayers = players.filter(p => p.rating != null);
+        const avgRating = ratedPlayers.length > 0
+          ? ratedPlayers.reduce((s, p) => s + p.rating!, 0) / ratedPlayers.length
+          : null;
+
+        return (
+          <div key={team.name}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                {team.logoUrl && <img src={team.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                <span className="text-xs font-medium text-text-1">{team.shortName}</span>
+              </div>
+              {avgRating != null && (
+                <span className={`text-xs font-bold ${ratingColor(avgRating)}`}>
+                  Avg {avgRating.toFixed(1)}
+                </span>
+              )}
+            </div>
+
+            {/* Column headers */}
+            <div className="flex items-center gap-1 text-[9px] text-text-2 uppercase tracking-wide mb-1 px-0.5">
+              <span className="w-5 shrink-0" />
+              <span className="flex-1">Player</span>
+              <span className="w-8 text-center shrink-0">Sh</span>
+              <span className="w-8 text-center shrink-0">KP</span>
+              <span className="w-8 text-center shrink-0">Tkl</span>
+              <span className="w-10 text-right shrink-0">xG</span>
+              <span className="w-9 text-right shrink-0">Rtg</span>
+            </div>
+
+            <div className="space-y-0">
+              {players.slice(0, 14).map((p, i) => {
+                const badge = posBadge(p.position);
+                return (
+                  <div key={i} className={`flex items-center gap-1 py-1.5 border-b border-border/30 last:border-0 ${!p.starter ? "opacity-60" : ""}`}>
+                    {/* Jersey */}
+                    <span className="text-[9px] font-mono text-text-2 w-4 shrink-0 text-right">{p.jersey}</span>
+                    {/* Name + event badges */}
+                    <span className="flex-1 min-w-0">
+                      <span className="text-text-1 text-[11px] font-medium truncate block leading-tight">
+                        {p.shortName || p.name}
+                      </span>
+                      {/* Inline event badges */}
+                      <span className="flex items-center gap-1 mt-0.5">
+                        {p.goals > 0 && (
+                          <span className="text-[8px] bg-white/10 text-text-1 rounded px-1 font-medium">
+                            ⚽ {p.goals > 1 ? `×${p.goals}` : ""}
+                          </span>
+                        )}
+                        {p.assists > 0 && (
+                          <span className="text-[8px] bg-primary/10 text-primary rounded px-1 font-medium">
+                            🅐 {p.assists > 1 ? `×${p.assists}` : ""}
+                          </span>
+                        )}
+                        {p.yellowCard && <span className="text-[8px]">🟨</span>}
+                        {p.redCard   && <span className="text-[8px]">🟥</span>}
+                      </span>
+                    </span>
+                    {/* Shots */}
+                    <span className="w-8 text-center text-[10px] text-text-2 shrink-0 tabular-nums">
+                      {p.shots > 0 ? p.shots : "—"}
+                    </span>
+                    {/* Key passes */}
+                    <span className="w-8 text-center text-[10px] text-text-2 shrink-0 tabular-nums">
+                      {p.keyPasses > 0 ? p.keyPasses : "—"}
+                    </span>
+                    {/* Tackles */}
+                    <span className="w-8 text-center text-[10px] text-text-2 shrink-0 tabular-nums">
+                      {p.tackles > 0 ? p.tackles : "—"}
+                    </span>
+                    {/* xG */}
+                    <span className="w-10 text-right text-[10px] shrink-0 tabular-nums">
+                      {(p.xG ?? 0) >= 0.05
+                        ? <span className="text-[#F59E0B] font-medium">{p.xG!.toFixed(2)}</span>
+                        : <span className="text-text-2">—</span>}
+                    </span>
+                    {/* Rating */}
+                    <span className={`w-9 text-right text-[11px] font-black shrink-0 tabular-nums ${ratingColor(p.rating)}`}>
+                      {p.rating != null ? p.rating.toFixed(1) : "—"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Minutes note for subs */}
+            <p className="text-[9px] text-text-2 mt-1.5 text-right">
+              Starters + used subs · via 365Scores
+            </p>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1172,13 +1317,16 @@ function SoccerGoalInvolvement({ sofascore, homeTeam, awayTeam }: {
   );
 }
 
-function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather, homeSquad, awaySquad, sofascore, historyFilter, onHistoryFilterChange }: {
+function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather, homeSquad, awaySquad, sofascore, historyFilter, onHistoryFilterChange, homeTeamGameStats, awayTeamGameStats, scores365Data }: {
   game: Game; insights: Insight[]; weather: any;
   homeHistory: TeamHistoryGame[]; awayHistory: TeamHistoryGame[];
   h2h: H2HGame[]; historyFilter: VenueFilter;
   onHistoryFilterChange: (f: VenueFilter) => void;
   homeSquad: ESPNPlayer[]; awaySquad: ESPNPlayer[];
   sofascore: SofascoreMatchData | null;
+  homeTeamGameStats?: TeamGameStat[];
+  awayTeamGameStats?: TeamGameStat[];
+  scores365Data?: Scores365MatchData | null;
 }) {
   const { homeTeam, awayTeam, status } = game;
   const isUpcoming = status === "upcoming";
@@ -1228,6 +1376,33 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
                   awayTeam={awayTeam}
                 />
               )}
+              {/* xG bar from 365Scores */}
+              {scores365Data && (scores365Data.homeXG > 0 || scores365Data.awayXG > 0) && (
+                <div className="mt-3 pt-3 border-t border-border/50">
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="font-bold text-text-1 w-12 text-left">{scores365Data.homeXG.toFixed(2)}</span>
+                    <span className="text-text-2 text-[10px] tracking-widest uppercase">Expected Goals (xG)</span>
+                    <span className="font-bold text-text-1 w-12 text-right">{scores365Data.awayXG.toFixed(2)}</span>
+                  </div>
+                  {(() => {
+                    const total = scores365Data.homeXG + scores365Data.awayXG;
+                    const hw = total > 0 ? Math.max(10, Math.min(90, Math.round(scores365Data.homeXG / total * 100))) : 50;
+                    return (
+                      <div className="flex gap-0.5 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-primary rounded-l-full" style={{ width: `${hw}%` }} />
+                        <div className="bg-[#60A5FA] rounded-r-full" style={{ width: `${100 - hw}%` }} />
+                      </div>
+                    );
+                  })()}
+                  {scores365Data.homeBigChances + scores365Data.awayBigChances > 0 && (
+                    <div className="flex justify-between text-[10px] text-text-2 mt-2">
+                      <span><span className="text-text-1 font-medium">{scores365Data.homeBigChances}</span> big chances</span>
+                      <span className="text-text-2 text-[9px] tracking-wide">BIG CHANCES</span>
+                      <span><span className="text-text-1 font-medium">{scores365Data.awayBigChances}</span> big chances</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </Section>
             );
           })()}
@@ -1262,6 +1437,62 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
             </Section>
           )}
 
+          {/* Lineups with ratings — live/finished, when 365Scores data available */}
+          {(isFinished || isLive) && scores365Data && (scores365Data.homePlayers.length > 0 || scores365Data.awayPlayers.length > 0) && (
+            <Section title="Lineups & Ratings">
+              {/* Column headers */}
+              <div className="grid grid-cols-2 gap-3 mb-1">
+                {[
+                  { t: homeTeam, players: scores365Data.homePlayers },
+                  { t: awayTeam, players: scores365Data.awayPlayers },
+                ].map(({ t, players }) => {
+                  const starters = players.filter(p => p.starter).sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+                  const avgRating = starters.length > 0
+                    ? starters.reduce((s, p) => s + (p.rating ?? 0), 0) / starters.filter(p => p.rating != null).length
+                    : null;
+                  return (
+                    <div key={t.name}>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        {t.logoUrl && <img src={t.logoUrl} alt="" className="w-4 h-4 object-contain" />}
+                        <span className="text-xs font-medium text-text-1">{t.shortName}</span>
+                        {avgRating != null && (
+                          <span className={`ml-auto text-[10px] font-bold ${
+                            avgRating >= 7.0 ? "text-[#22C55E]" : avgRating >= 6.5 ? "text-[#F59E0B]" : "text-[#EF4444]"
+                          }`}>avg {avgRating.toFixed(1)}</span>
+                        )}
+                      </div>
+                      {starters.map((p, i) => (
+                        <div key={i} className="flex items-center gap-1.5 py-1.5 border-b border-border/40 last:border-0">
+                          {/* Jersey */}
+                          <span className="text-[9px] font-mono text-text-2 w-4 shrink-0 text-right">{p.jersey}</span>
+                          {/* Name */}
+                          <span className="text-text-1 text-[11px] font-medium min-w-0 truncate" style={{flex:"1 1 0", overflow:"hidden"}}>{p.shortName || p.name || "—"}</span>
+                          {/* Badges */}
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            {p.goals > 0 && <span className="text-[9px]">⚽{p.goals > 1 ? p.goals : ""}</span>}
+                            {p.assists > 0 && <span className="text-[9px] text-[#60A5FA]">A{p.assists > 1 ? p.assists : ""}</span>}
+                            {p.yellowCard && <span className="text-[9px]">🟨</span>}
+                            {p.redCard && <span className="text-[9px]">🟥</span>}
+                            {/* xG if meaningful */}
+                            {(p.xG ?? 0) >= 0.15 && <span className="text-[8px] text-[#F59E0B] font-mono">xG{(p.xG!).toFixed(2)}</span>}
+                          </div>
+                          {/* Rating */}
+                          {p.rating != null && (
+                            <span className={`text-[11px] font-black w-8 text-right shrink-0 ${
+                              p.rating >= 7.5 ? "text-[#22C55E]" :
+                              p.rating >= 6.5 ? "text-[#F59E0B]" :
+                              "text-[#EF4444]"
+                            }`}>{p.rating.toFixed(1)}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
+
           {/* Fallback squad list when no Sofascore lineups */}
           {isUpcoming && !sofascore?.lineups && (homeSquad.length > 0 || awaySquad.length > 0) && (
             <Section title="Probable Squads">
@@ -1285,38 +1516,6 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
             </Section>
           )}
 
-          <Section title="Recent Results">
-            <div className="flex gap-2 mb-3">
-              {(["all","home","away"] as VenueFilter[]).map(f => (
-                <button key={f} onClick={() => onHistoryFilterChange(f)}
-                  className={`text-xs px-2 py-1 rounded transition-all ${
-                    historyFilter === f ? "text-primary" : "text-text-2 hover:text-text-2"
-                  }`}>
-                  {f === "all" ? "All" : f === "home" ? "Home" : "Away"}
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {[{ t: homeTeam, h: homeHistory }, { t: awayTeam, h: awayHistory }].map(({ t, h }) => (
-                <div key={t.name}>
-                  <div className="text-[11px] uppercase tracking-widest text-text-2 mb-1.5 font-semibold">{t.shortName}</div>
-                  {h.slice(0, 6).map(g => (
-                    <Link key={g.gameId} href={`/game/${g.gameId}`}
-                      className="flex items-center gap-2 py-1.5 border-b border-border hover:bg-surface2 px-1 rounded text-sm group">
-                      <span className={`w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center shrink-0 ${
-                        g.result==="W"?"bg-[#22C55E]/20 text-[#22C55E]":g.result==="L"?"bg-[#EF4444]/20 text-[#EF4444]":"bg-[#F59E0B]/20 text-[#F59E0B]"
-                      }`}>{g.result ?? "?"}</span>
-                      <span className="text-text-2 flex-1 truncate">{g.opponent}</span>
-                      <span className={`font-semibold tabular-nums shrink-0 ${g.result==="W"?"text-[#22C55E]":g.result==="L"?"text-[#EF4444]":"text-[#F59E0B]"}`}>
-                        {g.score ?? "—"}
-                      </span>
-                    </Link>
-                  ))}
-                  {h.length === 0 && <p className="text-xs text-text-2">No data</p>}
-                </div>
-              ))}
-            </div>
-          </Section>
         </div>
 
         <div className="lg:col-span-3 space-y-4">
@@ -1369,21 +1568,26 @@ function SoccerOverview({ game, insights, homeHistory, awayHistory, h2h, weather
             )}
           </Section>
 
+          {/* ── Match Intelligence ──────────────────────────────────────────── */}
+          {(sofascore?.homeTeamStats || sofascore?.awayTeamStats ||
+            (sofascore?.topScorers?.length ?? 0) > 0 ||
+            (homeTeamGameStats?.length ?? 0) > 0 ||
+            (awayTeamGameStats?.length ?? 0) > 0) && (
+            <SoccerMatchInsights
+              homeTeam={homeTeam}
+              awayTeam={awayTeam}
+              homeTeamStats={sofascore?.homeTeamStats}
+              awayTeamStats={sofascore?.awayTeamStats}
+              topScorers={sofascore?.topScorers ?? []}
+              homeHistory={homeHistory}
+              awayHistory={awayHistory}
+              homeTeamGameStats={homeTeamGameStats}
+              awayTeamGameStats={awayTeamGameStats}
+            />
+          )}
+
         </div>
       </div>
-
-      {/* ── Match Intelligence ───────────────────────────────────────────── */}
-      {(sofascore?.homeTeamStats || sofascore?.awayTeamStats || (sofascore?.topScorers?.length ?? 0) > 0) && (
-        <SoccerMatchInsights
-          homeTeam={homeTeam}
-          awayTeam={awayTeam}
-          homeTeamStats={sofascore?.homeTeamStats}
-          awayTeamStats={sofascore?.awayTeamStats}
-          topScorers={sofascore?.topScorers ?? []}
-          homeHistory={homeHistory}
-          awayHistory={awayHistory}
-        />
-      )}
     </div>
   );
 }
@@ -2241,16 +2445,53 @@ export default function GameDetailTabs({
   homeHistories, awayHistories, h2hVariants, aflAnalytics, sofascore: sofascoreProp,
   insights, isSoccer, isBasketball, isAFL,
   kitchenSlips, nbaKitchenSlips, soccerKitchenSlips,
+  homeTeamGameStats, awayTeamGameStats,
+  scores365Data,
+  fotmobPlayerMap = {},
+  homePlayerHistory,
+  awayPlayerHistory,
   initialTab, initialH2hFilter, initialHistoryFilter,
 }: GameDetailTabsProps) {
   const hasKitchen = isAFL || isBasketball || (isSoccer && (soccerKitchenSlips?.some(s => s.legs.length > 0) ?? false));
-  const VALID_TABS = ["overview","players","intel","stats","h2h", ...(hasKitchen ? ["kitchen"] : [])] as const;
-  const [tab, setTab] = useState<"overview"|"players"|"intel"|"stats"|"h2h"|"kitchen">(
-    (VALID_TABS.includes(initialTab as any) ? initialTab : "overview") as "overview"|"players"|"intel"|"stats"|"h2h"|"kitchen"
+  const VALID_TABS = ["overview","players","stats","h2h", ...(hasKitchen ? ["kitchen"] : [])] as const;
+  const [tab, setTab] = useState<"overview"|"players"|"stats"|"h2h"|"kitchen">(
+    (VALID_TABS.includes(initialTab as any) ? initialTab : "overview") as "overview"|"players"|"stats"|"h2h"|"kitchen"
   );
   const [h2hFilter, setH2hFilter] = useState<VenueFilter>(initialH2hFilter);
   const [historyFilter, setHistoryFilter] = useState<VenueFilter>(initialHistoryFilter);
-  const [soccerPlayer, setSoccerPlayer] = useState<{ player: SofascorePlayer; teamName: string; side: "home" | "away" } | null>(null);
+  const [soccerPlayer, setSoccerPlayer] = useState<{ player: SofascorePlayer; teamName: string; side: "home" | "away"; espnSrc?: string; fotmobId?: number; espnHistory?: SofascoreGameLog[] } | null>(null);
+
+  // Look up FotMob player ID by name (normalised match)
+  const lookupFotmob = (name: string): number | undefined => {
+    if (!fotmobPlayerMap || !name) return undefined;
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+    const key = norm(name);
+    const direct = fotmobPlayerMap[key];
+    if (direct) return direct;
+    for (const [k, id] of Object.entries(fotmobPlayerMap)) {
+      if (key.length >= 4 && (k.includes(key) || key.includes(k))) return id;
+    }
+    return undefined;
+  };
+
+  // Look up player ESPN game history by name (normalised partial match)
+  const lookupEspnHistory = (name: string, side: "home" | "away"): SofascoreGameLog[] | undefined => {
+    const map = side === "home" ? homePlayerHistory : awayPlayerHistory;
+    if (!map || !name) return undefined;
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+    const key = norm(name);
+    const entries = Array.from(map.entries());
+    // Direct match
+    for (const [k, logs] of entries) {
+      if (norm(k) === key) return logs;
+    }
+    // Partial match (e.g. "Stones" matches "John Stones")
+    for (const [k, logs] of entries) {
+      const nk = norm(k);
+      if (key.length >= 4 && (nk.includes(key) || key.includes(nk))) return logs;
+    }
+    return undefined;
+  };
 
   // Client-side fetch: browser bypasses Vercel IP blocks (Sofascore allows CORS *)
   const sofascore = useSofascoreClientFetch(isSoccer, sofascoreProp, game);
@@ -2324,7 +2565,7 @@ export default function GameDetailTabs({
           shortName: p.shortName,
           position: p.position,
           jersey: p.jerseyNumber,
-          headshot: `https://img.sofascore.com/api/v1/player/${p.id}/image`,
+          headshot: undefined,  // Sofascore lineup IDs ≠ profile photo IDs — show initials
           teamName, teamAbbr, opponent, side,
           seasonStats:  result.seasonStats,
           recentGames:  result.recentGames,
@@ -2604,6 +2845,9 @@ export default function GameDetailTabs({
               h2h={h2hForOverview} historyFilter={historyFilter}
               onHistoryFilterChange={setHistoryFilter}
               homeSquad={homeSquad} awaySquad={awaySquad} sofascore={sofascore}
+              homeTeamGameStats={homeTeamGameStats}
+              awayTeamGameStats={awayTeamGameStats}
+              scores365Data={scores365Data}
             />
           : isBasketball
           ? <BasketballOverview
@@ -2671,7 +2915,7 @@ export default function GameDetailTabs({
                   players={sofascore.lineups.home}
                   espnSquad={homeSquad}
                   formation={sofascore.lineups.homeFormation}
-                  onPlayerClick={p => setSoccerPlayer({ player: p, teamName: homeTeam.name, side: "home" })}
+                  onPlayerClick={(p, espnSrc) => setSoccerPlayer({ player: p, teamName: homeTeam.name, side: "home", espnSrc, fotmobId: lookupFotmob(p.name), espnHistory: lookupEspnHistory(p.name, "home") })}
                 />
               ) : isSoccer ? (
                 <SquadList
@@ -2731,7 +2975,7 @@ export default function GameDetailTabs({
                   players={sofascore.lineups.away}
                   espnSquad={awaySquad}
                   formation={sofascore.lineups.awayFormation}
-                  onPlayerClick={p => setSoccerPlayer({ player: p, teamName: awayTeam.name, side: "away" })}
+                  onPlayerClick={(p, espnSrc) => setSoccerPlayer({ player: p, teamName: awayTeam.name, side: "away", espnSrc, fotmobId: lookupFotmob(p.name), espnHistory: lookupEspnHistory(p.name, "away") })}
                 />
               ) : isSoccer ? (
                 <SquadList
@@ -2759,40 +3003,50 @@ export default function GameDetailTabs({
             </Section>
 
           </div>
-        </div>
-      )}
 
-      {/* ── Intel (soccer only) ──────────────────────────────────────────── */}
-      {tab === "intel" && isSoccer && (
-        sofascore?.lineups
-          ? <SoccerPlayerIntel
-              lineups={sofascore.lineups}
-              homeTeam={homeTeam}
-              awayTeam={awayTeam}
-              status={game.status}
-            />
-          : <div className="text-center py-10 text-sm text-text-2">
-              No lineup data available yet.
-            </div>
+          {/* ── Player Intel (soccer only) — merged into Players tab ──────── */}
+          {isSoccer && (
+            sofascore?.lineups
+              ? <SoccerPlayerIntel
+                  lineups={sofascore.lineups}
+                  homeTeam={homeTeam}
+                  awayTeam={awayTeam}
+                  status={game.status}
+                />
+              : null
+          )}
+        </div>
       )}
 
       {/* ── Stats ────────────────────────────────────────────────────────── */}
       {tab === "stats" && (
         <div className="space-y-4">
           {game.teamStats ? (
-            <Section title="Team Comparison">
+            <Section title="Team Stats">
               <ComparisonBars homeTeam={homeTeam} awayTeam={awayTeam} stats={game.teamStats} />
             </Section>
           ) : null}
-          {boxScore ? (
+
+          {/* Soccer: show 365Scores player stats when available */}
+          {isSoccer && scores365Data &&
+            (scores365Data.homePlayers.length > 0 || scores365Data.awayPlayers.length > 0) ? (
+            <Section title="Player Stats">
+              <Soccer365PlayerStats
+                homePlayers={scores365Data.homePlayers}
+                awayPlayers={scores365Data.awayPlayers}
+                homeTeam={homeTeam}
+                awayTeam={awayTeam}
+              />
+            </Section>
+          ) : !isSoccer && boxScore ? (
             <Section title="Box Score">
               <CompactBoxScore boxScore={boxScore} homeTeam={homeTeam} awayTeam={awayTeam} />
             </Section>
-          ) : (
+          ) : !isSoccer ? (
             <Section title="Box Score">
               <p className="text-sm text-text-2">No data available yet.</p>
             </Section>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -2991,6 +3245,9 @@ export default function GameDetailTabs({
               data={soccerKitchenDrawer}
               player={soccerPlayer?.player}
               teamName={soccerPlayer?.teamName}
+              espnSrc={soccerPlayer?.espnSrc}
+              fotmobId={soccerPlayer?.fotmobId}
+              espnHistory={soccerPlayer?.espnHistory}
               tournamentId={sofascore?.tournamentId}
               opponentTeamId={soccerPlayer?.side === "home" ? sofascore?.awayTeamId : sofascore?.homeTeamId}
               onClose={() => { setSoccerKitchenDrawer(null); setSoccerPlayer(null); }}

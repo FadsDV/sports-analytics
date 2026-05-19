@@ -43,6 +43,16 @@ async function espnGet(path: string, revalidate = 60): Promise<Record<string, un
   }
 }
 
+// ─── Score parser — ESPN score can be string "2" or object {value:2} ─────────
+
+function parseScore(s: any): number {
+  if (s == null) return 0;
+  if (typeof s === "number") return s;
+  if (typeof s === "string") return parseInt(s, 10) || 0;
+  if (typeof s === "object") return parseInt(String(s.value ?? s.displayValue ?? "0"), 10) || 0;
+  return 0;
+}
+
 // ─── Parse ESPN rosters into SofascoreLineup ─────────────────────────────────
 
 function parseESPNRosters(raw: Record<string, unknown>): SofascoreLineup | null {
@@ -72,12 +82,17 @@ function parseESPNRosters(raw: Record<string, unknown>): SofascoreLineup | null 
       };
     });
 
+  const homeTeam = parseTeam(home);
+  const awayTeam = parseTeam(away);
+  // Return null when ESPN has roster stubs but no actual players (pre-match)
+  if (homeTeam.length === 0 && awayTeam.length === 0) return null;
+
   return {
     confirmed:    true,
     homeFormation: home?.formation as string | undefined,
     awayFormation: away?.formation as string | undefined,
-    home: parseTeam(home),
-    away: parseTeam(away),
+    home: homeTeam,
+    away: awayTeam,
   };
 }
 
@@ -177,6 +192,55 @@ function parseESPNTeamStats(
 
 // ─── Parse ESPN team stats into SofascoreMatchStats groups ───────────────────
 
+// Human-readable overrides for ESPN's camelCase/abbreviated stat names
+const ESPN_STAT_LABELS: Record<string, string> = {
+  foulsCommitted:        "Fouls",
+  yellowCards:           "Yellow Cards",
+  redCards:              "Red Cards",
+  offsides:              "Offsides",
+  wonCorners:            "Corners Won",
+  saves:                 "Saves",
+  possessionPct:         "Possession %",
+  totalShots:            "Total Shots",
+  shotsOnTarget:         "Shots on Target",
+  shotsOffTarget:        "Shots off Target",
+  blockedShots:          "Blocked Shots",
+  shotPct:               "Shot Accuracy %",
+  penaltyKickGoals:      "Penalty Goals",
+  penaltyKickShots:      "Penalty Shots",
+  accuratePasses:        "Accurate Passes",
+  totalPasses:           "Total Passes",
+  passPct:               "Pass Accuracy %",
+  accurateCrosses:       "Accurate Crosses",
+  totalCrosses:          "Total Crosses",
+  crossPct:              "Cross Accuracy %",
+  totalLongBalls:        "Long Balls",
+  accurateLongBalls:     "Accurate Long Balls",
+  longballPct:           "Long Ball Accuracy %",
+  effectiveTackles:      "Effective Tackles",
+  totalTackles:          "Total Tackles",
+  tacklePct:             "Tackle Success %",
+  interceptions:         "Interceptions",
+  effectiveClearance:    "Effective Clearances",
+  totalClearance:        "Total Clearances",
+  wonGroundDuels:        "Ground Duels Won",
+  wonAerialDuels:        "Aerial Duels Won",
+  groundDuelPct:         "Ground Duel Win %",
+  aerialDuelPct:         "Aerial Duel Win %",
+  goalKicks:             "Goal Kicks",
+  throwIns:              "Throw-ins",
+};
+
+// Convert camelCase or ALL_CAPS stat names to human-readable
+function formatStatName(raw: string): string {
+  if (ESPN_STAT_LABELS[raw]) return ESPN_STAT_LABELS[raw];
+  // camelCase → "Title Case"
+  return raw
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, s => s.toUpperCase())
+    .trim();
+}
+
 function parseESPNMatchStats(
   homeStats: any[],
   awayStats: any[]
@@ -185,8 +249,9 @@ function parseESPNMatchStats(
     const as_ = awayStats.find((a: any) => (a.abbreviation ?? a.name) === (hs.abbreviation ?? hs.name));
     const hv = parseFloat(String(hs.value ?? hs.displayValue ?? "0")) || 0;
     const av = parseFloat(String(as_?.value ?? as_?.displayValue ?? "0")) || 0;
+    const rawName = String(hs.displayName ?? hs.name ?? hs.abbreviation ?? "");
     return {
-      name:           String(hs.displayName ?? hs.name ?? hs.abbreviation ?? ""),
+      name:           formatStatName(rawName),
       home:           String(hs.displayValue ?? hs.value ?? "0"),
       away:           String(as_?.displayValue ?? as_?.value ?? "0"),
       homeValue:      hv,
@@ -248,6 +313,119 @@ export async function fetchESPNSoccerMatchData(
   };
 }
 
+// ─── Team game history (per-game stats for pre-match intelligence) ───────────
+
+export interface TeamGameStat {
+  gameId:        string;
+  date:          string;
+  isHome:        boolean;
+  opponent:      string;
+  goalsFor:      number;
+  goalsAgainst:  number;
+  corners:       number | null;
+  shots:         number | null;
+  shotsOnTarget: number | null;
+  yellowCards:   number | null;
+  fouls:         number | null;
+  possession:    number | null;
+}
+
+export async function fetchESPNSoccerTeamHistory(
+  sport:  string,
+  teamId: string,
+  limit:  number = 10
+): Promise<TeamGameStat[]> {
+  const path = ESPN_PATHS[sport as SoccerSport];
+  if (!path) return [];
+
+  const schedData = await espnGet(`${path}/teams/${teamId}/schedule`, 1800);
+  if (!schedData) return [];
+
+  const events: any[] = (schedData.events as any[]) ?? [];
+  const completed = events
+    .filter((ev: any) => ev.competitions?.[0]?.status?.type?.state === "post")
+    .slice(-limit);  // last N completed games
+
+  const results: TeamGameStat[] = [];
+
+  const BATCH = 5;
+  for (let i = 0; i < completed.length; i += BATCH) {
+    const batch = completed.slice(i, i + BATCH);
+    const batchResults = await Promise.all(batch.map(async (ev: any) => {
+      const gameId  = String(ev.id ?? "");
+      const date    = String(ev.date ?? "").slice(0, 10);
+      const comp    = ev.competitions?.[0];
+      if (!gameId || !comp) return null;
+
+      const homeSide = comp.competitors?.find((c: any) => c.homeAway === "home");
+      const awaySide = comp.competitors?.find((c: any) => c.homeAway === "away");
+      const isHome   = String(homeSide?.team?.id) === teamId;
+      const mySide   = isHome ? homeSide : awaySide;
+      const oppSide  = isHome ? awaySide : homeSide;
+
+
+
+      const opponent = oppSide?.team?.displayName ?? "";
+
+      // Fetch match summary for detailed stats (shared cache with player history — no extra cost)
+      const summary = await espnGet(`${path}/summary?event=${gameId}`, 86400);
+      let corners: number | null = null;
+      let shots: number | null = null;
+      let shotsOnTarget: number | null = null;
+      let yellowCards: number | null = null;
+      let fouls: number | null = null;
+      let possession: number | null = null;
+      // Goals default to schedule score; boxscore "G" stat overrides if available
+      let goalsFor     = parseScore(mySide?.score);
+      let goalsAgainst = parseScore(oppSide?.score);
+
+      if (summary) {
+        const bsTeams: any[] = (summary.boxscore as any)?.teams ?? [];
+        // Find our team's stats array
+        const myTeamBs  = bsTeams.find((t: any) => String(t.team?.id) === teamId);
+        const oppTeamBs = bsTeams.find((t: any) => String(t.team?.id) !== teamId);
+        const statsArr: any[]    = myTeamBs?.statistics  ?? [];
+        const oppStatsArr: any[] = oppTeamBs?.statistics ?? [];
+
+        const getStatVal = (arr: any[], abbrevs: string[]): number | null => {
+          for (const abbr of abbrevs) {
+            const s = arr.find((x: any) =>
+              (x.abbreviation ?? x.name ?? "").toLowerCase() === abbr.toLowerCase()
+            );
+            if (s != null) {
+              const v = parseFloat(String(s.value ?? s.displayValue ?? ""));
+              if (!isNaN(v)) return v;
+            }
+          }
+          return null;
+        };
+
+        // Try to get goals from boxscore (more reliable than schedule score field)
+        const bsGoalsFor     = getStatVal(statsArr,    ["G", "goals", "goalsscored"]);
+        const bsGoalsAgainst = getStatVal(oppStatsArr, ["G", "goals", "goalsscored"]);
+        if (bsGoalsFor     != null) goalsFor     = bsGoalsFor;
+        if (bsGoalsAgainst != null) goalsAgainst = bsGoalsAgainst;
+
+        corners       = getStatVal(statsArr, ["CK", "CO", "CornerKicks", "Corners"]);
+        shots         = getStatVal(statsArr, ["SH", "Shots"]);
+        shotsOnTarget = getStatVal(statsArr, ["ST", "ShotsOnTarget"]);
+        yellowCards   = getStatVal(statsArr, ["YC", "YellowCards"]);
+        fouls         = getStatVal(statsArr, ["F", "Fouls"]);
+        possession    = getStatVal(statsArr, ["POSS", "Possession"]);
+      }
+
+      return { gameId, date, isHome, opponent, goalsFor, goalsAgainst, corners, shots, shotsOnTarget, yellowCards, fouls, possession } satisfies TeamGameStat;
+    }));
+
+    for (const r of batchResults) {
+      if (r) results.push(r);
+    }
+  }
+
+  // Most recent first
+  return results.reverse();
+}
+
 // ─── Player game history via team schedule traversal ─────────────────────────
 
 export async function fetchESPNSoccerPlayerHistory(
@@ -284,8 +462,8 @@ export async function fetchESPNSoccerPlayerHistory(
       const awaySide = comp.competitors?.find((c: any) => c.homeAway === "away");
       const homeTeamName = homeSide?.team?.displayName ?? "";
       const awayTeamName = awaySide?.team?.displayName ?? "";
-      const homeScore    = parseInt(homeSide?.score ?? "0", 10) || 0;
-      const awayScore    = parseInt(awaySide?.score ?? "0", 10) || 0;
+      const homeScore    = parseScore(homeSide?.score);
+      const awayScore    = parseScore(awaySide?.score);
       const homeTeamId_  = parseInt(homeSide?.team?.id ?? "0", 10) || 0;
       const awayTeamId_  = parseInt(awaySide?.team?.id ?? "0", 10) || 0;
       const myTeamId_    = parseInt(teamId, 10) || 0;

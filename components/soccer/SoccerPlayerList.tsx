@@ -91,21 +91,15 @@ function RatingBadge({ rating }: { rating: number }) {
 // ─── Player photo ─────────────────────────────────────────────────────────────
 
 function PlayerPhoto({ sofaId, espnSrc, name, size = 28 }: { sofaId?: number; espnSrc?: string; name: string; size?: number }) {
-  // Try Sofascore CDN first, fall back to ESPN, then initials
-  const sofaUrl = sofaId ? `https://img.sofascore.com/api/v1/player/${sofaId}/image` : null;
-  const [src, setSrc]   = useState<string | null>(sofaUrl ?? espnSrc ?? null);
-  const [tried, setTried] = useState<"sofa" | "espn" | "none">(sofaUrl ? "sofa" : espnSrc ? "espn" : "none");
+  // Priority: ESPN CDN (most reliable), then Sofascore profile photo, then initials.
+  // Sofascore IDs from the lineup API are real profile IDs (access-control-allow-origin: *)
+  const sofaSrc = sofaId && sofaId > 0 ? `https://img.sofascore.com/api/v1/player/${sofaId}/image` : null;
+  const [src, setSrc] = useState<string | null>(espnSrc ?? sofaSrc);
 
-  const initials = name.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+  const initials = name.split(" ").map((w: string) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
 
   const handleError = () => {
-    if (tried === "sofa" && espnSrc) {
-      setSrc(espnSrc);
-      setTried("espn");
-    } else {
-      setSrc(null);
-      setTried("none");
-    }
+    setSrc(null);
   };
 
   if (!src) {
@@ -145,10 +139,9 @@ function PlayerRow({
   espnPlayer?: ESPNPlayer;
   activeCols:  string[];
   isSubstitute: boolean;
-  onClick:     () => void;
+  onClick:     (espnSrc?: string) => void;
 }) {
   const headshot = espnPlayer?.headshot;
-  const sofaId   = player.id || undefined;
   const mins = player.stats.minutesPlayed ?? (
     player.stats.secondsPlayed != null ? Math.round(player.stats.secondsPlayed as number / 60) : null
   );
@@ -156,12 +149,12 @@ function PlayerRow({
   return (
     <tr
       className={`border-b border-border last:border-0 hover:bg-surface2 transition-colors cursor-pointer ${isSubstitute ? "opacity-70" : ""}`}
-      onClick={onClick}
+      onClick={() => onClick(headshot)}
     >
       {/* Player cell */}
       <td className="py-2 pr-2 sticky left-0 bg-surface">
         <div className="flex items-center gap-2 min-w-0">
-          <PlayerPhoto sofaId={sofaId} espnSrc={headshot} name={player.name} size={26} />
+          <PlayerPhoto sofaId={player.id} espnSrc={headshot} name={player.name} size={26} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <span className="text-[11px] font-medium text-text-1 truncate leading-tight">
@@ -213,7 +206,7 @@ interface SoccerPlayerListProps {
   players:       SofascorePlayer[];
   espnSquad:     ESPNPlayer[];
   formation?:    string;
-  onPlayerClick?: (player: SofascorePlayer) => void;
+  onPlayerClick?: (player: SofascorePlayer, espnSrc?: string) => void;
 }
 
 export default function SoccerPlayerList({ players, espnSquad, formation, onPlayerClick }: SoccerPlayerListProps) {
@@ -284,7 +277,7 @@ export default function SoccerPlayerList({ players, espnSquad, formation, onPlay
                   espnPlayer={esp}
                   activeCols={displayCols}
                   isSubstitute={false}
-                  onClick={() => onPlayerClick?.(p)}
+                  onClick={(espnSrc) => onPlayerClick?.(p, espnSrc)}
                 />
               );
             })}
@@ -305,7 +298,7 @@ export default function SoccerPlayerList({ players, espnSquad, formation, onPlay
                       espnPlayer={esp}
                       activeCols={displayCols}
                       isSubstitute={true}
-                      onClick={() => onPlayerClick?.(p)}
+                      onClick={(espnSrc) => onPlayerClick?.(p, espnSrc)}
                     />
                   );
                 })}

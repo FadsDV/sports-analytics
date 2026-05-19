@@ -3,17 +3,20 @@
 import type { SofascoreTeamStats, SofascoreTopPlayer } from "@/lib/sports/sofascore";
 import type { Team } from "@/lib/types";
 import type { TeamHistoryGame } from "@/lib/sports/espn";
+import type { TeamGameStat } from "@/lib/sports/soccer/espnSoccerData";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
-  homeTeam:      Team;
-  awayTeam:      Team;
-  homeTeamStats: SofascoreTeamStats | null | undefined;
-  awayTeamStats: SofascoreTeamStats | null | undefined;
-  topScorers:    SofascoreTopPlayer[];
-  homeHistory:   TeamHistoryGame[];
-  awayHistory:   TeamHistoryGame[];
+  homeTeam:           Team;
+  awayTeam:           Team;
+  homeTeamStats:      SofascoreTeamStats | null | undefined;
+  awayTeamStats:      SofascoreTeamStats | null | undefined;
+  topScorers:         SofascoreTopPlayer[];
+  homeHistory:        TeamHistoryGame[];
+  awayHistory:        TeamHistoryGame[];
+  homeTeamGameStats?: TeamGameStat[];
+  awayTeamGameStats?: TeamGameStat[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -78,6 +81,51 @@ function resultDot(r: "W" | "D" | "L") {
   if (r === "W") return "bg-[#22C55E]";
   if (r === "D") return "bg-[#F59E0B]";
   return "bg-[#EF4444]";
+}
+
+// ─── Pre-match aggregation ────────────────────────────────────────────────────
+
+interface TeamVenueAgg {
+  games:         number;
+  goalsFor:      number;
+  goalsAgainst:  number;
+  btts:          number;
+  over25:        number;
+  cleanSheets:   number;
+  corners:       number;
+  cornersGames:  number;
+  shots:         number;
+  shotsGames:    number;
+  shotsOnTarget: number;
+  yellowCards:   number;
+  cardsGames:    number;
+}
+
+function aggregateTeamStats(stats: TeamGameStat[], venue: "home" | "away"): TeamVenueAgg {
+  const filtered = stats.filter(g => (venue === "home") === g.isHome);
+  const out: TeamVenueAgg = {
+    games: filtered.length,
+    goalsFor: 0, goalsAgainst: 0, btts: 0, over25: 0, cleanSheets: 0,
+    corners: 0, cornersGames: 0, shots: 0, shotsGames: 0, shotsOnTarget: 0,
+    yellowCards: 0, cardsGames: 0,
+  };
+
+  for (const g of filtered) {
+    out.goalsFor      += g.goalsFor;
+    out.goalsAgainst  += g.goalsAgainst;
+    if (g.goalsFor > 0 && g.goalsAgainst > 0) out.btts++;
+    if (g.goalsFor + g.goalsAgainst > 2.5)     out.over25++;
+    if (g.goalsAgainst === 0)                  out.cleanSheets++;
+    if (g.corners != null) { out.corners += g.corners; out.cornersGames++; }
+    if (g.shots != null)   { out.shots += g.shots; out.shotsGames++; out.shotsOnTarget += g.shotsOnTarget ?? 0; }
+    if (g.yellowCards != null) { out.yellowCards += g.yellowCards; out.cardsGames++; }
+  }
+
+  return out;
+}
+
+function avgOrNull(total: number, count: number): number | null {
+  return count > 0 ? total / count : null;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -165,6 +213,37 @@ function FormBlock({ teamName, venue, form }: FormBlockProps) {
   );
 }
 
+// Build a SofascoreTeamStats-compatible object from raw game history
+// Used for Team Comparison when no live/season stats are available (pre-match)
+function syntheticTeamStats(stats: TeamGameStat[]): SofascoreTeamStats | null {
+  if (stats.length === 0) return null;
+  const n = stats.length;
+  const sum  = (fn: (g: TeamGameStat) => number | null) =>
+    stats.reduce((a, g) => a + (fn(g) ?? 0), 0);
+  const hasAny = (fn: (g: TeamGameStat) => number | null) =>
+    stats.some(g => fn(g) != null);
+  const gamesWithStat = (fn: (g: TeamGameStat) => number | null) =>
+    stats.filter(g => fn(g) != null).length;
+
+  return {
+    matches:                  n,
+    goalsScored:              sum(g => g.goalsFor),
+    goalsConceded:            sum(g => g.goalsAgainst),
+    shots:                    hasAny(g => g.shots) ? sum(g => g.shots) : null,
+    shotsOnTarget:            hasAny(g => g.shotsOnTarget) ? sum(g => g.shotsOnTarget) : null,
+    corners:                  hasAny(g => g.corners) ? sum(g => g.corners) : null,
+    fouls:                    hasAny(g => g.fouls) ? sum(g => g.fouls) : null,
+    yellowCards:              hasAny(g => g.yellowCards) ? sum(g => g.yellowCards) : null,
+    redCards:                 null,
+    saves:                    null,
+    // Possession: average of per-game values (not a sum)
+    averageBallPossession:    hasAny(g => g.possession)
+      ? sum(g => g.possession) / gamesWithStat(g => g.possession)
+      : null,
+    accuratePassesPercentage: null,
+  };
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function SoccerMatchInsights({
@@ -175,27 +254,117 @@ export default function SoccerMatchInsights({
   topScorers,
   homeHistory,
   awayHistory,
+  homeTeamGameStats = [],
+  awayTeamGameStats = [],
 }: Props) {
-  const hm = homeTeamStats?.matches ?? 1;
-  const am = awayTeamStats?.matches ?? 1;
+  // Use real stats when available (live/finished); synthesize from history pre-match
+  const effectiveHomeStats = homeTeamStats ?? syntheticTeamStats(homeTeamGameStats);
+  const effectiveAwayStats = awayTeamStats ?? syntheticTeamStats(awayTeamGameStats);
+  const isSynthetic = !homeTeamStats && !awayTeamStats && (effectiveHomeStats || effectiveAwayStats);
+
+  const hm = effectiveHomeStats?.matches ?? 1;
+  const am = effectiveAwayStats?.matches ?? 1;
 
   const homeForm = computeForm(homeHistory, "home");
   const awayForm = computeForm(awayHistory, "away");
 
-  const hasStats = homeTeamStats || awayTeamStats;
-  const hasScorers = topScorers.length > 0;
-  const hasForm = homeHistory.length > 0 || awayHistory.length > 0;
+  const hasStats     = effectiveHomeStats || effectiveAwayStats;
+  const hasScorers   = topScorers.length > 0;
+  const hasForm      = homeHistory.length > 0 || awayHistory.length > 0;
+  const hasGameStats = homeTeamGameStats.length > 0 || awayTeamGameStats.length > 0;
 
-  if (!hasStats && !hasScorers && !hasForm) return null;
+  if (!hasStats && !hasScorers && !hasForm && !hasGameStats) return null;
+
+  // Pre-match venue aggregations
+  const homeAgg = aggregateTeamStats(homeTeamGameStats, "home");
+  const awayAgg = aggregateTeamStats(awayTeamGameStats, "away");
+  const homeVenueGames = homeAgg.games;
+  const awayVenueGames = awayAgg.games;
 
   return (
     <div className="space-y-4">
+
+      {/* ── Section 0: Pre-match Intelligence ── */}
+      {hasGameStats && (homeVenueGames > 0 || awayVenueGames > 0) && (() => {
+        const hGF  = avgOrNull(homeAgg.goalsFor,      homeVenueGames);
+        const hGA  = avgOrNull(homeAgg.goalsAgainst,  homeVenueGames);
+        const hBTTS = homeVenueGames > 0 ? homeAgg.btts / homeVenueGames * 100 : null;
+        const hO25  = homeVenueGames > 0 ? homeAgg.over25 / homeVenueGames * 100 : null;
+        const hCS   = homeVenueGames > 0 ? homeAgg.cleanSheets / homeVenueGames * 100 : null;
+        const hCK   = avgOrNull(homeAgg.corners,     homeAgg.cornersGames);
+        const hYC   = avgOrNull(homeAgg.yellowCards, homeAgg.cardsGames);
+        const hSH   = avgOrNull(homeAgg.shots,       homeAgg.shotsGames);
+        const hSOT  = avgOrNull(homeAgg.shotsOnTarget, homeAgg.shotsGames);
+
+        const aGF  = avgOrNull(awayAgg.goalsFor,      awayVenueGames);
+        const aGA  = avgOrNull(awayAgg.goalsAgainst,  awayVenueGames);
+        const aBTTS = awayVenueGames > 0 ? awayAgg.btts / awayVenueGames * 100 : null;
+        const aO25  = awayVenueGames > 0 ? awayAgg.over25 / awayVenueGames * 100 : null;
+        const aCS   = awayVenueGames > 0 ? awayAgg.cleanSheets / awayVenueGames * 100 : null;
+        const aCK   = avgOrNull(awayAgg.corners,     awayAgg.cornersGames);
+        const aYC   = avgOrNull(awayAgg.yellowCards, awayAgg.cardsGames);
+        const aSH   = avgOrNull(awayAgg.shots,       awayAgg.shotsGames);
+        const aSOT  = avgOrNull(awayAgg.shotsOnTarget, awayAgg.shotsGames);
+
+        const rows: { label: string; hVal: number | null; aVal: number | null; fmt: (v: number | null) => string; higherIsBetter?: boolean }[] = [
+          { label: "Goals Scored",    hVal: hGF,   aVal: aGF,   fmt: v => fmt(v) },
+          { label: "Goals Conceded",  hVal: hGA,   aVal: aGA,   fmt: v => fmt(v), higherIsBetter: false },
+          { label: "BTTS %",          hVal: hBTTS, aVal: aBTTS, fmt: v => pct(v) },
+          { label: "Over 2.5 %",      hVal: hO25,  aVal: aO25,  fmt: v => pct(v) },
+          { label: "Clean Sheet %",   hVal: hCS,   aVal: aCS,   fmt: v => pct(v) },
+          ...(hCK != null || aCK != null ? [{ label: "Corners", hVal: hCK, aVal: aCK, fmt: (v: number | null) => fmt(v) }] : []),
+          ...(hYC != null || aYC != null ? [{ label: "Yellow Cards", hVal: hYC, aVal: aYC, fmt: (v: number | null) => fmt(v), higherIsBetter: false as boolean | undefined }] : []),
+          ...(hSH != null || aSH != null ? [{ label: "Shots", hVal: hSH, aVal: aSH, fmt: (v: number | null) => fmt(v) }] : []),
+          ...(hSOT != null || aSOT != null ? [{ label: "Shots on Target", hVal: hSOT, aVal: aSOT, fmt: (v: number | null) => fmt(v) }] : []),
+        ];
+
+        return (
+          <div className="bg-surface rounded-xl border border-border p-5">
+            <h3 className="text-sm font-semibold text-text-1 mb-1">Pre-match Intelligence</h3>
+            <p className="text-xs text-text-2 mb-4">
+              {homeTeam.shortName} last {homeVenueGames} home · {awayTeam.shortName} last {awayVenueGames} away
+            </p>
+
+            {/* Column headers */}
+            <div className="flex justify-between text-xs mb-4">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-primary" />
+                <span className="text-text-2 font-medium truncate max-w-[100px]">
+                  {homeTeam.shortName} <span className="text-text-2 opacity-60">(home)</span>
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-[#60A5FA]" />
+                <span className="text-text-2 font-medium truncate max-w-[100px]">
+                  {awayTeam.shortName} <span className="text-text-2 opacity-60">(away)</span>
+                </span>
+              </div>
+            </div>
+
+            <div className="divide-y divide-border/50">
+              {rows.map(r => (
+                <StatBarRow
+                  key={r.label}
+                  label={r.label}
+                  homeValue={r.hVal}
+                  awayValue={r.aVal}
+                  format={r.fmt}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Section 1: Team Comparison ── */}
       {hasStats && (
         <div className="bg-surface rounded-xl border border-border p-5">
           <h3 className="text-sm font-semibold text-text-1 mb-1">Team Comparison</h3>
-          <p className="text-xs text-text-2 mb-4">Season averages per game</p>
+          <p className="text-xs text-text-2 mb-4">
+            {isSynthetic
+              ? `Last ${Math.max(hm, am)} game averages (all venues)`
+              : "Season averages per game"}
+          </p>
 
           {/* Legend */}
           <div className="flex justify-between text-xs mb-4">
@@ -212,49 +381,49 @@ export default function SoccerMatchInsights({
           <div className="divide-y divide-border/50">
             <StatBarRow
               label="Goals Scored"
-              homeValue={perGame(homeTeamStats?.goalsScored ?? null, hm)}
-              awayValue={perGame(awayTeamStats?.goalsScored ?? null, am)}
+              homeValue={perGame(effectiveHomeStats?.goalsScored ?? null, hm)}
+              awayValue={perGame(effectiveAwayStats?.goalsScored ?? null, am)}
             />
             <StatBarRow
               label="Goals Conceded"
-              homeValue={perGame(homeTeamStats?.goalsConceded ?? null, hm)}
-              awayValue={perGame(awayTeamStats?.goalsConceded ?? null, am)}
+              homeValue={perGame(effectiveHomeStats?.goalsConceded ?? null, hm)}
+              awayValue={perGame(effectiveAwayStats?.goalsConceded ?? null, am)}
             />
             <StatBarRow
               label="Shots"
-              homeValue={perGame(homeTeamStats?.shots ?? null, hm)}
-              awayValue={perGame(awayTeamStats?.shots ?? null, am)}
+              homeValue={perGame(effectiveHomeStats?.shots ?? null, hm)}
+              awayValue={perGame(effectiveAwayStats?.shots ?? null, am)}
             />
             <StatBarRow
               label="Shots on Target"
-              homeValue={perGame(homeTeamStats?.shotsOnTarget ?? null, hm)}
-              awayValue={perGame(awayTeamStats?.shotsOnTarget ?? null, am)}
+              homeValue={perGame(effectiveHomeStats?.shotsOnTarget ?? null, hm)}
+              awayValue={perGame(effectiveAwayStats?.shotsOnTarget ?? null, am)}
             />
             <StatBarRow
               label="Corners"
-              homeValue={perGame(homeTeamStats?.corners ?? null, hm)}
-              awayValue={perGame(awayTeamStats?.corners ?? null, am)}
+              homeValue={perGame(effectiveHomeStats?.corners ?? null, hm)}
+              awayValue={perGame(effectiveAwayStats?.corners ?? null, am)}
             />
             <StatBarRow
               label="Fouls"
-              homeValue={perGame(homeTeamStats?.fouls ?? null, hm)}
-              awayValue={perGame(awayTeamStats?.fouls ?? null, am)}
+              homeValue={perGame(effectiveHomeStats?.fouls ?? null, hm)}
+              awayValue={perGame(effectiveAwayStats?.fouls ?? null, am)}
             />
             <StatBarRow
               label="Yellow Cards"
-              homeValue={perGame(homeTeamStats?.yellowCards ?? null, hm)}
-              awayValue={perGame(awayTeamStats?.yellowCards ?? null, am)}
+              homeValue={perGame(effectiveHomeStats?.yellowCards ?? null, hm)}
+              awayValue={perGame(effectiveAwayStats?.yellowCards ?? null, am)}
             />
             <StatBarRow
               label="Possession"
-              homeValue={homeTeamStats?.averageBallPossession ?? null}
-              awayValue={awayTeamStats?.averageBallPossession ?? null}
+              homeValue={effectiveHomeStats?.averageBallPossession ?? null}
+              awayValue={effectiveAwayStats?.averageBallPossession ?? null}
               format={pct}
             />
             <StatBarRow
               label="Pass Accuracy"
-              homeValue={homeTeamStats?.accuratePassesPercentage ?? null}
-              awayValue={awayTeamStats?.accuratePassesPercentage ?? null}
+              homeValue={effectiveHomeStats?.accuratePassesPercentage ?? null}
+              awayValue={effectiveAwayStats?.accuratePassesPercentage ?? null}
               format={pct}
             />
           </div>
