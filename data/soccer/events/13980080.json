@@ -1,0 +1,317 @@
+{
+  "collectedAt": "2026-05-20T15:14:19.474Z",
+  "sofascoreId": 13980080,
+  "espnGameId": "soccer-737161",
+  "homeTeamId": 2693,
+  "awayTeamId": 2686,
+  "tournamentId": 23,
+  "seasonId": 76457,
+  "lineups": {
+    "confirmed": false,
+    "homeFormation": "4-3-3",
+    "awayFormation": "3-4-2-1",
+    "home": [
+      {
+        "id": 69378,
+        "name": "David De Gea",
+        "shortName": "D. De Gea",
+        "position": "G",
+        "jerseyNumber": "43",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 822518,
+        "name": "Dodô",
+        "shortName": "Dodô",
+        "position": "M",
+        "jerseyNumber": "2",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 847467,
+        "name": "Marin Pongračić",
+        "shortName": "M. Pongračić",
+        "position": "D",
+        "jerseyNumber": "5",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1210848,
+        "name": "Pietro Comuzzo",
+        "shortName": "P. Comuzzo",
+        "position": "D",
+        "jerseyNumber": "15",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 377118,
+        "name": "Robin Gosens",
+        "shortName": "R. Gosens",
+        "position": "M",
+        "jerseyNumber": "21",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 928800,
+        "name": "Marco Brescianini",
+        "shortName": "M. Brescianini",
+        "position": "M",
+        "jerseyNumber": "4",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 901850,
+        "name": "Nicolò Fagioli",
+        "shortName": "N. Fagioli",
+        "position": "M",
+        "jerseyNumber": "44",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1114422,
+        "name": "Cher Ndour",
+        "shortName": "C. Ndour",
+        "position": "M",
+        "jerseyNumber": "27",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 829570,
+        "name": "Jack Harrison",
+        "shortName": "J. Harrison",
+        "position": "F",
+        "jerseyNumber": "17",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 958982,
+        "name": "Roberto Piccoli",
+        "shortName": "R. Piccoli",
+        "position": "F",
+        "jerseyNumber": "91",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 862223,
+        "name": "Manor Solomon",
+        "shortName": "M. Solomon",
+        "position": "M",
+        "jerseyNumber": "19",
+        "starter": true,
+        "stats": {}
+      }
+    ],
+    "away": [
+      {
+        "id": 865646,
+        "name": "Marco Carnesecchi",
+        "shortName": "M. Carnesecchi",
+        "position": "G",
+        "jerseyNumber": "29",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1012176,
+        "name": "Giorgio Scalvini",
+        "shortName": "G. Scalvini",
+        "position": "D",
+        "jerseyNumber": "42",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 151003,
+        "name": "Berat Djimsiti",
+        "shortName": "B. Djimsiti",
+        "position": "D",
+        "jerseyNumber": "19",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1634980,
+        "name": "Honest Ahanor",
+        "shortName": "H. Ahanor",
+        "position": "D",
+        "jerseyNumber": "69",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 132318,
+        "name": "Davide Zappacosta",
+        "shortName": "D. Zappacosta",
+        "position": "M",
+        "jerseyNumber": "77",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 100389,
+        "name": "Marten de Roon",
+        "shortName": "M. de Roon",
+        "position": "M",
+        "jerseyNumber": "15",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 946888,
+        "name": "Éderson",
+        "shortName": "Éderson",
+        "position": "M",
+        "jerseyNumber": "13",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 984184,
+        "name": "Nicola Zalewski",
+        "shortName": "N. Zalewski",
+        "position": "M",
+        "jerseyNumber": "59",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 960441,
+        "name": "Charles De Ketelaere",
+        "shortName": "C. De Ketelaere",
+        "position": "F",
+        "jerseyNumber": "17",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 865651,
+        "name": "Giacomo Raspadori",
+        "shortName": "G. Raspadori",
+        "position": "F",
+        "jerseyNumber": "18",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 839156,
+        "name": "Nikola Krstović",
+        "shortName": "N. Krstović",
+        "position": "F",
+        "jerseyNumber": "90",
+        "starter": true,
+        "stats": {}
+      }
+    ]
+  },
+  "incidents": [],
+  "homeTeamStats": {
+    "matches": 37,
+    "goalsScored": 40,
+    "goalsConceded": 49,
+    "shots": 478,
+    "shotsOnTarget": 127,
+    "corners": 166,
+    "fouls": 464,
+    "yellowCards": 81,
+    "redCards": 3,
+    "saves": 121,
+    "averageBallPossession": 51.27027027027,
+    "accuratePassesPercentage": 84.421213666497
+  },
+  "awayTeamStats": {
+    "matches": 37,
+    "goalsScored": 50,
+    "goalsConceded": 35,
+    "shots": 541,
+    "shotsOnTarget": 169,
+    "corners": 212,
+    "fouls": 436,
+    "yellowCards": 57,
+    "redCards": 2,
+    "saves": 115,
+    "averageBallPossession": 55,
+    "accuratePassesPercentage": 84.640378896354
+  },
+  "topScorers": [
+    {
+      "playerId": 1171451,
+      "playerName": "Nico Paz",
+      "shortName": "Nico Paz",
+      "teamName": "Como",
+      "goals": 12,
+      "assists": 6,
+      "shotsOnTarget": 48,
+      "rating": 7.33
+    },
+    {
+      "playerId": 1149011,
+      "playerName": "Kenan Yıldız",
+      "shortName": "Kenan Yıldız",
+      "teamName": "Juventus",
+      "goals": 10,
+      "assists": 6,
+      "shotsOnTarget": 40,
+      "rating": 7.39
+    },
+    {
+      "playerId": 135700,
+      "playerName": "Hakan Çalhanoğlu",
+      "shortName": "Hakan Çalhanoğlu",
+      "teamName": "Inter",
+      "goals": 9,
+      "assists": 4,
+      "shotsOnTarget": 17,
+      "rating": 7.5
+    },
+    {
+      "playerId": 284361,
+      "playerName": "Federico Dimarco",
+      "shortName": "Federico Dimarco",
+      "teamName": "Inter",
+      "goals": 6,
+      "assists": 17,
+      "shotsOnTarget": 20,
+      "rating": 7.41
+    },
+    {
+      "playerId": 1122835,
+      "playerName": "Alisson Santos",
+      "shortName": "Alisson Santos",
+      "teamName": "SSC Napoli",
+      "goals": 4,
+      "assists": 0,
+      "shotsOnTarget": 15,
+      "rating": 7.32
+    },
+    {
+      "playerId": 15466,
+      "playerName": "Luka Modrić",
+      "shortName": "Luka Modrić",
+      "teamName": "Milan",
+      "goals": 2,
+      "assists": 3,
+      "shotsOnTarget": 8,
+      "rating": 7.53
+    },
+    {
+      "playerId": 363860,
+      "playerName": "Manuel Locatelli",
+      "shortName": "Manuel Locatelli",
+      "teamName": "Juventus",
+      "goals": 1,
+      "assists": 2,
+      "shotsOnTarget": 12,
+      "rating": 7.71
+    }
+  ]
+}

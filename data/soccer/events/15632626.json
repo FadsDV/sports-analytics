@@ -1,0 +1,287 @@
+{
+  "collectedAt": "2026-05-20T15:14:29.872Z",
+  "sofascoreId": 15632626,
+  "espnGameId": "soccer-401862911",
+  "homeTeamId": 2538,
+  "awayTeamId": 40,
+  "tournamentId": 679,
+  "seasonId": 76984,
+  "lineups": {
+    "confirmed": false,
+    "homeFormation": "4-2-3-1",
+    "awayFormation": "4-2-3-1",
+    "home": [
+      {
+        "id": 980626,
+        "name": "Noah Atubolu",
+        "shortName": "N. Atubolu",
+        "position": "G",
+        "jerseyNumber": "1",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 142525,
+        "name": "Lukas Kübler",
+        "shortName": "L. Kübler",
+        "position": "D",
+        "jerseyNumber": "17",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 142259,
+        "name": "Matthias Ginter",
+        "shortName": "M. Ginter",
+        "position": "D",
+        "jerseyNumber": "28",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 576266,
+        "name": "Philipp Lienhart",
+        "shortName": "P. Lienhart",
+        "position": "D",
+        "jerseyNumber": "3",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 979820,
+        "name": "Philipp Treu",
+        "shortName": "P. Treu",
+        "position": "D",
+        "jerseyNumber": "29",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 569784,
+        "name": "Maximilian Eggestein",
+        "shortName": "M. Eggestein",
+        "position": "M",
+        "jerseyNumber": "8",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 49639,
+        "name": "Nicolas Höfler",
+        "shortName": "N. Höfler",
+        "position": "M",
+        "jerseyNumber": "27",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 836711,
+        "name": "Jan-Niklas Beste",
+        "shortName": "J. Beste",
+        "position": "M",
+        "jerseyNumber": "19",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1518931,
+        "name": "Johan Manzambi",
+        "shortName": "J. Manzambi",
+        "position": "M",
+        "jerseyNumber": "44",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 171961,
+        "name": "Vincenzo Grifo",
+        "shortName": "V. Grifo",
+        "position": "M",
+        "jerseyNumber": "32",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1019321,
+        "name": "Igor Matanović",
+        "shortName": "I. Matanović",
+        "position": "F",
+        "jerseyNumber": "31",
+        "starter": true,
+        "stats": {}
+      }
+    ],
+    "away": [
+      {
+        "id": 158263,
+        "name": "Emiliano Martínez",
+        "shortName": "E. Martínez",
+        "position": "G",
+        "jerseyNumber": "23",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 833956,
+        "name": "Matty Cash",
+        "shortName": "M. Cash",
+        "position": "D",
+        "jerseyNumber": "2",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 827679,
+        "name": "Ezri Konsa",
+        "shortName": "E. Konsa",
+        "position": "D",
+        "jerseyNumber": "4",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 864169,
+        "name": "Pau Torres",
+        "shortName": "P. Torres",
+        "position": "D",
+        "jerseyNumber": "14",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 96538,
+        "name": "Lucas Digne",
+        "shortName": "L. Digne",
+        "position": "D",
+        "jerseyNumber": "12",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 143334,
+        "name": "Victor Lindelöf",
+        "shortName": "V. Lindelöf",
+        "position": "D",
+        "jerseyNumber": "3",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 331737,
+        "name": "Youri Tielemans",
+        "shortName": "Y. Tielemans",
+        "position": "M",
+        "jerseyNumber": "8",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 250223,
+        "name": "John McGinn",
+        "shortName": "J. McGinn",
+        "position": "M",
+        "jerseyNumber": "7",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 948261,
+        "name": "Morgan Rogers",
+        "shortName": "M. Rogers",
+        "position": "M",
+        "jerseyNumber": "27",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 783126,
+        "name": "Emiliano Buendía",
+        "shortName": "E. Buendía",
+        "position": "M",
+        "jerseyNumber": "10",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 555386,
+        "name": "Ollie Watkins",
+        "shortName": "O. Watkins",
+        "position": "F",
+        "jerseyNumber": "11",
+        "starter": true,
+        "stats": {}
+      }
+    ]
+  },
+  "incidents": [],
+  "homeTeamStats": {
+    "matches": 14,
+    "goalsScored": 25,
+    "goalsConceded": 10,
+    "shots": 191,
+    "shotsOnTarget": 73,
+    "corners": 62,
+    "fouls": 175,
+    "yellowCards": 22,
+    "redCards": 1,
+    "saves": 39,
+    "averageBallPossession": 49.071428571429,
+    "accuratePassesPercentage": 81.837418444719
+  },
+  "awayTeamStats": {
+    "matches": 14,
+    "goalsScored": 28,
+    "goalsConceded": 8,
+    "shots": 168,
+    "shotsOnTarget": 76,
+    "corners": 69,
+    "fouls": 166,
+    "yellowCards": 21,
+    "redCards": 0,
+    "saves": 54,
+    "averageBallPossession": 53.785714285714,
+    "accuratePassesPercentage": 86.147388059701
+  },
+  "topScorers": [
+    {
+      "playerId": 958380,
+      "playerName": "Antony",
+      "shortName": "Antony",
+      "teamName": "Real Betis",
+      "goals": 6,
+      "assists": 3,
+      "shotsOnTarget": 13,
+      "rating": 7.71
+    },
+    {
+      "playerId": 1134470,
+      "playerName": "Zakaria El Ouahdi",
+      "shortName": "Zakaria El Ouahdi",
+      "teamName": "KRC Genk",
+      "goals": 4,
+      "assists": 1,
+      "shotsOnTarget": 6,
+      "rating": 7.59
+    },
+    {
+      "playerId": 852434,
+      "playerName": "Barnabás Varga",
+      "shortName": "Barnabás Varga",
+      "teamName": "Ferencváros TC",
+      "goals": 4,
+      "assists": 0,
+      "shotsOnTarget": 8,
+      "rating": 7.5
+    },
+    {
+      "playerId": 1410178,
+      "playerName": "Jamaldeen Jimoh",
+      "shortName": "Jamaldeen Jimoh",
+      "teamName": "Aston Villa",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 2,
+      "rating": 7.5
+    }
+  ]
+}
