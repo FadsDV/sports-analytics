@@ -2586,7 +2586,7 @@ export default function GameDetailTabs({
   // Bookie tab state for AFL kitchen
   const [bookieTab, setBookieTab] = useState<"generic" | "bet365" | "dabble">("generic");
   // Bookie tab state for Soccer kitchen
-  const [soccerBookieTab, setSoccerBookieTab] = useState<"generic" | "bet365">("generic");
+  const [soccerBookieTab, setSoccerBookieTab] = useState<"generic" | "bet365" | "dabble">("generic");
 
   // ── Slip logger: save AFL kitchen to local DB when kitchen tab opens ──────────
   const slipsSaved = useRef(false);
@@ -3163,7 +3163,13 @@ export default function GameDetailTabs({
         const bet365SoccerSlips = effectiveSoccerKitchenSlips
           ? filterSoccerSlipsForBookie(effectiveSoccerKitchenSlips, SOCCER_BOOKIES.bet365)
           : [];
-        const activeSoccerSlips = soccerBookieTab === "bet365" ? bet365SoccerSlips : (effectiveSoccerKitchenSlips ?? []);
+        const dabbleSoccerSlips = effectiveSoccerKitchenSlips
+          ? filterSoccerSlipsForBookie(effectiveSoccerKitchenSlips, SOCCER_BOOKIES.dabble)
+          : [];
+        const activeSoccerSlips =
+          soccerBookieTab === "bet365" ? bet365SoccerSlips :
+          soccerBookieTab === "dabble" ? dabbleSoccerSlips :
+          (effectiveSoccerKitchenSlips ?? []);
         const hasLegs = activeSoccerSlips.some(s => s.legs.length > 0);
         return (
           <>
@@ -3171,22 +3177,24 @@ export default function GameDetailTabs({
             {effectiveSoccerKitchenSlips && effectiveSoccerKitchenSlips.some(s => s.legs.length > 0) && (
               <div className="flex items-center gap-2 mb-4 px-1">
                 <span className="text-[10px] text-text-2 uppercase tracking-widest font-bold mr-1">Bookie</span>
-                {(["generic", "bet365"] as const).map(b => (
+                {([
+                  { key: "generic", label: "All Markets", activeClass: "bg-primary/20 border-primary/40 text-primary" },
+                  { key: "bet365",  label: "Bet365",      activeClass: "bg-[#00A651]/20 border-[#00A651]/50 text-[#00A651]" },
+                  { key: "dabble",  label: "Dabble",      activeClass: "bg-[#FF6B35]/20 border-[#FF6B35]/50 text-[#FF6B35]" },
+                ] as const).map(b => (
                   <button
-                    key={b}
-                    onClick={() => setSoccerBookieTab(b)}
+                    key={b.key}
+                    onClick={() => setSoccerBookieTab(b.key)}
                     className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all border ${
-                      soccerBookieTab === b
-                        ? b === "bet365"
-                          ? "bg-[#00A651]/20 border-[#00A651]/50 text-[#00A651]"
-                          : "bg-primary/20 border-primary/40 text-primary"
+                      soccerBookieTab === b.key
+                        ? b.activeClass
                         : "bg-surface border-border text-text-2 hover:text-text-1"
                     }`}
                   >
-                    {b === "generic" ? "All Markets" : "Bet365"}
+                    {b.label}
                   </button>
                 ))}
-                {soccerBookieTab === "bet365" && (
+                {soccerBookieTab !== "generic" && (
                   <span className="ml-auto text-[9px] text-text-2">
                     SGM: Goals · Assists · SOT · Shots · Cards · Team Goals · Corners
                   </span>
@@ -3197,11 +3205,11 @@ export default function GameDetailTabs({
               ? <SoccerKitchen slips={activeSoccerSlips} onPlayerClick={onSoccerKitchenClick} />
               : <div className="bg-surface rounded-xl p-8 border border-border text-center">
                   <p className="text-sm text-text-2 mb-1">
-                    {soccerBookieTab === "bet365" ? "No Bet365-eligible legs found." : "Not enough data to cook slips yet."}
+                    {soccerBookieTab !== "generic" ? `No ${soccerBookieTab === "bet365" ? "Bet365" : "Dabble"}-eligible legs found.` : "Not enough data to cook slips yet."}
                   </p>
                   <p className="text-[10px] text-text-2">
-                    {soccerBookieTab === "bet365"
-                      ? "Tackles, fouls, and saves aren't available on Bet365 SGM."
+                    {soccerBookieTab !== "generic"
+                      ? "Tackles, fouls, and saves aren't available on this bookie's SGM."
                       : "Requires lineup data and at least 3 recent games per player."}
                   </p>
                 </div>

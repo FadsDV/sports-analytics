@@ -26,6 +26,7 @@ import { formatKickoffFull, formatAFLKickoff } from "@/lib/utils";
 import { fetchPlayerSeasonStats } from "@/lib/sports/sofascore";
 import type { SofascorePlayer, SofascoreGameLog } from "@/lib/sports/sofascore";
 import { fetchESPNSoccerMatchData, fetchESPNSoccerPlayerHistory, fetchESPNSoccerTeamHistory, type TeamGameStat } from "@/lib/sports/soccer/espnSoccerData";
+import { fetchStaticSoccerEvent, lookupSofascoreId } from "@/lib/sports/soccer/staticData";
 import { fetch365ScoresForGame, type Scores365MatchData } from "@/lib/sports/soccer/365scoresData";
 import { buildFotMobPlayerMap } from "@/lib/sports/soccer/fotmobData";
 import { computeSoccerKitchen, type SoccerKitchenSlip, type SoccerPlayerProfile, type SoccerProp } from "@/lib/sports/soccer/kitchen";
@@ -341,12 +342,38 @@ export default async function GameDetailPage({
     ]);
     [homeSquad, awaySquad, homeInjuries, awayInjuries] = res;
   }
-  // Soccer: ESPN (free, no Vercel IP blocks). Basketball: Sofascore.
+  // Soccer: Try pre-collected static Sofascore data first (collected locally, pushed to GitHub).
+  // Falls back to ESPN for non-lineup data. Basketball: Sofascore directly.
   if (isSoccer) {
+    // 1. Get ESPN match data (incidents, live score, team info)
     sofascore = await fetchESPNSoccerMatchData(sport, sourceId);
+
+    // 2. Overlay static Sofascore data (lineups, team stats, top scorers) if available.
+    //    The collect-soccer.mjs script runs locally, fetches Sofascore freely, and pushes
+    //    JSON files to GitHub. Vercel reads them here as static data — no IP block.
+    const espnGameId = `soccer-${sourceId}`;
+    const sofascoreId = await lookupSofascoreId(espnGameId);
+    if (sofascoreId) {
+      const staticEvent = await fetchStaticSoccerEvent(sofascoreId);
+      if (staticEvent) {
+        // Base: ESPN data (or empty shell), overlaid with static Sofascore data
+        const base = sofascore ?? { sofascoreId: staticEvent.sofascoreId, lineups: null, incidents: [] };
+        sofascore = {
+          ...base,
+          sofascoreId:   staticEvent.sofascoreId,
+          lineups:       staticEvent.lineups ?? base.lineups,
+          homeTeamId:    staticEvent.homeTeamId   ?? base.homeTeamId,
+          awayTeamId:    staticEvent.awayTeamId   ?? base.awayTeamId,
+          tournamentId:  staticEvent.tournamentId ?? base.tournamentId,
+          seasonId:      staticEvent.seasonId     ?? base.seasonId,
+          homeTeamStats: staticEvent.homeTeamStats ?? base.homeTeamStats,
+          awayTeamStats: staticEvent.awayTeamStats ?? base.awayTeamStats,
+          topScorers:    staticEvent.topScorers?.length ? staticEvent.topScorers : (base.topScorers ?? []),
+        };
+      }
+    }
     // NOTE: Do NOT build fake lineups from the squad.
-    // Pre-match lineups come from Sofascore client-side fetch (browser bypasses Vercel IP blocks).
-    // The client hook runs when sofascore.lineups is null/undefined.
+    // Pre-match lineups come from static file (local collector) or client-side Sofascore fetch.
     // Wrong squad-derived lineups are worse than showing "not announced yet".
   } else if (["basketball"].includes(sport) && game.homeTeam.espnId) {
     const { fetchSofascoreMatchData } = await import("@/lib/sports/sofascore");

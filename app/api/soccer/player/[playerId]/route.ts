@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchPlayerSeasonStats, fetchPlayerRecentGames } from "@/lib/sports/sofascore";
 import { fetchFotMobPlayerStats } from "@/lib/sports/soccer/fotmobData";
+import { fetchStaticPlayerData } from "@/lib/sports/soccer/staticData";
 
-export const revalidate = 3600;
+export const revalidate = 60; // Static data refreshes every 60s
 
 export async function GET(
   req: NextRequest,
@@ -23,7 +24,20 @@ export async function GET(
     return NextResponse.json({ error: "Invalid playerId" }, { status: 400 });
   }
 
-  // If FotMob player ID is provided, use FotMob as the data source (reliable, correct player IDs)
+  // 1. Try pre-collected static data first (collected locally, pushed to GitHub)
+  //    This is the preferred path — no Sofascore API calls from Vercel needed.
+  const staticData = await fetchStaticPlayerData(playerId);
+  if (staticData) {
+    return NextResponse.json({
+      source:      "static",
+      seasonStats: staticData.seasonStats,
+      recentGames: staticData.recentGames,
+      vsOpponent:  staticData.vsOpponent?.[0] ?? null,
+      vsHistory:   staticData.vsOpponent ?? [],
+    });
+  }
+
+  // 2. FotMob (blocked — kept as dead code for now)
   if (fotmobId && !isNaN(fotmobId)) {
     const fotmobStats = await fetchFotMobPlayerStats(fotmobId);
     if (fotmobStats) {

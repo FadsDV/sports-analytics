@@ -11,7 +11,7 @@ import type { SoccerStatKey } from "./kitchen";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type SoccerBookieKey = "bet365";
+export type SoccerBookieKey = "bet365" | "dabble";
 
 type SoccerMarketStat = SoccerStatKey | "teamGoals" | "matchGoals" | "btts" | "corners" | "totalCards" | "totalShots";
 
@@ -60,8 +60,42 @@ export const SOCCER_BET365: SoccerBookieConfig = {
   },
 };
 
+// ─── Dabble ───────────────────────────────────────────────────────────────────
+// Dabble supports SGM for soccer — player goals, score/assist, shots on target,
+// cards. Lines differ from Bet365 (Dabble allows 2+ for goals, more card lines).
+
+export const SOCCER_DABBLE: SoccerBookieConfig = {
+  key:   "dabble",
+  label: "Dabble",
+  color: "#FF6B35",
+  logo:  "DAB",
+
+  stats: {
+    // ── Player stats ───────────────────────────────────────────────────────
+    goals:          { available: true,  validLines: [0.5, 1.5, 2.5],       snapDown: true },
+    scoreOrAssist:  { available: true,  validLines: [0.5, 1.5],            snapDown: true },
+    assists:        { available: true,  validLines: [0.5, 1.5],            snapDown: true },
+    shotsOnTarget:  { available: true,  validLines: [0.5, 1.5, 2.5],       snapDown: true },
+    shots:          { available: true,  validLines: [1.5, 2.5, 3.5],       snapDown: true },
+    yellowCards:    { available: true,  validLines: [0.5],                  snapDown: true },
+    // Not available on Dabble SGM
+    tackles:        { available: false, validLines: [] },
+    foulsCommitted: { available: false, validLines: [] },
+    saves:          { available: false, validLines: [] },
+    xG:             { available: false, validLines: [] },
+    // ── Match / team stats ─────────────────────────────────────────────────
+    teamGoals:      { available: true,  validLines: [0.5, 1.5, 2.5],       snapDown: true },
+    matchGoals:     { available: true,  validLines: [1.5, 2.5, 3.5, 4.5],  snapDown: true },
+    btts:           { available: true,  validLines: [0.5],                  snapDown: false },
+    corners:        { available: true,  validLines: [8.5, 9.5, 10.5],      snapDown: true },
+    totalCards:     { available: true,  validLines: [2.5, 3.5, 4.5],       snapDown: true },
+    totalShots:     { available: false, validLines: [] },
+  },
+};
+
 export const SOCCER_BOOKIES: Record<SoccerBookieKey, SoccerBookieConfig> = {
   bet365: SOCCER_BET365,
+  dabble: SOCCER_DABBLE,
 };
 
 // ─── Snap logic ───────────────────────────────────────────────────────────────

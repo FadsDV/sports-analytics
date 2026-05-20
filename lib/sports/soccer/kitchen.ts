@@ -475,7 +475,7 @@ const PLAYER_STATS: PlayerStatConfig[] = [
   { key: "shotsOnTarget",  stat: "shotsOnTarget",  label: "Shots on Target",      step: 0.5, minAvg: 0.40 },
   { key: "shots",          stat: "shots",          label: "Player Shots",         step: 0.5, minAvg: 0.80 },
   { key: "tackles",        stat: "tackles",        label: "Player Tackles",       step: 1.0, minAvg: 1.0, posFilter: ["D", "M"] },
-  { key: "foulsCommitted", stat: "foulsCommitted", label: "Fouls Committed",      step: 1.0, minAvg: 1.0 },
+  { key: "foulsCommitted", stat: "foulsCommitted", label: "Fouls Committed",      step: 1.0, minAvg: 1.0, posFilter: ["D", "M", "F", "A"] },
   { key: "yellowCards",    stat: "yellowCards",    label: "Player Card",          step: 0.5, minAvg: 0.12 },
   { key: "saves",          stat: "saves",          label: "Goalkeeper Saves",     step: 0.5, minAvg: 1.0, posFilter: ["G"] },
 ];
