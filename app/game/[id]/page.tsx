@@ -44,10 +44,18 @@ import SofaPlayerPhoto from "@/components/soccer/SofaPlayerPhoto";
 
 const STAT_TO_MARKET: Partial<Record<AFLPickStat, string>> = {
   D: "player_disposals",
-  G: "player_goals",
+  G: "player_goals_scored_over",  // correct API key (not "player_goals")
+  M: "player_marks_over",
+  T: "player_tackles_over",
 };
 
-// Returns a map of "PlayerFullName|stat" → { price, line, bookmaker }
+/**
+ * Fetches ALL available Sportsbet lines for AFL player props.
+ *
+ * Returns a map keyed by "PlayerFullName|stat|line" → { price, line, bookmaker }.
+ * Multiple lines per player are stored as separate entries (e.g. marks at 1.5, 2.5, 3.5).
+ * Prefer Sportsbet → PointsBet → others when multiple bookies have the same line.
+ */
 async function fetchAFLPlayerProps(
   homeTeam: string,
   awayTeam: string,
@@ -74,30 +82,32 @@ async function fetchAFLPlayerProps(
     });
     if (!event) return new Map();
 
-    // 2. Fetch player props for this event
+    // 2. Fetch all player prop markets for this event
+    const markets = Object.values(STAT_TO_MARKET).join(",");
     const propsRes = await fetch(
       `https://api.the-odds-api.com/v4/sports/aussierules_afl/events/${event.id}/odds` +
-      `?apiKey=${key}&regions=au&markets=player_disposals,player_goals&oddsFormat=decimal`,
+      `?apiKey=${key}&regions=au&markets=${markets}&oddsFormat=decimal`,
       { next: { revalidate: 21_600 } },
     );
     if (!propsRes.ok) return new Map();
     const propsData = await propsRes.json();
 
+    // Key: "PlayerName|stat|line" — allows multiple lines per player per stat.
+    // Priority: Sportsbet > PointsBet > others (for the same player+stat+line).
     const propMap = new Map<string, { price: number; line: number; bookmaker: string; _pri: number }>();
-    // Prefer Sportsbet → PointsBet → others
     const PRIORITY: Record<string, number> = { sportsbet: 0, pointsbetau: 1 };
 
     for (const bm of propsData.bookmakers ?? []) {
       const pri = PRIORITY[bm.key] ?? 9;
       for (const market of bm.markets ?? []) {
-        // Find which stat this market maps to
         const stat = (Object.entries(STAT_TO_MARKET) as [AFLPickStat, string][])
           .find(([, v]) => v === market.key)?.[0];
         if (!stat) continue;
 
         for (const o of market.outcomes ?? []) {
           if (o.name !== "Over") continue;
-          const mapKey = `${o.description}|${stat}`;
+          // Include the line in the key so multiple lines per player coexist
+          const mapKey = `${o.description}|${stat}|${o.point}`;
           const existing = propMap.get(mapKey);
           if (!existing || pri < existing._pri) {
             propMap.set(mapKey, { price: o.price, line: o.point, bookmaker: bm.title, _pri: pri });

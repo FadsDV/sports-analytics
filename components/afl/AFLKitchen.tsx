@@ -11,6 +11,7 @@ import {
   CONFIDENCE_HEX,
 } from "@/lib/sports/reliability/labels";
 import { checkSlipHits, getLegCurrentValue } from "@/lib/sports/slipTracker";
+import { BOOKIES, snapThreshold } from "@/lib/sports/afl/bookies";
 
 // ─── Slip display config ──────────────────────────────────────────────────────
 
@@ -142,7 +143,7 @@ function BreakdownTooltip({ leg, onClose }: { leg: KitchenLeg; onClose: () => vo
 
 // ─── Single leg row ───────────────────────────────────────────────────────────
 
-function LegRow({ leg, isHit, currentValue, onPlayerClick }: { leg: KitchenLeg; isHit?: boolean; currentValue?: number | null; onPlayerClick?: (name: string) => void }) {
+function LegRow({ leg, isHit, currentValue, onPlayerClick, bookie }: { leg: KitchenLeg; isHit?: boolean; currentValue?: number | null; onPlayerClick?: (name: string) => void; bookie?: "generic" | "bet365" | "dabble" }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
   const showBar = currentValue != null;
   const pct     = showBar ? Math.min((currentValue / leg.threshold) * 100, 100) : 0;
@@ -175,16 +176,53 @@ function LegRow({ leg, isHit, currentValue, onPlayerClick }: { leg: KitchenLeg; 
           )}
         </div>
       </div>
-      {/* Threshold + odds */}
+      {/* Threshold + odds + bookie availability badges */}
       <div className="flex items-center justify-between gap-2 mt-1">
         <span className={`text-[11px] font-semibold ${isHit ? "text-[#22C55E]" : "text-primary"}`}>
           ↑ {leg.threshold}+ {leg.statLabel}
         </span>
-        {leg.prop ? (
-          <span className="text-[11px] text-text-2 shrink-0 tabular-nums">
-            @<span className="text-text-1 font-bold">{leg.prop.price.toFixed(2)}</span>
-          </span>
-        ) : null}
+        {/* On All Markets tab: show B/D badges indicating which bookies support this leg */}
+        {(!bookie || bookie === "generic") && (() => {
+          const b365ok = BOOKIES.bet365.stats[leg.stat]?.available &&
+            snapThreshold(leg.threshold, leg.stat, BOOKIES.bet365) !== null;
+          const dabOk  = BOOKIES.dabble.stats[leg.stat]?.available &&
+            snapThreshold(leg.threshold, leg.stat, BOOKIES.dabble) !== null;
+          if (!b365ok && !dabOk) return null;
+          return (
+            <div className="flex gap-0.5 shrink-0">
+              {b365ok && (
+                <span className="text-[8px] bg-[#00A651]/20 text-[#00A651] px-1 py-0.5 rounded font-bold leading-none" title="Available on Bet365">B</span>
+              )}
+              {dabOk && (
+                <span className="text-[8px] bg-[#FF6B35]/20 text-[#FF6B35] px-1 py-0.5 rounded font-bold leading-none" title="Available on Dabble">D</span>
+              )}
+            </div>
+          );
+        })()}
+        {/* Price display.
+            Safe slip: leg.threshold === leg.prop.line (exact Sportsbet line), always accurate.
+            Other slips: kitchen computes its own threshold, show price only if the Sportsbet
+            line is close enough (within 30% or 3 units) to avoid misleading prices. */}
+        {(() => {
+          if (!leg.prop) return null;
+          const lineMatch = Math.abs(leg.prop.line - leg.threshold) <= Math.max(3, leg.threshold * 0.30);
+          if (!lineMatch) return null;
+
+          if (!bookie || bookie === "generic") {
+            return (
+              <span className="text-[11px] text-text-2 shrink-0 tabular-nums" title={`${leg.prop.bookmaker} price`}>
+                @<span className="text-text-1 font-bold">{leg.prop.price.toFixed(2)}</span>
+              </span>
+            );
+          }
+          // bet365 / dabble — show Sportsbet price as market reference
+          return (
+            <span className="text-[11px] text-text-2 shrink-0 tabular-nums" title="Sportsbet market reference — check Bet365/Dabble app for exact price">
+              @<span className="text-text-1 font-bold">{leg.prop.price.toFixed(2)}</span>
+              <span className="text-[9px] text-text-2/50 ml-0.5">mkt ref</span>
+            </span>
+          );
+        })()}
       </div>
       {/* Context */}
       <div className="text-[10px] text-text-2 mt-0.5 flex items-center gap-1.5">
@@ -276,7 +314,7 @@ function CombinedHitChance({ legs }: { legs: KitchenLeg[] }) {
 
 // ─── Slip card ────────────────────────────────────────────────────────────────
 
-function SlipCard({ slip, boxScore, onPlayerClick }: { slip: KitchenSlip; boxScore: BoxScore | null; onPlayerClick?: (name: string) => void }) {
+function SlipCard({ slip, boxScore, onPlayerClick, bookie }: { slip: KitchenSlip; boxScore: BoxScore | null; onPlayerClick?: (name: string) => void; bookie?: "generic" | "bet365" | "dabble" }) {
   const cfg    = SLIP_CONFIG[slip.type];
   const hits   = slip.legs.length > 0 ? checkSlipHits(slip.legs, boxScore) : [];
   const allHit = hits.length > 0 && hits.every(Boolean);
@@ -319,7 +357,7 @@ function SlipCard({ slip, boxScore, onPlayerClick }: { slip: KitchenSlip; boxSco
             <p className="text-[10px] text-text-2/60">Need more game history or higher consistency</p>
           </div>
         ) : (
-          slip.legs.map((leg, i) => <LegRow key={i} leg={leg} isHit={hits[i]} currentValue={currentValues[i]} onPlayerClick={onPlayerClick} />)
+          slip.legs.map((leg, i) => <LegRow key={i} leg={leg} isHit={hits[i]} currentValue={currentValues[i]} onPlayerClick={onPlayerClick} bookie={bookie} />)
         )}
       </div>
 
@@ -436,7 +474,7 @@ function ValuePicks({ legs, boxScore, onPlayerClick }: { legs: KitchenLeg[]; box
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function AFLKitchen({ slips, boxScore, isUpcoming, onPlayerClick }: { slips: KitchenSlip[]; boxScore?: BoxScore | null; isUpcoming?: boolean; onPlayerClick?: (name: string) => void }) {
+export default function AFLKitchen({ slips, boxScore, isUpcoming, onPlayerClick, bookie }: { slips: KitchenSlip[]; boxScore?: BoxScore | null; isUpcoming?: boolean; onPlayerClick?: (name: string) => void; bookie?: "generic" | "bet365" | "dabble" }) {
   const mainSlips = slips.filter(s => s.type !== "value");
   const valueSlip = slips.find(s => s.type === "value");
   const allLegs   = slips.flatMap(s => s.legs);
@@ -483,7 +521,7 @@ export default function AFLKitchen({ slips, boxScore, isUpcoming, onPlayerClick 
       {/* 5 main slips */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
         {mainSlips.map(slip => (
-          <SlipCard key={slip.type} slip={slip} boxScore={bs} onPlayerClick={onPlayerClick} />
+          <SlipCard key={slip.type} slip={slip} boxScore={bs} onPlayerClick={onPlayerClick} bookie={bookie} />
         ))}
       </div>
 

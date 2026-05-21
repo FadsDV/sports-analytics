@@ -121,6 +121,128 @@ function calcHitRate(vals: number[], thr: number): number {
 }
 
 /**
+ * Find the best matching Sportsbet prop for a player+stat combination.
+ *
+ * propOdds keys are "PlayerName|stat|line" — iterates all entries for this
+ * player+stat and returns the one whose line is closest to targetThreshold.
+ * Used by buildLegs to attach a relevant price for display on non-safe slips.
+ */
+function findBestProp(
+  propOdds:        Map<string, { price: number; line: number; bookmaker: string }>,
+  playerName:      string,
+  stat:            AFLPickStat,
+  targetThreshold: number,
+): { price: number; line: number; bookmaker: string } | undefined {
+  const prefix = `${playerName}|${stat}|`;
+  let best: { price: number; line: number; bookmaker: string } | undefined;
+  let bestDist = Infinity;
+
+  for (const [key, val] of Array.from(propOdds.entries())) {
+    if (!key.startsWith(prefix)) continue;
+    const dist = Math.abs(val.line - targetThreshold);
+    if (dist < bestDist) { bestDist = dist; best = val; }
+  }
+  return best;
+}
+
+/**
+ * Build the Safe slip using ONLY actual Sportsbet market lines as thresholds.
+ *
+ * No independent threshold computation — the exact Sportsbet line IS the bet,
+ * so the price shown in the UI is always accurate.
+ *
+ * For each real market line, evaluates the player's historical hit rate at
+ * that exact line. Keeps the best (highest hit rate) line per player+stat.
+ * Sorts by hit rate desc, then greedily picks legs until combined Sportsbet
+ * prices ≥ minCombinedOdds. Min minLegs, max maxLegs.
+ */
+function buildPropsBasedSafeSlip(
+  all:             Profile[],
+  propOdds:        Map<string, { price: number; line: number; bookmaker: string }>,
+  minCombinedOdds: number,
+  minLegs:         number,
+  maxLegs:         number,
+): KitchenLeg[] {
+  // Quick profile lookup by "playerName|stat"
+  const profileMap = new Map<string, Profile>();
+  for (const p of all) profileMap.set(`${p.name}|${p.stat}`, p);
+
+  // For each player+stat keep the line with the highest hit rate (safest).
+  // propOdds key format: "PlayerName|STAT|LINE"
+  const bestPerPlayerStat = new Map<string, { leg: KitchenLeg; hitRate: number }>();
+
+  for (const [key, prop] of Array.from(propOdds.entries())) {
+    const parts = key.split("|");
+    if (parts.length !== 3) continue;
+    const [playerName, statStr] = parts;
+    const stat = statStr as AFLPickStat;
+
+    const profile = profileMap.get(`${playerName}|${stat}`);
+    if (!profile || profile.vals.length < 5) continue;
+
+    const hitRate = calcHitRate(profile.vals, prop.line);
+    if (hitRate < 0.65) continue;  // minimum safety threshold
+
+    // Keep only if this line has higher hit rate than a previous line for same player+stat
+    const existing = bestPerPlayerStat.get(`${playerName}|${stat}`);
+    if (existing && existing.hitRate >= hitRate) continue;
+
+    const breakdown = computeReliability({ vals: profile.vals, threshold: prop.line, config: AFL_CONFIG });
+
+    const legSignalTotal = Math.round(
+      (profile.signals.restDaysPenalty +
+       profile.signals.venueBoost +
+       profile.signals.opponentRankBoost +
+       profile.signals.weatherPenalty +
+       profile.signals.injuryUplift) * 100
+    ) / 100;
+
+    bestPerPlayerStat.set(`${playerName}|${stat}`, {
+      hitRate,
+      leg: {
+        player:        playerName,
+        side:          profile.side,
+        teamAbbr:      profile.teamAbbr,
+        stat,
+        statLabel:     STAT_LABELS[stat],
+        threshold:     prop.line,   // exact Sportsbet line — no rounding
+        hitRate,
+        reliability:   breakdown.finalReliability,
+        breakdown,
+        avgStat:       Math.round(profile.avg * 10) / 10,
+        gamesAnalyzed: profile.gamesAnalyzed,
+        isBounceBack:  profile.isBounceBack,
+        isOnForm:      profile.isOnForm,
+        prop,           // price is always accurate — threshold === prop.line
+        signalTotal:   legSignalTotal,
+      },
+    });
+  }
+
+  // Sort by hit rate desc (safest first)
+  const candidates = Array.from(bestPerPlayerStat.values())
+    .sort((a, b) => b.hitRate - a.hitRate);
+
+  // Greedily pick until combined Sportsbet prices ≥ minCombinedOdds
+  const selected: KitchenLeg[] = [];
+  const playerCount = new Map<string, number>();
+
+  for (const { leg } of candidates) {
+    if (selected.length >= maxLegs) break;
+    const used = playerCount.get(leg.player) ?? 0;
+    if (used >= 2) continue; // max 2 different stats per player
+
+    selected.push(leg);
+    playerCount.set(leg.player, used + 1);
+
+    const combinedOdds = selected.reduce((acc, l) => acc * (l.prop!.price), 1);
+    if (selected.length >= minLegs && combinedOdds >= minCombinedOdds) break;
+  }
+
+  return selected;
+}
+
+/**
  * Find the HIGHEST threshold within [minFraction×avg, maxFraction×avg] that
  * still achieves a hit rate between minHR and maxHR.
  * "Highest threshold that still passes" = hardest beatable line in the zone.
@@ -565,7 +687,7 @@ function buildLegs(
     const used = playerCount.get(p.name) ?? 0;
     if (used >= 2) continue;
 
-    const prop = propOdds.get(`${p.name}|${p.stat}`);
+    const prop = findBestProp(propOdds, p.name, p.stat, threshold);
 
     const legSignalTotal = Math.round(
       (p.signals.restDaysPenalty +
@@ -613,7 +735,16 @@ function buildValueLegs(
     const key  = `${p.name}|${p.stat}`;
     if (seen.has(key)) continue;
 
-    const prop = propOdds.get(key);
+    // Value: find the prop line that is BELOW the player's average AND has best odds
+    // (Sportsbet lines can vary per player — pick the one below avg with highest price)
+    const prefix = `${p.name}|${p.stat}|`;
+    let prop: { price: number; line: number; bookmaker: string } | undefined;
+    for (const [k, v] of Array.from(propOdds.entries())) {
+      if (!k.startsWith(prefix)) continue;
+      if (v.line >= p.avg) continue;           // only lines below average = value
+      if (v.price < 1.60) continue;            // minimum viable odds
+      if (!prop || v.price > prop.price) prop = v; // highest price = best value
+    }
 
     if (prop && prop.price >= 1.60 && prop.line < p.avg) {
       // ── Live prop: use real bookmaker line ──────────────────────────────
@@ -729,90 +860,177 @@ export function computeAFLKitchen(params: {
   const all = [...homeProfiles, ...awayProfiles];
 
   // ── 1. Safe ───────────────────────────────────────────────────────────────
-  // Threshold set well below avg (50–75%). Must hit 80%+ of games.
-  // Each leg should be near-certain. Goal: ~2 odds combined across 3 legs.
-  const safeLegs = buildLegs(all, propOdds, {
+  // Two-pass approach so bookie tabs always have enough candidates:
+  //   Pass A: exact Sportsbet market lines (accurate prices for All Markets tab)
+  //   Pass B: buildLegs conservative pool (high hit rate, 80%+, threshold 50–75% avg)
+  //           provides additional candidates that survive Bet365/Dabble filtering
+  //           when the props-based pool is thin.
+  // Both pools are merged (deduped by player|stat|threshold), then enforceOddsTarget
+  // picks the best 2-5 legs for the All Markets tab display.
+  const safeFromProps = buildPropsBasedSafeSlip(all, propOdds, 2.00, 2, 5);
+  const safeFallback  = buildLegs(all, propOdds, {
     minFlatHR: 0.80, maxFlatHR: 1.00,
     minFraction: 0.50, maxFraction: 0.75,
     minReliability: 0.60, maxReliability: 1.00,
-    maxLegs: 3, formBonus: 0,
+    maxLegs: 15, formBonus: 0,
   });
+  // Merge: props-based first (has accurate Sportsbet prices), fallback fills the rest
+  const safeSeen = new Set(safeFromProps.map(l => `${l.player}|${l.stat}|${l.threshold}`));
+  const safePool = [
+    ...safeFromProps,
+    ...safeFallback.filter(l => !safeSeen.has(`${l.player}|${l.stat}|${l.threshold}`)),
+  ];
+  const safeLegs = enforceOddsTarget(safePool, SLIP_TARGETS.safe.minOdds, SLIP_TARGETS.safe.minLegs, SLIP_TARGETS.safe.maxLegs);
 
   // ── 2. Doable ─────────────────────────────────────────────────────────────
   // Threshold 75–90% of avg. Hit rate 68–80%. Reliable but a step harder.
+  // Generate a large candidate pool (10), then enforce 3.0 combined odds target.
   const safeKeys   = new Set(safeLegs.map(l => `${l.player}|${l.stat}|${l.threshold}`));
   const doableRaw  = buildLegs(all, propOdds, {
     minFlatHR: 0.68, maxFlatHR: 1.00,
     minFraction: 0.75, maxFraction: 0.92,
     minReliability: 0.45, maxReliability: 1.00,
-    maxLegs: 5, formBonus: 0,
+    maxLegs: 10, formBonus: 0,
   });
-  const doableLegs = doableRaw
-    .filter(l => !safeKeys.has(`${l.player}|${l.stat}|${l.threshold}`))
-    .slice(0, 3);
+  const doableLegs = enforceOddsTarget(
+    doableRaw.filter(l => !safeKeys.has(`${l.player}|${l.stat}|${l.threshold}`)),
+    SLIP_TARGETS.doable.minOdds,
+    SLIP_TARGETS.doable.minLegs,
+    SLIP_TARGETS.doable.maxLegs,
+  );
 
   // ── 3. Goal Scorers ───────────────────────────────────────────────────────
-  // Goals only. Same comfortable-below-avg approach.
-  const goalLegs = buildLegs(all, propOdds, {
-    minFlatHR: 0.65, maxFlatHR: 1.00,
-    minFraction: 0.40, maxFraction: 0.80,
-    minReliability: 0.32, maxReliability: 1.00,
-    maxLegs: 4, statsFilter: ["G"], formBonus: 0,
-  });
+  // Goals only. Generate 8 candidates, enforce 3.0 combined odds target.
+  const goalLegs = enforceOddsTarget(
+    buildLegs(all, propOdds, {
+      minFlatHR: 0.65, maxFlatHR: 1.00,
+      minFraction: 0.40, maxFraction: 0.80,
+      minReliability: 0.32, maxReliability: 1.00,
+      maxLegs: 8, statsFilter: ["G"], formBonus: 0,
+    }),
+    SLIP_TARGETS.goalscorers.minOdds,
+    SLIP_TARGETS.goalscorers.minLegs,
+    SLIP_TARGETS.goalscorers.maxLegs,
+  );
 
   // ── 4. Disposals ──────────────────────────────────────────────────────────
-  // Disposals only. Below-avg threshold, high hit rate.
-  const disposalLegs = buildLegs(all, propOdds, {
-    minFlatHR: 0.72, maxFlatHR: 1.00,
-    minFraction: 0.55, maxFraction: 0.85,
-    minReliability: 0.42, maxReliability: 1.00,
-    maxLegs: 5, statsFilter: ["D"], formBonus: 0,
-  });
+  // Disposals only. Generate 8 candidates, enforce 3.0 combined odds target.
+  const disposalLegs = enforceOddsTarget(
+    buildLegs(all, propOdds, {
+      minFlatHR: 0.72, maxFlatHR: 1.00,
+      minFraction: 0.55, maxFraction: 0.85,
+      minReliability: 0.42, maxReliability: 1.00,
+      maxLegs: 8, statsFilter: ["D"], formBonus: 0,
+    }),
+    SLIP_TARGETS.disposals.minOdds,
+    SLIP_TARGETS.disposals.minLegs,
+    SLIP_TARGETS.disposals.maxLegs,
+  );
 
   // ── 5. Ballsy ─────────────────────────────────────────────────────────────
-  // Pass A: on-form players (last 3g ≥ avg × 1.10).
-  //   Threshold starts ABOVE recent avg (110% of recentAvg).
-  //   e.g. averaging 18 in last 3 → suggest 20+.
-  // Pass B: regular bold picks — threshold at/above season avg.
+  // On-form players first (threshold above recent avg), then regular bold picks.
+  // Generates up to 10 candidates, enforces 10.0 combined odds, 5–7 legs.
   const onFormProfiles = all.filter(p => p.isOnForm);
   const ballsyOnForm   = buildLegs(onFormProfiles, propOdds, {
     minFlatHR: 0.25, maxFlatHR: 0.60,
     minFraction: 1.10, maxFraction: 1.60,
     minReliability: 0.10, maxReliability: 0.55,
-    maxLegs: 5, formBonus: 0.05, useRecentBase: true,
+    maxLegs: 7, formBonus: 0.05, useRecentBase: true,
   });
-
   const ballsyRegular = buildLegs(all, propOdds, {
     minFlatHR: 0.30, maxFlatHR: 0.60,
     minFraction: 0.95, maxFraction: 1.50,
     minReliability: 0.10, maxReliability: 0.52,
-    maxLegs: 5, formBonus: 0,
+    maxLegs: 7, formBonus: 0,
   });
-
-  // Merge: on-form first (priority), fill with regular, max 3
+  // Merge: on-form first, then regular, deduplicated, up to 14 candidates
   const ballsySeen    = new Set<string>();
-  const ballsyMerged: KitchenLeg[] = [];
+  const ballsyPool: KitchenLeg[] = [];
   for (const leg of [...ballsyOnForm, ...ballsyRegular]) {
     const key = `${leg.player}|${leg.stat}|${leg.threshold}`;
     if (ballsySeen.has(key)) continue;
     ballsySeen.add(key);
-    ballsyMerged.push(leg);
-    if (ballsyMerged.length >= 3) break;
+    ballsyPool.push(leg);
+    if (ballsyPool.length >= 14) break;
   }
+  const ballsyLegs = enforceOddsTarget(
+    ballsyPool,
+    SLIP_TARGETS.ballsy.minOdds,
+    SLIP_TARGETS.ballsy.minLegs,
+    SLIP_TARGETS.ballsy.maxLegs,
+  );
 
   // ── 6. Value Picks ────────────────────────────────────────────────────────
-  // Book line < player average. Evaluates hit rate at the actual book line.
-  // Sorted by (edge / avg) × odds × reliability.
-  const valueLegs = buildValueLegs(all, propOdds);
+  // Book line < player average. Enforce 2.0 combined odds minimum.
+  const valueLegs = enforceOddsTarget(
+    buildValueLegs(all, propOdds),
+    SLIP_TARGETS.value.minOdds,
+    SLIP_TARGETS.value.minLegs,
+    SLIP_TARGETS.value.maxLegs,
+  );
 
   return [
     { type: "safe",        legs: safeLegs },
     { type: "doable",      legs: doableLegs },
     { type: "goalscorers", legs: goalLegs },
     { type: "disposals",   legs: disposalLegs },
-    { type: "ballsy",      legs: ballsyMerged },
+    { type: "ballsy",      legs: ballsyLegs },
     { type: "value",       legs: valueLegs },
   ];
+}
+
+// ─── Per-slip odds targets ────────────────────────────────────────────────────
+
+/**
+ * Minimum combined odds, minimum legs, and maximum legs per slip type.
+ * Combined odds are computed using 1/hitRate (fair value) for each leg —
+ * independent of whether a prop price is attached, to avoid mismatched lines.
+ */
+const SLIP_TARGETS: Record<KitchenSlipType, { minOdds: number; minLegs: number; maxLegs: number }> = {
+  safe:        { minOdds: 2.0,  minLegs: 2, maxLegs: 5 },
+  doable:      { minOdds: 3.0,  minLegs: 2, maxLegs: 5 },
+  goalscorers: { minOdds: 3.0,  minLegs: 2, maxLegs: 5 },
+  disposals:   { minOdds: 3.0,  minLegs: 2, maxLegs: 5 },
+  ballsy:      { minOdds: 10.0, minLegs: 5, maxLegs: 7 },
+  value:       { minOdds: 2.0,  minLegs: 2, maxLegs: 5 },
+};
+
+/**
+ * Pick legs from a candidate pool until combined fair-value odds ≥ minOdds.
+ *
+ * Uses 1/hitRate as the per-leg fair value — consistent regardless of whether
+ * a real prop price exists and immune to mismatched Sportsbet/bookie lines.
+ *
+ * Sorts by reliability desc (most confident first) before picking.
+ * Respects minLegs / maxLegs. If combined odds can't be reached within maxLegs,
+ * returns the best available set up to maxLegs.
+ */
+export function enforceOddsTarget(
+  legs:     KitchenLeg[],
+  minOdds:  number,
+  minLegs:  number,
+  maxLegs:  number,
+): KitchenLeg[] {
+  if (legs.length === 0) return [];
+
+  // Sort by reliability descending (most confident first)
+  const sorted = [...legs].sort((a, b) => b.reliability - a.reliability);
+  const selected: KitchenLeg[] = [];
+  const playerCount = new Map<string, number>();
+
+  for (const leg of sorted) {
+    if (selected.length >= maxLegs) break;
+    const used = playerCount.get(leg.player) ?? 0;
+    if (used >= 2) continue; // max 2 legs per player (different stats)
+
+    selected.push(leg);
+    playerCount.set(leg.player, used + 1);
+
+    const combinedOdds = selected.reduce((acc, l) => acc * (1 / l.hitRate), 1);
+    if (selected.length >= minLegs && combinedOdds >= minOdds) break;
+  }
+
+  return selected;
 }
 
 // ─── Bookie-specific kitchen ──────────────────────────────────────────────────
@@ -845,7 +1063,7 @@ export function filterSlipsForBookie(
       const dedupKey = `${leg.player}|${leg.stat}|${snapped}`;
       const existing = seen.get(dedupKey);
       if (!existing || leg.reliability > existing.reliability) {
-        // For goals: update statLabel to show bookie-friendly label (e.g. "Anytime")
+        // For goals: update statLabel to bookie-friendly label (e.g. "Anytime")
         const statLabel = leg.stat === "G"
           ? goalLabel(snapped)
           : leg.statLabel;
@@ -858,6 +1076,16 @@ export function filterSlipsForBookie(
       }
     }
 
-    return { ...slip, legs: Array.from(seen.values()) };
+    // After filtering and snapping to bookie lines, enforce the minimum odds
+    // target for this slip type so every tab always has a meaningful slip.
+    const target = SLIP_TARGETS[slip.type];
+    const filteredLegs = enforceOddsTarget(
+      Array.from(seen.values()),
+      target.minOdds,
+      target.minLegs,
+      target.maxLegs,
+    );
+
+    return { ...slip, legs: filteredLegs };
   }).filter(slip => slip.legs.length > 0);
 }
