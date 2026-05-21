@@ -98,14 +98,16 @@ export const DABBLE: BookieConfig = {
     },
     K: {
       available:  true,
-      // Dabble: 5+ through 12+, every integer
-      validLines: [5, 6, 7, 8, 9, 10, 11, 12],
+      // Dabble: 5–12 standard + alternate ladders 14, 18, 20, 23, 26
+      // Source: Dabble AFL SGM Master Reference V2 (confirmed ladder ranges)
+      validLines: [5, 6, 7, 8, 9, 10, 11, 12, 14, 18, 20, 23, 26],
       snapDown:   true,
     },
     H: {
       available:  true,
-      // Dabble: 4+ through 13+, every integer
-      validLines: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+      // Dabble: 4–13 standard + alternate 25+
+      // Source: Dabble AFL SGM Master Reference V2 (confirmed ladder ranges)
+      validLines: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 25],
       snapDown:   true,
     },
   },

@@ -3115,12 +3115,12 @@ export default function GameDetailTabs({
             {/* Bookie context note */}
             {bookieTab === "bet365" && (
               <div className="px-3 py-2 bg-[#00A651]/5 border border-[#00A651]/20 rounded-lg text-[11px] text-[#00A651]">
-                Bet365 only: Disposals (10–35, multiples of 5) · Goals (Anytime / 2+ / 3+) · Marks, Tackles, Kicks not available
+                Bet365 SGM: Disposals (10+, 15+, 20+, 25+, 30+, 35+) · Goals (Anytime / 2+ / 3+) · Marks, Tackles, Kicks, Handballs not available
               </div>
             )}
             {bookieTab === "dabble" && (
               <div className="px-3 py-2 bg-[#FF6B35]/5 border border-[#FF6B35]/20 rounded-lg text-[11px] text-[#FF6B35]">
-                Dabble: Disposals (15–30) · Goals (up to 5+) · Marks · Tackles · Kicks · Handballs
+                Dabble SGM: Disposals (15+–30+) · Goals (Anytime–5+) · Marks (2+–12+) · Tackles (2+–11+) · Kicks (5+–26+) · Handballs (4+–25+)
               </div>
             )}
 
