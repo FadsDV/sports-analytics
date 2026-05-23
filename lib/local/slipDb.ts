@@ -96,7 +96,7 @@ async function writeGame(game: StoredGame): Promise<void> {
   const { put } = await import("@vercel/blob");
   const token = process.env.BLOB_READ_WRITE_TOKEN!;
   await put(`${BLOB_PREFIX}${game.id}.json`, JSON.stringify(game), {
-    access:          "public",
+    access:          "private",
     addRandomSuffix: false,
     allowOverwrite:  true,
     contentType:     "application/json",
