@@ -67,15 +67,25 @@ interface StoredGame {
 
 // ─── Blob helpers ─────────────────────────────────────────────────────────────
 
+/** Fetch a blob's content using the SDK token (works for both public and private). */
+async function fetchBlobContent(url: string): Promise<StoredGame | null> {
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const res = await fetch(url, {
+    cache:   "no-store",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) return null;
+  return await res.json() as StoredGame;
+}
+
 async function readGame(gameId: string): Promise<StoredGame | null> {
   if (!blobAvailable()) return null;
   try {
     const { list } = await import("@vercel/blob");
-    const { blobs } = await list({ prefix: `${BLOB_PREFIX}${gameId}.json`, limit: 1 });
+    const token = process.env.BLOB_READ_WRITE_TOKEN!;
+    const { blobs } = await list({ prefix: `${BLOB_PREFIX}${gameId}.json`, limit: 1, token });
     if (!blobs.length) return null;
-    const res = await fetch(blobs[0].url, { cache: "no-store" });
-    if (!res.ok) return null;
-    return await res.json() as StoredGame;
+    return await fetchBlobContent(blobs[0].downloadUrl ?? blobs[0].url);
   } catch {
     return null;
   }
@@ -84,11 +94,13 @@ async function readGame(gameId: string): Promise<StoredGame | null> {
 async function writeGame(game: StoredGame): Promise<void> {
   if (!blobAvailable()) return;
   const { put } = await import("@vercel/blob");
+  const token = process.env.BLOB_READ_WRITE_TOKEN!;
   await put(`${BLOB_PREFIX}${game.id}.json`, JSON.stringify(game), {
     access:          "public",
     addRandomSuffix: false,
     allowOverwrite:  true,
     contentType:     "application/json",
+    token,
   });
 }
 
@@ -96,14 +108,13 @@ async function readAllGames(): Promise<StoredGame[]> {
   if (!blobAvailable()) return [];
   try {
     const { list } = await import("@vercel/blob");
-    const { blobs } = await list({ prefix: BLOB_PREFIX });
+    const token = process.env.BLOB_READ_WRITE_TOKEN!;
+    const { blobs } = await list({ prefix: BLOB_PREFIX, token });
     if (!blobs.length) return [];
     const results = await Promise.all(
       blobs.map(async b => {
         try {
-          const res = await fetch(b.url, { cache: "no-store" });
-          if (!res.ok) return null;
-          return await res.json() as StoredGame;
+          return await fetchBlobContent(b.downloadUrl ?? b.url);
         } catch {
           return null;
         }
@@ -219,7 +230,10 @@ export async function logSlips(game: SlipLogGame, slips: SlipLogSlip[]): Promise
 
     await writeGame(stored);
   } catch (err) {
-    console.error("[slipDb] logSlips error:", err);
+    const msg = err instanceof Error
+      ? `${err.constructor.name}: ${err.message}`
+      : String(err);
+    console.error("[slipDb] logSlips error:", msg);
   }
 }
 
