@@ -38,6 +38,7 @@ import type { AFLGamePlayerStats } from "@/lib/sports/espn";
 import type { AFLPickStat } from "./picks";
 import { computeReliability, AFL_CONFIG } from "@/lib/sports/reliability/engine";
 import type { ReliabilityBreakdown } from "@/lib/sports/reliability/types";
+import { normalizeAFLName } from "./fantasyMapper";
 
 // ─── Intelligence context ─────────────────────────────────────────────────────
 
@@ -133,7 +134,8 @@ function findBestProp(
   stat:            AFLPickStat,
   targetThreshold: number,
 ): { price: number; line: number; bookmaker: string } | undefined {
-  const prefix = `${playerName}|${stat}|`;
+  // Normalize so ESPN names ("Tom J. Lynch") match Odds API names ("Tom Lynch")
+  const prefix = `${normalizeAFLName(playerName)}|${stat}|`;
   let best: { price: number; line: number; bookmaker: string } | undefined;
   let bestDist = Infinity;
 
@@ -163,9 +165,15 @@ function buildPropsBasedSafeSlip(
   minLegs:         number,
   maxLegs:         number,
 ): KitchenLeg[] {
-  // Quick profile lookup by "playerName|stat"
+  // Quick profile lookup by "playerName|stat" — indexed by both raw ESPN name
+  // and normalized name so propOdds keys (normalized) can find the right profile.
   const profileMap = new Map<string, Profile>();
-  for (const p of all) profileMap.set(`${p.name}|${p.stat}`, p);
+  for (const p of all) {
+    profileMap.set(`${p.name}|${p.stat}`, p);
+    // Also index by normalized name to match propOdds keys built with normalizeAFLName()
+    const normKey = `${normalizeAFLName(p.name)}|${p.stat}`;
+    if (!profileMap.has(normKey)) profileMap.set(normKey, p);
+  }
 
   // For each player+stat keep the line with the highest hit rate (safest).
   // propOdds key format: "PlayerName|STAT|LINE"
@@ -200,7 +208,7 @@ function buildPropsBasedSafeSlip(
     bestPerPlayerStat.set(`${playerName}|${stat}`, {
       hitRate,
       leg: {
-        player:        playerName,
+        player:        profile.name,   // use ESPN display name, not normalized key
         side:          profile.side,
         teamAbbr:      profile.teamAbbr,
         stat,
@@ -558,9 +566,16 @@ function buildProfiles(
   // Injury uplift: pre-compute who benefits when key players are absent
   const injuryUpliftMap = computeInjuryUpliftMap(gamesByGame, teamId, injuries);
 
+  // Players confirmed out — exclude from slip selection entirely
+  const outStatuses = /out|suspended|injured/i;
+  const excludedPlayers = new Set(
+    injuries.filter(i => outStatuses.test(i.status)).map(i => i.playerName.toLowerCase())
+  );
+
   const profiles: Profile[] = [];
 
   for (const [name, statMap] of Array.from(playerVals.entries())) {
+    if (excludedPlayers.has(name.toLowerCase())) continue;
     const gameValMap = playerGameVals.get(name)!;
     for (const stat of STATS) {
       const vals = statMap[stat];
@@ -838,7 +853,7 @@ export function computeAFLKitchen(params: {
   homeInjuries?:   { playerName: string; status: string }[];
   /** Away team injury list — used for injury uplift signal */
   awayInjuries?:   { playerName: string; status: string }[];
-}): KitchenSlip[] {
+}): { slips: KitchenSlip[]; buildBookieSlips: (bookie: BookieConfig) => KitchenSlip[] } {
   const {
     homeGames, awayGames, homeTeamId, awayTeamId, homeAbbr, awayAbbr, propOdds,
     homeGameMeta = [], awayGameMeta = [],
@@ -880,7 +895,7 @@ export function computeAFLKitchen(params: {
     ...safeFromProps,
     ...safeFallback.filter(l => !safeSeen.has(`${l.player}|${l.stat}|${l.threshold}`)),
   ];
-  const safeLegs = enforceOddsTarget(safePool, SLIP_TARGETS.safe.minOdds, SLIP_TARGETS.safe.minLegs, SLIP_TARGETS.safe.maxLegs);
+  const safeLegs = enforceOddsTarget(safePool, SLIP_TARGETS.safe.minOdds, SLIP_TARGETS.safe.maxOdds, SLIP_TARGETS.safe.minLegs, SLIP_TARGETS.safe.maxLegs);
 
   // ── 2. Doable ─────────────────────────────────────────────────────────────
   // Threshold 75–90% of avg. Hit rate 68–80%. Reliable but a step harder.
@@ -895,6 +910,7 @@ export function computeAFLKitchen(params: {
   const doableLegs = enforceOddsTarget(
     doableRaw.filter(l => !safeKeys.has(`${l.player}|${l.stat}|${l.threshold}`)),
     SLIP_TARGETS.doable.minOdds,
+    SLIP_TARGETS.doable.maxOdds,
     SLIP_TARGETS.doable.minLegs,
     SLIP_TARGETS.doable.maxLegs,
   );
@@ -909,6 +925,7 @@ export function computeAFLKitchen(params: {
       maxLegs: 8, statsFilter: ["G"], formBonus: 0,
     }),
     SLIP_TARGETS.goalscorers.minOdds,
+    SLIP_TARGETS.goalscorers.maxOdds,
     SLIP_TARGETS.goalscorers.minLegs,
     SLIP_TARGETS.goalscorers.maxLegs,
   );
@@ -923,6 +940,7 @@ export function computeAFLKitchen(params: {
       maxLegs: 8, statsFilter: ["D"], formBonus: 0,
     }),
     SLIP_TARGETS.disposals.minOdds,
+    SLIP_TARGETS.disposals.maxOdds,
     SLIP_TARGETS.disposals.minLegs,
     SLIP_TARGETS.disposals.maxLegs,
   );
@@ -956,6 +974,7 @@ export function computeAFLKitchen(params: {
   const ballsyLegs = enforceOddsTarget(
     ballsyPool,
     SLIP_TARGETS.ballsy.minOdds,
+    SLIP_TARGETS.ballsy.maxOdds,
     SLIP_TARGETS.ballsy.minLegs,
     SLIP_TARGETS.ballsy.maxLegs,
   );
@@ -965,11 +984,12 @@ export function computeAFLKitchen(params: {
   const valueLegs = enforceOddsTarget(
     buildValueLegs(all, propOdds),
     SLIP_TARGETS.value.minOdds,
+    SLIP_TARGETS.value.maxOdds,
     SLIP_TARGETS.value.minLegs,
     SLIP_TARGETS.value.maxLegs,
   );
 
-  return [
+  const slips: KitchenSlip[] = [
     { type: "safe",        legs: safeLegs },
     { type: "doable",      legs: doableLegs },
     { type: "goalscorers", legs: goalLegs },
@@ -977,29 +997,35 @@ export function computeAFLKitchen(params: {
     { type: "ballsy",      legs: ballsyLegs },
     { type: "value",       legs: valueLegs },
   ];
+
+  return {
+    slips,
+    buildBookieSlips: (bookie: BookieConfig) =>
+      computeBookieSlipsFromProfiles(all, propOdds, bookie),
+  };
 }
 
 // ─── Per-slip odds targets ────────────────────────────────────────────────────
 
 /**
  * Minimum combined odds, minimum legs, and maximum legs per slip type.
- * Combined odds are computed using 1/hitRate (fair value) for each leg —
- * independent of whether a prop price is attached, to avoid mismatched lines.
+ * Combined odds use leg.prop.price when available (real market price),
+ * falling back to 1/hitRate (fair value) when prop odds are absent.
  */
-const SLIP_TARGETS: Record<KitchenSlipType, { minOdds: number; minLegs: number; maxLegs: number }> = {
-  safe:        { minOdds: 2.0,  minLegs: 2, maxLegs: 5 },
-  doable:      { minOdds: 3.0,  minLegs: 2, maxLegs: 5 },
-  goalscorers: { minOdds: 3.0,  minLegs: 2, maxLegs: 5 },
-  disposals:   { minOdds: 3.0,  minLegs: 2, maxLegs: 5 },
-  ballsy:      { minOdds: 10.0, minLegs: 5, maxLegs: 7 },
-  value:       { minOdds: 2.0,  minLegs: 2, maxLegs: 5 },
+const SLIP_TARGETS: Record<KitchenSlipType, { minOdds: number; maxOdds: number; minLegs: number; maxLegs: number }> = {
+  safe:        { minOdds: 2.0,  maxOdds: 3.0,      minLegs: 2, maxLegs: 5 },
+  doable:      { minOdds: 3.0,  maxOdds: 8.0,      minLegs: 2, maxLegs: 5 },
+  goalscorers: { minOdds: 3.0,  maxOdds: 9.0,      minLegs: 2, maxLegs: 5 },
+  disposals:   { minOdds: 3.0,  maxOdds: 8.0,      minLegs: 2, maxLegs: 5 },
+  ballsy:      { minOdds: 10.0, maxOdds: 50.0,     minLegs: 5, maxLegs: 7 },
+  value:       { minOdds: 2.0,  maxOdds: Infinity, minLegs: 2, maxLegs: 5 },
 };
 
 /**
- * Pick legs from a candidate pool until combined fair-value odds ≥ minOdds.
+ * Pick legs from a candidate pool until combined odds ≥ minOdds.
  *
- * Uses 1/hitRate as the per-leg fair value — consistent regardless of whether
- * a real prop price exists and immune to mismatched Sportsbet/bookie lines.
+ * Uses leg.prop.price when available (real market price from The Odds API),
+ * falling back to 1/hitRate (fair value) when no prop price is attached.
  *
  * Sorts by reliability desc (most confident first) before picking.
  * Respects minLegs / maxLegs. If combined odds can't be reached within maxLegs,
@@ -1008,10 +1034,13 @@ const SLIP_TARGETS: Record<KitchenSlipType, { minOdds: number; minLegs: number; 
 export function enforceOddsTarget(
   legs:     KitchenLeg[],
   minOdds:  number,
+  maxOdds:  number,
   minLegs:  number,
   maxLegs:  number,
 ): KitchenLeg[] {
   if (legs.length === 0) return [];
+
+  const legOdds = (l: KitchenLeg) => l.prop?.price ?? (1 / l.hitRate);
 
   // Sort by reliability descending (most confident first)
   const sorted = [...legs].sort((a, b) => b.reliability - a.reliability);
@@ -1023,19 +1052,191 @@ export function enforceOddsTarget(
     const used = playerCount.get(leg.player) ?? 0;
     if (used >= 2) continue; // max 2 legs per player (different stats)
 
+    // Skip legs that would push combined odds above maxOdds
+    if (maxOdds !== Infinity) {
+      const trial = [...selected, leg].reduce((acc, l) => acc * legOdds(l), 1);
+      if (trial > maxOdds) continue;
+    }
+
     selected.push(leg);
     playerCount.set(leg.player, used + 1);
 
-    const combinedOdds = selected.reduce((acc, l) => acc * (1 / l.hitRate), 1);
+    const combinedOdds = selected.reduce((acc, l) => acc * legOdds(l), 1);
     if (selected.length >= minLegs && combinedOdds >= minOdds) break;
   }
 
+  // Must have at least minLegs — otherwise there's not enough signal for a slip
+  if (selected.length < minLegs) return [];
   return selected;
 }
 
 // ─── Bookie-specific kitchen ──────────────────────────────────────────────────
 
 import { snapThreshold, goalLabel, type BookieConfig } from "./bookies";
+
+/**
+ * Build a pool of legs for a specific bookie by using that bookie's actual
+ * valid lines as thresholds (instead of the generic fraction-of-average approach).
+ *
+ * For each profile, iterates the bookie's valid lines HIGH to LOW and picks
+ * the first (highest) line whose hit rate falls within [minFlatHR, maxFlatHR].
+ * This ensures thresholds always correspond to real bookie markets.
+ *
+ * requireBelowAvg: for value-type legs — only consider lines below the player's average.
+ */
+function buildLegsForBookie(
+  profiles:  Profile[],
+  bookie:    BookieConfig,
+  propOdds:  Map<string, { price: number; line: number; bookmaker: string }>,
+  tier: {
+    minFlatHR:       number;
+    maxFlatHR:       number;
+    statsFilter?:    AFLPickStat[];
+    maxLegs:         number;
+    requireBelowAvg?: boolean;
+  },
+): KitchenLeg[] {
+  type Candidate = { leg: KitchenLeg; reliability: number };
+  const candidates: Candidate[] = [];
+  const seen = new Set<string>();
+
+  for (const p of profiles) {
+    if (p.vals.length < 5) continue;
+    if (tier.statsFilter && !tier.statsFilter.includes(p.stat)) continue;
+
+    const statConfig = bookie.stats[p.stat];
+    if (!statConfig?.available || statConfig.validLines.length === 0) continue;
+
+    // Iterate lines HIGH to LOW — take the highest line that qualifies
+    const lines = [...statConfig.validLines].sort((a, b) => b - a);
+
+    let bestLine: { threshold: number; hitRate: number } | null = null;
+    for (const line of lines) {
+      if (tier.requireBelowAvg && line >= p.avg) continue;
+      const hr = calcHitRate(p.vals, line);
+      if (hr >= tier.minFlatHR && hr <= tier.maxFlatHR) {
+        bestLine = { threshold: line, hitRate: hr };
+        break;
+      }
+    }
+    if (!bestLine) continue;
+
+    const dedupKey = `${p.name}|${p.stat}|${bestLine.threshold}`;
+    if (seen.has(dedupKey)) continue;
+    seen.add(dedupKey);
+
+    const breakdown = computeReliability({ vals: p.vals, threshold: bestLine.threshold, config: AFL_CONFIG });
+    const signalTotal =
+      p.signals.restDaysPenalty + p.signals.venueBoost +
+      p.signals.opponentRankBoost + p.signals.weatherPenalty + p.signals.injuryUplift;
+    const reliability = Math.max(0, Math.min(1.0, breakdown.finalReliability + signalTotal));
+
+    const prop = findBestProp(propOdds, p.name, p.stat, bestLine.threshold);
+    const statLabel = p.stat === "G" ? goalLabel(bestLine.threshold) : STAT_LABELS[p.stat];
+    const legSignalTotal = Math.round(signalTotal * 100) / 100;
+
+    candidates.push({
+      reliability,
+      leg: {
+        player:        p.name,
+        side:          p.side,
+        teamAbbr:      p.teamAbbr,
+        stat:          p.stat,
+        statLabel,
+        threshold:     bestLine.threshold,
+        hitRate:       bestLine.hitRate,
+        reliability,
+        breakdown:     { ...breakdown, finalReliability: reliability },
+        avgStat:       Math.round(p.avg * 10) / 10,
+        gamesAnalyzed: p.gamesAnalyzed,
+        isBounceBack:  p.isBounceBack,
+        isOnForm:      p.isOnForm,
+        prop,
+        signalTotal:   legSignalTotal,
+      },
+    });
+  }
+
+  candidates.sort((a, b) => b.reliability - a.reliability);
+
+  const legs: KitchenLeg[] = [];
+  const playerCount = new Map<string, number>();
+  for (const { leg } of candidates) {
+    if (legs.length >= tier.maxLegs) break;
+    const used = playerCount.get(leg.player) ?? 0;
+    if (used >= 2) continue;
+    legs.push(leg);
+    playerCount.set(leg.player, used + 1);
+  }
+
+  return legs;
+}
+
+/**
+ * Compute all 6 slip types for a specific bookie, using that bookie's valid
+ * line ladders as thresholds instead of the generic fraction-of-average approach.
+ *
+ * This is the correct way to generate bookie-specific slips — each leg is
+ * guaranteed to map to a real market line on that bookie.
+ */
+function computeBookieSlipsFromProfiles(
+  all:      Profile[],
+  propOdds: Map<string, { price: number; line: number; bookmaker: string }>,
+  bookie:   BookieConfig,
+): KitchenSlip[] {
+  // Safe: bookie lines with hitRate >= 80%
+  const safeLegs = enforceOddsTarget(
+    buildLegsForBookie(all, bookie, propOdds, { minFlatHR: 0.80, maxFlatHR: 1.00, maxLegs: 15 }),
+    SLIP_TARGETS.safe.minOdds, SLIP_TARGETS.safe.maxOdds,
+    SLIP_TARGETS.safe.minLegs, SLIP_TARGETS.safe.maxLegs,
+  );
+
+  // Doable: hitRate 68–100%, excluding any legs already in safe
+  const safeKeys = new Set(safeLegs.map(l => `${l.player}|${l.stat}|${l.threshold}`));
+  const doableLegs = enforceOddsTarget(
+    buildLegsForBookie(all, bookie, propOdds, { minFlatHR: 0.68, maxFlatHR: 1.00, maxLegs: 10 })
+      .filter(l => !safeKeys.has(`${l.player}|${l.stat}|${l.threshold}`)),
+    SLIP_TARGETS.doable.minOdds, SLIP_TARGETS.doable.maxOdds,
+    SLIP_TARGETS.doable.minLegs, SLIP_TARGETS.doable.maxLegs,
+  );
+
+  // Goal Scorers: G only
+  const goalLegs = enforceOddsTarget(
+    buildLegsForBookie(all, bookie, propOdds, { minFlatHR: 0.65, maxFlatHR: 1.00, statsFilter: ["G"], maxLegs: 8 }),
+    SLIP_TARGETS.goalscorers.minOdds, SLIP_TARGETS.goalscorers.maxOdds,
+    SLIP_TARGETS.goalscorers.minLegs, SLIP_TARGETS.goalscorers.maxLegs,
+  );
+
+  // Disposals: D only
+  const disposalLegs = enforceOddsTarget(
+    buildLegsForBookie(all, bookie, propOdds, { minFlatHR: 0.72, maxFlatHR: 1.00, statsFilter: ["D"], maxLegs: 8 }),
+    SLIP_TARGETS.disposals.minOdds, SLIP_TARGETS.disposals.maxOdds,
+    SLIP_TARGETS.disposals.minLegs, SLIP_TARGETS.disposals.maxLegs,
+  );
+
+  // Ballsy: hitRate 25–60% — low probability, high upside
+  const ballsyLegs = enforceOddsTarget(
+    buildLegsForBookie(all, bookie, propOdds, { minFlatHR: 0.25, maxFlatHR: 0.60, maxLegs: 14 }),
+    SLIP_TARGETS.ballsy.minOdds, SLIP_TARGETS.ballsy.maxOdds,
+    SLIP_TARGETS.ballsy.minLegs, SLIP_TARGETS.ballsy.maxLegs,
+  );
+
+  // Value: bookie lines that sit below the player's average (book is underpricing them)
+  const valueLegs = enforceOddsTarget(
+    buildLegsForBookie(all, bookie, propOdds, { minFlatHR: 0.65, maxFlatHR: 1.00, maxLegs: 10, requireBelowAvg: true }),
+    SLIP_TARGETS.value.minOdds, SLIP_TARGETS.value.maxOdds,
+    SLIP_TARGETS.value.minLegs, SLIP_TARGETS.value.maxLegs,
+  );
+
+  return ([
+    { type: "safe"        as const, legs: safeLegs },
+    { type: "doable"      as const, legs: doableLegs },
+    { type: "goalscorers" as const, legs: goalLegs },
+    { type: "disposals"   as const, legs: disposalLegs },
+    { type: "ballsy"      as const, legs: ballsyLegs },
+    { type: "value"       as const, legs: valueLegs },
+  ] as KitchenSlip[]).filter(s => s.legs.length > 0);
+}
 
 /**
  * Filter and snap a set of generic kitchen slips to a specific bookie's
@@ -1076,12 +1277,13 @@ export function filterSlipsForBookie(
       }
     }
 
-    // After filtering and snapping to bookie lines, enforce the minimum odds
+    // After filtering and snapping to bookie lines, enforce the odds range
     // target for this slip type so every tab always has a meaningful slip.
     const target = SLIP_TARGETS[slip.type];
     const filteredLegs = enforceOddsTarget(
       Array.from(seen.values()),
       target.minOdds,
+      target.maxOdds,
       target.minLegs,
       target.maxLegs,
     );

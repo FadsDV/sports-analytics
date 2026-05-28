@@ -7,3 +7,10 @@ tsconfig.tsbuildinfo
 .cs2-cache/
 data/local/
 *.db
+
+# Local scraper — trial dumps may contain real bookmaker prices
+scripts/bet365-trial-*.json
+scripts/.env.scraper
+scripts/.bet365-profile/
+scripts/.bet365-profile-ff/
+scripts/.bet365-profile-floorp/

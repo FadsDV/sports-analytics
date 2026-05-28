@@ -19,10 +19,11 @@ import {
 import { fetchTeamInjuries } from "@/lib/sports/espnPlayers";
 import { fetchAFLStandings } from "@/lib/sports/squiggle";
 import { computeAFLKitchen, type AFLGameMeta } from "@/lib/sports/afl/kitchen";
-import { filterSlipsForBookie } from "@/lib/sports/afl/kitchen";
+import { fetchAFLMatchExcluded } from "@/lib/sports/afl/lineups";
 import { BOOKIES } from "@/lib/sports/afl/bookies";
 import { logSlips, hasSlips } from "@/lib/local/slipDb";
 import { resolveTeamCanonicalId } from "@/lib/mappings";
+import { fetchOddsFromBlob, blobEntriesToPropOdds } from "@/lib/sports/afl/oddsCache";
 
 export const runtime  = "nodejs";
 export const dynamic  = "force-dynamic";
@@ -109,44 +110,72 @@ async function saveSlipsForGame(event: any): Promise<{ gameId: string; skipped: 
     const homeIds = completedHomeGames.map((e: any) => String(e.id));
     const awayIds = completedAwayGames.map((e: any) => String(e.id));
 
-    const [squiggleStandings, ...rawBoxScores] = await Promise.all([
+    const seasonYear = (event.season?.year ?? new Date(game.kickoff ?? Date.now()).getFullYear()) as number;
+    const weekNumber = (event.week?.number ?? 1) as number;
+
+    const [squiggleStandings, lineupResult, ...rawBoxScores] = await Promise.all([
       fetchAFLStandings(),
+      fetchAFLMatchExcluded(seasonYear, weekNumber, homeId, awayId),
       ...homeIds.map(id => fetchAFLBoxScoreForPicks(id)),
       ...awayIds.map(id => fetchAFLBoxScoreForPicks(id)),
     ]);
+
+    const homeMatchExcluded = (lineupResult as Awaited<ReturnType<typeof fetchAFLMatchExcluded>>)?.home ?? null;
+    const awayMatchExcluded = (lineupResult as Awaited<ReturnType<typeof fetchAFLMatchExcluded>>)?.away ?? null;
 
     const boxScores = rawBoxScores as AFLGamePlayerStats[][];
     const homeBoxScores = boxScores.slice(0, homeIds.length);
     const awayBoxScores = boxScores.slice(homeIds.length);
 
-    // Compute kitchen slips (no prop odds in cron — odds API quota is precious)
-    const emptyPropOdds = new Map<string, { price: number; line: number; bookmaker: string }>();
+    // Compute kitchen slips — use Blob cache if scraper has pushed odds,
+    // otherwise fall back to empty (skipping Odds API to preserve quota).
+    let propOdds = new Map<string, { price: number; line: number; bookmaker: string }>();
+    try {
+      const blobRaw = await fetchOddsFromBlob(gameId);
+      if (blobRaw && blobRaw.size > 0) {
+        propOdds = blobEntriesToPropOdds(Object.fromEntries(blobRaw));
+        console.info(`[cron/save-slips] ${gameId}: using ${propOdds.size} Blob odds`);
+      }
+    } catch (err) {
+      console.warn("[cron/save-slips] Blob odds read failed:", err instanceof Error ? err.message : String(err));
+    }
 
-    const kitchenSlips = computeAFLKitchen({
+    const kitchenResult = computeAFLKitchen({
       homeGames:    homeBoxScores,
       awayGames:    awayBoxScores,
       homeTeamId:   homeId,
       awayTeamId:   awayId,
       homeAbbr:     game.homeTeam.shortName,
       awayAbbr:     game.awayTeam.shortName,
-      propOdds:     emptyPropOdds,
+      propOdds,
       homeGameMeta,
       awayGameMeta,
       currentVenue: game.venue ?? "",
       weather:      null,
       homeRestDays,
       awayRestDays,
-      homeInjuries: homeInjuries.map(i => ({ playerName: i.playerName, status: i.status })),
-      awayInjuries: awayInjuries.map(i => ({ playerName: i.playerName, status: i.status })),
+      homeInjuries: [
+        ...homeInjuries.map(i => ({ playerName: i.playerName, status: i.status })),
+        ...(homeMatchExcluded
+          ? Array.from(homeMatchExcluded).map(name => ({ playerName: name, status: "Out" }))
+          : []),
+      ],
+      awayInjuries: [
+        ...awayInjuries.map(i => ({ playerName: i.playerName, status: i.status })),
+        ...(awayMatchExcluded
+          ? Array.from(awayMatchExcluded).map(name => ({ playerName: name, status: "Out" }))
+          : []),
+      ],
     });
+    const kitchenSlips = kitchenResult.slips;
 
     if (kitchenSlips.length === 0) {
       return { gameId, skipped: false, legs: 0, error: "no kitchen slips generated" };
     }
 
-    // Bookie-filtered variants
-    const bet365Slips = filterSlipsForBookie(kitchenSlips, BOOKIES.bet365);
-    const dabbleSlips = filterSlipsForBookie(kitchenSlips, BOOKIES.dabble);
+    // Bookie-specific variants built from scratch (not filtered from generic)
+    const bet365Slips = kitchenResult.buildBookieSlips(BOOKIES.bet365);
+    const dabbleSlips = kitchenResult.buildBookieSlips(BOOKIES.dabble);
 
     const allSlipSets = [
       { slips: kitchenSlips, bookie: "generic" },

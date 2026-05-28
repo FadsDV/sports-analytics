@@ -22,8 +22,7 @@ import NBAPlayerDrawer from "@/components/nba/NBAPlayerDrawer";
 import type { NBAPlayerAnalyticsResult } from "@/lib/sports/nba/players/types";
 import AFLKitchen from "@/components/afl/AFLKitchen";
 import type { KitchenSlip } from "@/lib/sports/afl/kitchen";
-import { filterSlipsForBookie } from "@/lib/sports/afl/kitchen";
-import { BOOKIES } from "@/lib/sports/afl/bookies";
+
 import NBAKitchen from "@/components/nba/NBAKitchen";
 import type { NBAKitchenSlip } from "@/lib/sports/nba/kitchen";
 import SoccerPlayerList from "@/components/soccer/SoccerPlayerList";
@@ -429,6 +428,9 @@ export interface GameDetailTabsProps {
   isBasketball:       boolean;
   isAFL:              boolean;
   kitchenSlips?:        KitchenSlip[];
+  aflBet365Slips?:      KitchenSlip[];
+  aflDabbleSlips?:      KitchenSlip[];
+  aflHasRealOdds?:      boolean;
   nbaKitchenSlips?:     NBAKitchenSlip[];
   soccerKitchenSlips?:  SoccerKitchenSlip[];
   homeTeamGameStats?:   TeamGameStat[];
@@ -2444,7 +2446,7 @@ export default function GameDetailTabs({
   game, id, homeSquad, awaySquad, homeInjuries, awayInjuries,
   homeHistories, awayHistories, h2hVariants, aflAnalytics, sofascore: sofascoreProp,
   insights, isSoccer, isBasketball, isAFL,
-  kitchenSlips, nbaKitchenSlips, soccerKitchenSlips,
+  kitchenSlips, aflBet365Slips, aflDabbleSlips, aflHasRealOdds, nbaKitchenSlips, soccerKitchenSlips,
   homeTeamGameStats, awayTeamGameStats,
   scores365Data,
   fotmobPlayerMap = {},
@@ -2598,9 +2600,9 @@ export default function GameDetailTabs({
     const gameDate = game.kickoff ? game.kickoff.slice(0, 10) : new Date().toISOString().slice(0, 10);
     const venue    = game.venue ?? undefined;
 
-    // Compute bookie-specific filtered slips for per-bookie analytics tracking
-    const bet365Slips = filterSlipsForBookie(kitchenSlips, BOOKIES.bet365);
-    const dabbleSlips = filterSlipsForBookie(kitchenSlips, BOOKIES.dabble);
+    // Use pre-computed bookie slips (built from scratch with valid bookie lines)
+    const bet365Slips = aflBet365Slips ?? [];
+    const dabbleSlips = aflDabbleSlips ?? [];
 
     const mapLegs = (legs: typeof kitchenSlips[0]["legs"]) => legs.map(l => ({
       player:        l.player,
@@ -2650,7 +2652,7 @@ export default function GameDetailTabs({
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify(payload),
     }).catch(err => console.warn("[slips] save failed:", err));
-  }, [isAFL, kitchenSlips, id, game]);
+  }, [isAFL, kitchenSlips, aflBet365Slips, aflDabbleSlips, id, game]);
 
   // ── Outcome resolver: auto-check results when a finished AFL game loads ───────
   const outcomesResolved = useRef(false);
@@ -3080,9 +3082,9 @@ export default function GameDetailTabs({
           );
         }
 
-        // Compute bookie-specific slips
-        const bet365Slips = filterSlipsForBookie(kitchenSlips, BOOKIES.bet365);
-        const dabbleSlips = filterSlipsForBookie(kitchenSlips, BOOKIES.dabble);
+        // Use pre-computed bookie-specific slips (built from scratch with valid bookie lines)
+        const bet365Slips = aflBet365Slips ?? [];
+        const dabbleSlips = aflDabbleSlips ?? [];
 
         const activeSlips =
           bookieTab === "bet365" ? bet365Slips :
@@ -3132,6 +3134,7 @@ export default function GameDetailTabs({
               isUpcoming={game.status === "upcoming"}
               onPlayerClick={handleKitchenPlayerClick}
               bookie={bookieTab}
+              hasRealOdds={aflHasRealOdds ?? false}
             />
           </div>
         );
