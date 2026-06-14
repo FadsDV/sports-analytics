@@ -1,0 +1,261 @@
+{
+  "collectedAt": "2026-06-14T13:08:01.155Z",
+  "sofascoreId": 15186773,
+  "espnGameId": "worldcup-760430",
+  "homeTeamId": 4767,
+  "awayTeamId": 4475,
+  "tournamentId": 16,
+  "seasonId": 58210,
+  "lineups": {
+    "confirmed": false,
+    "homeFormation": "4-2-3-1",
+    "awayFormation": "4-3-3",
+    "home": [
+      {
+        "id": 884092,
+        "name": "Fahad Talib",
+        "shortName": "F. Talib",
+        "position": "G",
+        "jerseyNumber": "1",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 962056,
+        "name": "Hussein Ali",
+        "shortName": "H. Ali",
+        "position": "D",
+        "jerseyNumber": "3",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 362504,
+        "name": "Rebin Sulaka",
+        "shortName": "R. Sulaka",
+        "position": "D",
+        "jerseyNumber": "2",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1150051,
+        "name": "Zaid Tahseen",
+        "shortName": "Z. Tahseen",
+        "position": "D",
+        "jerseyNumber": "4",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1381224,
+        "name": "Merchas Doski",
+        "shortName": "M. Doski",
+        "position": "D",
+        "jerseyNumber": "23",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 915325,
+        "name": "Amir Al-Ammari",
+        "shortName": "A. Al-Ammari",
+        "position": "M",
+        "jerseyNumber": "16",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1014225,
+        "name": "Zidane Iqbal",
+        "shortName": "Z. Iqbal",
+        "position": "M",
+        "jerseyNumber": "14",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 920815,
+        "name": "Ibrahim Bayesh",
+        "shortName": "I. Bayesh",
+        "position": "M",
+        "jerseyNumber": "8",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1066729,
+        "name": "Ali Jasim",
+        "shortName": "A. Jasim",
+        "position": "M",
+        "jerseyNumber": "17",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1010010,
+        "name": "Ali Al-Hamadi",
+        "shortName": "A. Al-Hamadi",
+        "position": "F",
+        "jerseyNumber": "9",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 812999,
+        "name": "Aymen Hussein",
+        "shortName": "A. Hussein",
+        "position": "F",
+        "jerseyNumber": "18",
+        "starter": true,
+        "stats": {}
+      }
+    ],
+    "away": [
+      {
+        "id": 22209,
+        "name": "Ørjan Nyland",
+        "shortName": "Ø. Nyland",
+        "position": "G",
+        "jerseyNumber": "1",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 800951,
+        "name": "Julian Ryerson",
+        "shortName": "J. Ryerson",
+        "position": "M",
+        "jerseyNumber": "26",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 576384,
+        "name": "Kristoffer Ajer",
+        "shortName": "K. Ajer",
+        "position": "D",
+        "jerseyNumber": "3",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 933264,
+        "name": "Torbjørn Heggem",
+        "shortName": "T. Heggem",
+        "position": "D",
+        "jerseyNumber": "17",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1031283,
+        "name": "David Møller Wolfe",
+        "shortName": "D. M. Wolfe",
+        "position": "D",
+        "jerseyNumber": "5",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 547410,
+        "name": "Martin Ødegaard",
+        "shortName": "M. Ødegaard",
+        "position": "M",
+        "jerseyNumber": "10",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 355174,
+        "name": "Patrick Berg",
+        "shortName": "P. Berg",
+        "position": "M",
+        "jerseyNumber": "6",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 228364,
+        "name": "Fredrik Aursnes",
+        "shortName": "F. Aursnes",
+        "position": "M",
+        "jerseyNumber": "14",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 309078,
+        "name": "Alexander Sørloth",
+        "shortName": "A. Sørloth",
+        "position": "F",
+        "jerseyNumber": "7",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 839956,
+        "name": "Erling Haaland",
+        "shortName": "E. Haaland",
+        "position": "F",
+        "jerseyNumber": "9",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1121923,
+        "name": "Antonio Nusa",
+        "shortName": "A. Nusa",
+        "position": "F",
+        "jerseyNumber": "20",
+        "starter": true,
+        "stats": {}
+      }
+    ]
+  },
+  "incidents": [],
+  "homeTeamStats": null,
+  "awayTeamStats": null,
+  "topScorers": [
+    {
+      "playerId": 934237,
+      "playerName": "Folarin Balogun",
+      "shortName": "Folarin Balogun",
+      "teamName": "USA",
+      "goals": 2,
+      "assists": 0,
+      "shotsOnTarget": 3,
+      "rating": 9
+    },
+    {
+      "playerId": 889689,
+      "playerName": "Hwang In-beom",
+      "shortName": "Hwang In-beom",
+      "teamName": "South Korea",
+      "goals": 1,
+      "assists": 1,
+      "shotsOnTarget": 2,
+      "rating": 8.8
+    },
+    {
+      "playerId": 843114,
+      "playerName": "Julián Quiñones",
+      "shortName": "Julián Quiñones",
+      "teamName": "Mexico",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 2,
+      "rating": 8.6
+    },
+    {
+      "playerId": 868812,
+      "playerName": "Vinícius Júnior",
+      "shortName": "Vinícius Júnior",
+      "teamName": "Brazil",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 1,
+      "rating": 8
+    }
+  ]
+}

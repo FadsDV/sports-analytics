@@ -109,6 +109,35 @@ Displayed in the RIGHT column of AFLPreMatch. Always visible at `lg` breakpoint.
 
 ---
 
+## AFL Lineup Exclusions (CFS API)
+
+**File**: `lib/sports/afl/lineups.ts`
+
+Primary source for confirmed match-day INS/OUTS. Uses the AFL Champion Data Service (CFS) API.
+
+### CFS API
+- Token: `POST https://api.afl.com.au/cfs/afl/WMCTok` — public, no credentials required
+- Rosters: `GET https://api.afl.com.au/cfs/afl/matchRosters/round/{roundId}?minimal=true`
+- Round ID format: `CD_R{year}014{round:02d}` — e.g., Round 11 2026 = `CD_R202601411`
+- Team ID: `CD_T{squadId}` where `squadId = ESPN_TO_AFL_SQUAD[espnId]` (from `fantasyMapper.ts`)
+- Token cached 55 min (module-level); round rosters cached 30 min in Map
+
+### Key export
+```typescript
+fetchAFLMatchExcluded(year, roundNumber, homeEspnId, awayEspnId)
+  → Promise<{ home: Set<string>, away: Set<string> } | null>
+```
+Returns lowercase full-name sets. Returns `null` on failure — kitchen falls back to ESPN injuries only.
+
+**Fallback**: AFL Fantasy status data (`fantasy.afl.com.au/data/afl/players.json`) — excluded statuses: `injured`, `not-playing`, `medical_sub`.
+
+### Integration in page.tsx
+- `seasonYear` and `weekNumber` extracted from the raw ESPN event before it's discarded
+- Both home and away exclusions fetched in one call (via `Promise.all`)
+- Excluded players added to kitchen call with `status: "Out"` (matches `/out|suspended|injured/i` regex)
+
+---
+
 ## AFL Kitchen
 
 **Files**: `lib/sports/afl/kitchen.ts` + `components/afl/AFLKitchen.tsx`
@@ -135,6 +164,27 @@ For deep Kitchen documentation see `docs/KITCHEN_CONTEXT.md`.
 | M | Marks | 2 |
 | T | Tackles | 2 |
 | HO | Hitouts | 3 |
+
+### Player exclusion (injuries)
+
+`buildProfiles()` in `kitchen.ts` reads `injuries[]` passed in. Players matching `/out|suspended|injured/i` are excluded entirely from slip selection. CFS-confirmed outs are injected with `status: "Out"`. ESPN injury data is also included.
+
+### Name disambiguation
+
+`buildShowInitials(legs)` in `AFLKitchen.tsx` detects surname clashes WITHIN a slip. When two players share a surname on the same slip, both get initials: "W. Ashcroft" / "L. Ashcroft". Players sharing a surname on DIFFERENT slips do not get initials.
+
+### Odds pipeline
+
+**Priority** (highest to lowest):
+1. Vercel Blob cache (`odds-cache/{gameId}.json`) — real bookmaker data from local scraper via `POST /api/odds/upload`
+2. The Odds API (`THE_ODDS_API_KEY`) — free tier, may not cover all AFL prop markets
+3. Empty map — kitchen derives thresholds internally, shows "⚡ No live odds" banner
+
+**No fake prices rule**: If a price is not real bookmaker data, it is never displayed to users. `1/hitRate` is used only as an internal leg-selector heuristic in `enforceOddsTarget` — never shown.
+
+**`hasRealOdds` prop** on `AFLKitchen`: passed from `page.tsx` as `aflPropOdds.size > 0`. When false, shows amber notice banner. `GameDetailTabsProps` has `aflHasRealOdds?: boolean`.
+
+**`slipHasRealOdds(legs)`**: returns true only when every leg has a real `prop.price`. Combined multi-odds only displayed when this is true.
 
 ### Value Picks during live games
 
@@ -224,3 +274,6 @@ Weather card shown in:
 3. **Docklands/Marvel Stadium** always returns `condition: "Indoor"` — weather card is hidden for indoor venues.
 4. **Player history minimum**: 5 games required for any slip inclusion. Early in the season, many players won't qualify.
 5. **Disposals stat**: In ESPN data, disposals = kicks + handballs. The app computes this correctly from raw box score data.
+6. **AFL Fantasy lineup data is stale**: Fantasy locks before the AFL's official 90-min deadline. Use CFS API (`fetchAFLMatchExcluded`) for confirmed match-day outs — Fantasy data is only a fallback.
+7. **The Odds API free tier**: May not cover AFL player props at all. Even when data returns, player names may not match ESPN names exactly. Use `normalizeAFLName()` on both sides. The Blob odds cache (from local scraper) is the reliable path for real prices.
+8. **`normalizeAFLName` limitations**: Handles middle initials ("Tom J. Lynch" → "tomlynch") and suffixes (Jr/Sr/II). Does NOT resolve nicknames (Sam vs Samuel Darcy) — those require a separate lookup table (not yet implemented).

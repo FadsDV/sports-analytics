@@ -12,6 +12,7 @@ const CONFIG: Record<Sport, {
   laliga:     { label: "La Liga",    logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/15.png",   cls: "bg-[#0f172a] text-gray-300 border-[#1e293b]" },
   bundesliga: { label: "Bundesliga", logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/10.png",   cls: "bg-[#0f172a] text-gray-300 border-[#1e293b]" },
   aleague:    { label: "A-League",   logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/1308.png", cls: "bg-[#0f172a] text-gray-300 border-[#1e293b]" },
+  worldcup:   { label: "World Cup",  logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/4.png",   cls: "bg-[#0f172a] text-yellow-400 border-[#1e293b]" },
   basketball: { label: "NBA",        logo: "https://a.espncdn.com/i/teamlogos/leagues/500/nba.png",   cls: "bg-[#0f172a] text-gray-300 border-[#1e293b]" },
   nfl:        { label: "NFL",        logo: "https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png",   cls: "bg-[#0f172a] text-gray-300 border-[#1e293b]" },
   afl:        { label: "AFL",        logo: "https://a.espncdn.com/i/teamlogos/leagues/500/afl.png",   cls: "bg-[#0f172a] text-gray-300 border-[#1e293b]" },

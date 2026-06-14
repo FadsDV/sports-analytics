@@ -10,11 +10,11 @@ import { formatKickoff } from "@/lib/utils";
 
 type SportFilter = "all" | "soccer" | "basketball" | "afl";
 
-const SOCCER = new Set<Sport>(["soccer", "ucl", "uel", "laliga", "bundesliga", "aleague"]);
+const SOCCER = new Set<Sport>(["soccer", "ucl", "uel", "laliga", "bundesliga", "aleague", "worldcup"]);
 
 const LEAGUE_NAME: Partial<Record<Sport, string>> = {
   soccer: "Premier League", ucl: "Champions League", uel: "Europa League",
-  laliga: "La Liga", bundesliga: "Bundesliga", aleague: "A-League",
+  laliga: "La Liga", bundesliga: "Bundesliga", aleague: "A-League", worldcup: "World Cup",
   basketball: "NBA", afl: "AFL",
 };
 
@@ -25,6 +25,7 @@ const LEAGUE_LOGO: Partial<Record<Sport, string>> = {
   laliga:     "https://a.espncdn.com/i/leaguelogos/soccer/500/15.png",
   bundesliga: "https://a.espncdn.com/i/leaguelogos/soccer/500/10.png",
   aleague:    "https://a.espncdn.com/i/leaguelogos/soccer/500/1308.png",
+  worldcup:   "https://a.espncdn.com/i/leaguelogos/soccer/500/4.png",
   basketball: "https://a.espncdn.com/i/teamlogos/leagues/500/nba.png",
   afl:        "https://a.espncdn.com/i/teamlogos/leagues/500/afl.png",
 };
@@ -456,7 +457,7 @@ export default function GameBrowser({
   const next24h = upcoming.filter(g => new Date(g.kickoff).getTime() - nowMs < 86_400_000);
 
   const leagueSummaries = useMemo(() => {
-    const sportList: Sport[] = ["afl", "basketball", "soccer", "ucl", "uel", "laliga", "bundesliga", "aleague"];
+    const sportList: Sport[] = ["afl", "basketball", "soccer", "ucl", "uel", "laliga", "bundesliga", "aleague", "worldcup"];
     return sportList
       .map(s => ({
         sport: s,

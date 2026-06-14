@@ -14,6 +14,7 @@ import {
 import { computeAFLPlayerPicks, type AFLPlayerPick, type AFLPickStat } from "@/lib/sports/afl/picks";
 import { checkLegHit, getLegCurrentValue } from "@/lib/sports/slipTracker";
 import { computeAFLKitchen, type KitchenSlip, type AFLGameMeta } from "@/lib/sports/afl/kitchen";
+import { BOOKIES } from "@/lib/sports/afl/bookies";
 import { computeNBAPlayerPicks, type NBAPlayerPick } from "@/lib/sports/nba/picks";
 import { computeNBAKitchen, type NBAKitchenSlip } from "@/lib/sports/nba/kitchen";
 import { resolveTeamCanonicalId } from "@/lib/mappings";
@@ -34,6 +35,9 @@ import { getSlipCache, saveSlipCache } from "@/lib/slipCache";
 import { computeAFLMatchAnalytics, type LadderEntry } from "@/lib/sports/afl/analytics";
 import { generateAFLInsights, type AFLInsight } from "@/lib/sports/afl/insights";
 import { fetchAFLStandings } from "@/lib/sports/squiggle";
+import { fetchAFLMatchExcluded } from "@/lib/sports/afl/lineups";
+import { fetchOddsFromBlob, blobEntriesToPropOdds } from "@/lib/sports/afl/oddsCache";
+import { normalizeAFLName } from "@/lib/sports/afl/fantasyMapper";
 import LiveScorePanel from "@/components/LiveScorePanel";
 import AFLTeamCard from "@/components/afl/AFLTeamCard";
 import { AFLQuarterSparkline } from "@/components/afl/AFLDashboard";
@@ -59,12 +63,32 @@ const STAT_TO_MARKET: Partial<Record<AFLPickStat, string>> = {
 async function fetchAFLPlayerProps(
   homeTeam: string,
   awayTeam: string,
+  gameId?: string,
 ): Promise<Map<string, { price: number; line: number; bookmaker: string }>> {
+  // ── 1. Check Blob cache first (real scraper data) ──────────────────────────
+  if (gameId) {
+    try {
+      const blobRaw = await fetchOddsFromBlob(gameId);
+      if (blobRaw && blobRaw.size > 0) {
+        // blobRaw keys are already in "normalizedName|stat|line|bookie" format.
+        // Convert to 3-part "normalizedName|stat|line" for kitchen consumption.
+        const propMap = blobEntriesToPropOdds(Object.fromEntries(blobRaw));
+        if (propMap.size > 0) {
+          console.info(`[fetchAFLPlayerProps] ${gameId}: using ${propMap.size} Blob odds (scraper data)`);
+          return propMap;
+        }
+      }
+    } catch (err) {
+      console.warn("[fetchAFLPlayerProps] Blob read failed:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // ── 2. Fall through to The Odds API ───────────────────────────────────────
   const key = process.env.THE_ODDS_API_KEY;
   if (!key) return new Map();
 
   try {
-    // 1. Get event list to find the matching event ID
+    // 2a. Get event list to find the matching event ID
     const evRes = await fetch(
       `https://api.the-odds-api.com/v4/sports/aussierules_afl/events?apiKey=${key}`,
       { next: { revalidate: 21_600 } },
@@ -82,7 +106,7 @@ async function fetchAFLPlayerProps(
     });
     if (!event) return new Map();
 
-    // 2. Fetch all player prop markets for this event
+    // 2b. Fetch all player prop markets for this event
     const markets = Object.values(STAT_TO_MARKET).join(",");
     const propsRes = await fetch(
       `https://api.the-odds-api.com/v4/sports/aussierules_afl/events/${event.id}/odds` +
@@ -92,7 +116,7 @@ async function fetchAFLPlayerProps(
     if (!propsRes.ok) return new Map();
     const propsData = await propsRes.json();
 
-    // Key: "PlayerName|stat|line" — allows multiple lines per player per stat.
+    // Key: "normalizedName|stat|line" — normalized so ESPN names match Odds API names.
     // Priority: Sportsbet > PointsBet > others (for the same player+stat+line).
     const propMap = new Map<string, { price: number; line: number; bookmaker: string; _pri: number }>();
     const PRIORITY: Record<string, number> = { sportsbet: 0, pointsbetau: 1 };
@@ -106,8 +130,8 @@ async function fetchAFLPlayerProps(
 
         for (const o of market.outcomes ?? []) {
           if (o.name !== "Over") continue;
-          // Include the line in the key so multiple lines per player coexist
-          const mapKey = `${o.description}|${stat}|${o.point}`;
+          // Normalize player name so "Tom J. Lynch" matches "Tom Lynch" in the kitchen
+          const mapKey = `${normalizeAFLName(o.description)}|${stat}|${o.point}`;
           const existing = propMap.get(mapKey);
           if (!existing || pri < existing._pri) {
             propMap.set(mapKey, { price: o.price, line: o.point, bookmaker: bm.title, _pri: pri });
@@ -306,10 +330,10 @@ export default async function GameDetailPage({
   const result = await buildESPNGame(id, espnSport, sourceId);
   if (!result) notFound();
 
-  const { game, homeSchedule, awaySchedule } = result;
+  const { game, homeSchedule, awaySchedule, seasonYear, weekNumber } = result;
 
   const isAFL        = sport === "afl";
-  const isSoccer     = ["soccer","ucl","uel","laliga","bundesliga","aleague"].includes(sport);
+  const isSoccer     = ["soccer","ucl","uel","laliga","bundesliga","aleague","worldcup"].includes(sport);
   const isBasketball = sport === "basketball";
 
   // Pre-compute all history/H2H filter variants synchronously — no extra network calls
@@ -394,7 +418,10 @@ export default async function GameDetailPage({
   let aflLadder: LadderEntry[] = [];
   let aflPlayerPicks: AFLPlayerPick[] = [];
   let aflPropOdds = new Map<string, { price: number; line: number; bookmaker: string }>();
+  let aflHasRealOdds = false;
   let aflKitchenSlips: KitchenSlip[] = [];
+  let aflBet365Slips:  KitchenSlip[] = [];
+  let aflDabbleSlips:  KitchenSlip[] = [];
   if (isAFL) {
     // Extract last 8 completed games with full metadata for intelligence signals.
     // 8 games gives venue/opponent signals enough overlapping data to fire reliably
@@ -445,13 +472,23 @@ export default async function GameDetailPage({
     const homeRestDays = lastHomeDate ? daysBetween(lastHomeDate, kickoffStr) : 0;
     const awayRestDays = lastAwayDate ? daysBetween(lastAwayDate, kickoffStr) : 0;
 
-    const [squiggleStandings, propOddsResult, ...rawBoxScores] = await Promise.all([
+    const [squiggleStandings, propOddsResult, lineupResult, ...rawBoxScores] = await Promise.all([
       fetchAFLStandings(),
-      fetchAFLPlayerProps(game.homeTeam.name, game.awayTeam.name),
+      fetchAFLPlayerProps(game.homeTeam.name, game.awayTeam.name, id),
+      fetchAFLMatchExcluded(
+        seasonYear,
+        weekNumber,
+        String(game.homeTeam.espnId ?? ""),
+        String(game.awayTeam.espnId ?? ""),
+      ),
       ...completedHomeIds.map((id: string) => fetchAFLBoxScoreForPicks(id)),
       ...completedAwayIds.map((id: string) => fetchAFLBoxScoreForPicks(id)),
     ]);
-    aflPropOdds = propOddsResult as Map<string, { price: number; line: number; bookmaker: string }>;
+
+    const homeMatchExcluded = (lineupResult as Awaited<ReturnType<typeof fetchAFLMatchExcluded>>)?.home ?? null;
+    const awayMatchExcluded = (lineupResult as Awaited<ReturnType<typeof fetchAFLMatchExcluded>>)?.away ?? null;
+    aflPropOdds    = propOddsResult as Map<string, { price: number; line: number; bookmaker: string }>;
+    aflHasRealOdds = aflPropOdds.size > 0;
 
     aflLadder = (squiggleStandings as Awaited<ReturnType<typeof fetchAFLStandings>>).map(s => ({
       teamName:   s.name,
@@ -478,7 +515,7 @@ export default async function GameDetailPage({
       awayInjuries,
     });
 
-    aflKitchenSlips = computeAFLKitchen({
+    const kitchenResult = computeAFLKitchen({
       homeGames:     homeBoxScores,
       awayGames:     awayBoxScores,
       homeTeamId:    homeTeamEspnId,
@@ -493,9 +530,22 @@ export default async function GameDetailPage({
       weather:       game.weather ? { condition: game.weather.condition, windKph: game.weather.windKph } : null,
       homeRestDays,
       awayRestDays,
-      homeInjuries:  homeInjuries.map(i => ({ playerName: i.playerName, status: i.status })),
-      awayInjuries:  awayInjuries.map(i => ({ playerName: i.playerName, status: i.status })),
+      homeInjuries: [
+        ...homeInjuries.map(i => ({ playerName: i.playerName, status: i.status })),
+        ...(homeMatchExcluded
+          ? Array.from(homeMatchExcluded).map(name => ({ playerName: name, status: "Out" }))
+          : []),
+      ],
+      awayInjuries: [
+        ...awayInjuries.map(i => ({ playerName: i.playerName, status: i.status })),
+        ...(awayMatchExcluded
+          ? Array.from(awayMatchExcluded).map(name => ({ playerName: name, status: "Out" }))
+          : []),
+      ],
     });
+    aflKitchenSlips = kitchenResult.slips;
+    aflBet365Slips  = kitchenResult.buildBookieSlips(BOOKIES.bet365);
+    aflDabbleSlips  = kitchenResult.buildBookieSlips(BOOKIES.dabble);
   }
 
   // Fetch NBA player pick history in parallel (basketball only)
@@ -677,6 +727,7 @@ export default async function GameDetailPage({
     laliga:     { name: "La Liga",         logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/15.png" },
     bundesliga: { name: "Bundesliga",      logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/10.png" },
     aleague:    { name: "A-League",        logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/1308.png" },
+    worldcup:   { name: "World Cup 2026",  logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/4.png" },
     basketball: { name: "NBA",             logo: "https://a.espncdn.com/i/teamlogos/leagues/500/nba.png" },
     nfl:        { name: "NFL",             logo: "https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png" },
     afl:        { name: "AFL",             logo: "https://a.espncdn.com/i/teamlogos/leagues/500/afl.png" },
@@ -1211,6 +1262,9 @@ export default async function GameDetailPage({
               sofascore={sofascore} insights={insights}
               isSoccer={false} isBasketball={false} isAFL={true}
               kitchenSlips={aflKitchenSlips}
+              aflBet365Slips={aflBet365Slips}
+              aflDabbleSlips={aflDabbleSlips}
+              aflHasRealOdds={aflHasRealOdds}
               initialTab={activeTab}
               initialH2hFilter={h2hFilter as VenueFilter}
               initialHistoryFilter={historyFilter as VenueFilter}
@@ -1830,7 +1884,7 @@ async function buildESPNGame(
   id: string,
   sport: keyof typeof ESPN_PATHS,
   eventId: string,
-): Promise<{ game: Game; homeSchedule: any[]; awaySchedule: any[] } | null> {
+): Promise<{ game: Game; homeSchedule: any[]; awaySchedule: any[]; seasonYear: number; weekNumber: number } | null> {
   // 1. Fetch scoreboard first to check status (discovery)
   const events = await fetchESPNScoreboard(sport);
   let raw = events.find((e: any) => e.id === eventId);
@@ -1889,7 +1943,12 @@ async function buildESPNGame(
   const betRisk  = calcBetRisk(base.homeTeam, base.awayTeam, weather, (summary.injuries ?? []).length, h2h.filter(g => g.winner === base.homeTeam.name).length, h2h.length);
 
   const game = { ...base, h2h, weather, betRisk, boxScore: summary.boxScore, teamStats: summary.teamStats, lineScores: summary.lineScores, scoringPlays: summary.scoringPlays } as Game;
-  return { game, homeSchedule, awaySchedule };
+
+  // Extract year + week for AFL lineup lookups
+  const seasonYear  = (raw?.season?.year ?? new Date(base.kickoff ?? Date.now()).getFullYear()) as number;
+  const weekNumber  = (raw?.week?.number ?? 1) as number;
+
+  return { game, homeSchedule, awaySchedule, seasonYear, weekNumber };
 }
 
 // ═══════════════════════════════════════════════════════════

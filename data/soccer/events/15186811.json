@@ -1,0 +1,261 @@
+{
+  "collectedAt": "2026-06-14T13:06:21.431Z",
+  "sofascoreId": 15186811,
+  "espnGameId": "worldcup-760429",
+  "homeTeamId": 4834,
+  "awayTeamId": 4725,
+  "tournamentId": 16,
+  "seasonId": 58210,
+  "lineups": {
+    "confirmed": false,
+    "homeFormation": "4-3-3",
+    "awayFormation": "4-2-3-1",
+    "home": [
+      {
+        "id": 1014518,
+        "name": "Nawaf Al-Aqidi",
+        "shortName": "N. Al-Aqidi",
+        "position": "G",
+        "jerseyNumber": "1",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 966849,
+        "name": "Saud Abdulhamid",
+        "shortName": "S. Abdulhamid",
+        "position": "M",
+        "jerseyNumber": "12",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 881837,
+        "name": "Hassan Altambakti",
+        "shortName": "H. Altambakti",
+        "position": "D",
+        "jerseyNumber": "5",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 881831,
+        "name": "Abdulelah Al-Amri",
+        "shortName": "A. Al-Amri",
+        "position": "D",
+        "jerseyNumber": "4",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1022679,
+        "name": "Moteb Al-Harbi",
+        "shortName": "M. Al-Harbi",
+        "position": "D",
+        "jerseyNumber": "24",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 828524,
+        "name": "Mohamed Kanno",
+        "shortName": "M. Kanno",
+        "position": "M",
+        "jerseyNumber": "23",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1106234,
+        "name": "Musab Al Juwayr",
+        "shortName": "M. A. Juwayr",
+        "position": "M",
+        "jerseyNumber": "7",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1048372,
+        "name": "Ziyad Aljohani",
+        "shortName": "Z. Aljohani",
+        "position": "M",
+        "jerseyNumber": "16",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 818568,
+        "name": "Sultan Mandash",
+        "shortName": "S. Mandash",
+        "position": "F",
+        "jerseyNumber": "20",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 893307,
+        "name": "Firas Al-Buraikan",
+        "shortName": "F. Al-Buraikan",
+        "position": "F",
+        "jerseyNumber": "9",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 160893,
+        "name": "Salem Al-Dawsari",
+        "shortName": "S. Al-Dawsari",
+        "position": "M",
+        "jerseyNumber": "10",
+        "starter": true,
+        "stats": {}
+      }
+    ],
+    "away": [
+      {
+        "id": 28381,
+        "name": "Fernando Muslera",
+        "shortName": "F. Muslera",
+        "position": "G",
+        "jerseyNumber": "23",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 311456,
+        "name": "Guillermo Varela",
+        "shortName": "G. Varela",
+        "position": "D",
+        "jerseyNumber": "13",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 924889,
+        "name": "Sebastián Cáceres",
+        "shortName": "S. Cáceres",
+        "position": "D",
+        "jerseyNumber": "3",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 805078,
+        "name": "Mathías Olivera",
+        "shortName": "M. Olivera",
+        "position": "D",
+        "jerseyNumber": "16",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 875295,
+        "name": "Matías Viña",
+        "shortName": "M. Viña",
+        "position": "D",
+        "jerseyNumber": "17",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 846425,
+        "name": "Manuel Ugarte",
+        "shortName": "M. Ugarte",
+        "position": "M",
+        "jerseyNumber": "5",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 791190,
+        "name": "Rodrigo Bentancur",
+        "shortName": "R. Bentancur",
+        "position": "M",
+        "jerseyNumber": "6",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 831808,
+        "name": "Federico Valverde",
+        "shortName": "F. Valverde",
+        "position": "M",
+        "jerseyNumber": "8",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 976104,
+        "name": "Federico Viñas",
+        "shortName": "F. Viñas",
+        "position": "F",
+        "jerseyNumber": "21",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 929193,
+        "name": "Maximiliano Araújo",
+        "shortName": "M. Araújo",
+        "position": "D",
+        "jerseyNumber": "20",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 924871,
+        "name": "Darwin Núñez",
+        "shortName": "D. Núñez",
+        "position": "F",
+        "jerseyNumber": "9",
+        "starter": true,
+        "stats": {}
+      }
+    ]
+  },
+  "incidents": [],
+  "homeTeamStats": null,
+  "awayTeamStats": null,
+  "topScorers": [
+    {
+      "playerId": 934237,
+      "playerName": "Folarin Balogun",
+      "shortName": "Folarin Balogun",
+      "teamName": "USA",
+      "goals": 2,
+      "assists": 0,
+      "shotsOnTarget": 3,
+      "rating": 9
+    },
+    {
+      "playerId": 889689,
+      "playerName": "Hwang In-beom",
+      "shortName": "Hwang In-beom",
+      "teamName": "South Korea",
+      "goals": 1,
+      "assists": 1,
+      "shotsOnTarget": 2,
+      "rating": 8.8
+    },
+    {
+      "playerId": 843114,
+      "playerName": "Julián Quiñones",
+      "shortName": "Julián Quiñones",
+      "teamName": "Mexico",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 2,
+      "rating": 8.6
+    },
+    {
+      "playerId": 868812,
+      "playerName": "Vinícius Júnior",
+      "shortName": "Vinícius Júnior",
+      "teamName": "Brazil",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 1,
+      "rating": 8
+    }
+  ]
+}

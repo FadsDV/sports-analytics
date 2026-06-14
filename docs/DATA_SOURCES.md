@@ -90,6 +90,69 @@ Used in: AFL predicted margin model (ladder position is 30% weight).
 
 ---
 
+## AFL CFS API (Lineup Data)
+
+**Used for**: Confirmed match-day INS/OUTS for AFL games.
+
+**Base URL**: `https://api.afl.com.au/cfs/afl`
+
+**Auth**: Public endpoint — no API key required.
+Token from `POST /cfs/afl/WMCTok` (cached 55 min module-level).
+
+### Key endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /WMCTok` | Get session token (public, no credentials) |
+| `GET /matchRosters/round/{roundId}?minimal=true` | All match rosters for a round |
+
+**Round ID format**: `CD_R{year}014{round:02d}` — e.g., `CD_R202601411` for Round 11 2026.
+**Team ID format**: `CD_T{squadId}` — `squadId = ESPN_TO_AFL_SQUAD[espnId]` from `lib/sports/afl/fantasyMapper.ts`.
+
+**Implementation**: `lib/sports/afl/lineups.ts` → `fetchAFLMatchExcluded(year, roundNumber, homeEspnId, awayEspnId)`
+
+Falls back to AFL Fantasy status data if CFS API fails. Fantasy data may be stale after Fantasy locks (before the official AFL 90-min deadline).
+
+---
+
+## Vercel Blob Odds Cache (AFL Kitchen)
+
+**Used for**: Storing real bookmaker player prop prices from the local home-PC scraper.
+
+**Blob path**: `odds-cache/{gameId}.json`
+**Freshness**: event-aware when scraper provides `kickoffAt` / `expiresAt`; legacy fallback TTL is 4 hours
+
+**Implementation**: `lib/sports/afl/oddsCache.ts`
+
+### Mini-PC worker schedule
+
+The local Bet365 worker is intended to attempt captures:
+- 24 hours before kickoff
+- 1 hour before kickoff
+- then again 1 hour later only when odds/stats were not yet available
+
+Local worker state and raw captures are stored under `data/local/bet365-worker/` and cleaned up 10 hours after kickoff.
+
+### Write endpoint
+```
+POST /api/odds/upload
+Authorization: Bearer {ODDS_UPLOAD_SECRET}
+```
+Body: `{ gameId, bookie, timestamp, kickoffAt?, expiresAt?, legs: [{ player, stat, line, price }] }`
+Supported bookies: `bet365`, `dabble`, `sportsbet`, `ladbrokes`
+
+### Read priority
+The kitchen checks Blob FIRST before calling The Odds API. If scraper data exists and is still inside its event window, The Odds API is skipped entirely (preserving quota). Older payloads without event metadata fall back to a 4-hour freshness check.
+
+### Debug endpoint
+```
+GET /api/debug/odds?home=GWS+Giants&away=Brisbane+Lions
+Authorization: Bearer {CRON_SECRET}
+```
+Returns: Odds API event list, available markets, player names + normalized forms, Blob cache status.
+
+---
+
 ## The Odds API (AFL + NBA Player Props)
 
 **Used for**: Real bookmaker player prop lines and prices for the Kitchen.
@@ -98,11 +161,23 @@ Used in: AFL predicted margin model (ladder position is 30% weight).
 
 **Auth**: `THE_ODDS_API_KEY` environment variable (optional — Kitchen works without it using derived thresholds).
 
+**Note**: AFL player props (`player_disposals`, `player_goals_scored_over`, etc.) may not be covered on the free tier. Even when data returns, player names may not exactly match ESPN names — use `normalizeAFLName()` on both sides.
+
 ### Key endpoints
 
 | Endpoint | Purpose |
 |----------|---------|
+| `/sports/{sport}/events` | Event list (to find event ID by team name) |
 | `/sports/{sport}/events/{id}/odds` | Player prop odds for a specific game |
+
+### AFL prop markets tracked
+
+| Market key | Stat |
+|------------|------|
+| `player_disposals` | D |
+| `player_goals_scored_over` | G |
+| `player_marks_over` | M |
+| `player_tackles_over` | T |
 
 ### Important: Live game behaviour
 
@@ -213,6 +288,17 @@ THE_ODDS_API_KEY=...
 
 # Optional — Squiggle standings for AFL model
 # (Squiggle is public, no key needed currently)
+
+# Required for Vercel Blob (slip storage + odds cache)
+BLOB_READ_WRITE_TOKEN=...
+
+# Required for /api/odds/upload (local scraper → Blob)
+# ALWAYS required — endpoint rejects all requests without it
+ODDS_UPLOAD_SECRET=...
+
+# Optional — protects /api/cron/* and /api/debug/odds routes
+# If not set, these routes are open (dev mode)
+CRON_SECRET=...
 ```
 
-No keys needed for: ESPN, Sofascore, Squiggle, AFL CDN.
+No keys needed for: ESPN, Sofascore, Squiggle, AFL CDN, AFL CFS API.

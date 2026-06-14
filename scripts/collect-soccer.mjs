@@ -10,6 +10,7 @@
  *   node scripts/collect-soccer.mjs              # collect next 48h of games
  *   node scripts/collect-soccer.mjs --live       # also refresh live game data
  *   node scripts/collect-soccer.mjs --game <id>  # collect a specific ESPN game ID
+ *   node scripts/collect-soccer.mjs --dry-run    # write JSON files but skip git commit/push
  *
  * Schedule (cron or day-trading agent):
  *   0  8 * * *  node /path/to/collect-soccer.mjs   # morning run — team stats
@@ -32,29 +33,32 @@ const PLAYERS_DIR = join(DATA_DIR, "players");
 
 const execFileAsync = promisify(execFile);
 
-// ─── Sofascore fetch (residential IP — same pattern as sofascore.ts) ──────────
+// ─── Load .env.local ──────────────────────────────────────────────────────────
+const envPath = join(REPO_ROOT, ".env.local");
+if (existsSync(envPath)) {
+  for (const line of readFileSync(envPath, "utf8").split("\n")) {
+    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
+  }
+}
 
-const SOFA_BASE = "https://api.sofascore.com/api/v1";
-const CURL_UA   = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+// ─── Sofascore fetch via curl_cffi Python helper (Chrome TLS impersonation) ───
+// curl_cffi impersonates Chrome's exact TLS fingerprint, bypassing bot detection.
+// Install: pip install curl-cffi
+
+const SOFA_BASE   = "https://api.sofascore.com/api/v1";
+const SOFA_SCRIPT = join(__dirname, "sofa-fetch.py");
 
 async function sofaFetch(path) {
   const url = path.startsWith("http") ? path : `${SOFA_BASE}${path}`;
   try {
-    const { stdout } = await execFileAsync("curl", [
-      "-s", "--compressed", "--max-time", "15",
-      "-H", "Accept: application/json",
-      "-H", "Accept-Language: en-US,en;q=0.9",
-      "-H", "Referer: https://www.sofascore.com/",
-      "-H", "Origin: https://www.sofascore.com",
-      "-A", CURL_UA,
-      url,
-    ], { maxBuffer: 20 * 1024 * 1024 });
-
+    const { stdout } = await execFileAsync("python3", [SOFA_SCRIPT, url], {
+      maxBuffer: 20 * 1024 * 1024,
+    });
     const data = JSON.parse(stdout);
-    if (data?.error) {
-      console.warn(`[sofa] API error ${url}:`, data.error);
-      return null;
-    }
+    if (data?.__error) { console.warn(`[sofa] error ${url}:`, data.__error); return null; }
+    if (data?.__status) { console.warn(`[sofa] HTTP ${data.__status} ${url}`); return null; }
+    if (data?.error)    { console.warn(`[sofa] API error ${url}:`, data.error); return null; }
     return data;
   } catch (err) {
     console.warn(`[sofa] fetch failed ${url}:`, err.message);
@@ -62,18 +66,21 @@ async function sofaFetch(path) {
   }
 }
 
+async function closeBrowser() {} // no-op — no browser to clean up
+
 // ─── ESPN scoreboard — get upcoming soccer games ──────────────────────────────
 
 const ESPN_SPORTS = [
-  { sport: "soccer", league: "eng.1",    name: "Premier League"  },
-  { sport: "soccer", league: "esp.1",    name: "La Liga"         },
-  { sport: "soccer", league: "ger.1",    name: "Bundesliga"      },
-  { sport: "soccer", league: "ita.1",    name: "Serie A"         },
-  { sport: "soccer", league: "fra.1",    name: "Ligue 1"         },
-  { sport: "soccer", league: "uefa.champions", name: "Champions League" },
-  { sport: "soccer", league: "uefa.europa",    name: "Europa League"   },
-  { sport: "soccer", league: "usa.1",    name: "MLS"             },
-  { sport: "soccer", league: "aus.1",    name: "A-League"        },
+  { sport: "soccer",    league: "eng.1",         name: "Premier League",    key: "soccer"    },
+  { sport: "soccer",    league: "esp.1",          name: "La Liga",           key: "laliga"    },
+  { sport: "soccer",    league: "ger.1",          name: "Bundesliga",        key: "bundesliga"},
+  { sport: "soccer",    league: "ita.1",          name: "Serie A",           key: "soccer"    },
+  { sport: "soccer",    league: "fra.1",          name: "Ligue 1",           key: "soccer"    },
+  { sport: "soccer",    league: "uefa.champions", name: "Champions League",  key: "ucl"       },
+  { sport: "soccer",    league: "uefa.europa",    name: "Europa League",     key: "uel"       },
+  { sport: "soccer",    league: "usa.1",          name: "MLS",               key: "soccer"    },
+  { sport: "soccer",    league: "aus.1",          name: "A-League",          key: "aleague"   },
+  { sport: "soccer",    league: "fifa.world",     name: "World Cup",         key: "worldcup"  },
 ];
 
 async function fetchUpcomingGames(daysAhead = 2) {
@@ -86,7 +93,7 @@ async function fetchUpcomingGames(daysAhead = 2) {
     dates.push(d.toISOString().slice(0, 10).replace(/-/g, ""));
   }
 
-  for (const { sport, league, name: leagueName } of ESPN_SPORTS) {
+  for (const { sport, league, name: leagueName, key: sportKey } of ESPN_SPORTS) {
     const dateStr = dates.join("-");
     const url = `https://site.api.espn.com/apis/site/v2/sports/${sport}/${league}/scoreboard?dates=${dates[0]}-${dates[dates.length - 1]}&limit=50`;
     try {
@@ -104,7 +111,7 @@ async function fetchUpcomingGames(daysAhead = 2) {
         const away = comps.competitors?.find(c => c.homeAway === "away");
         if (!home || !away) continue;
         games.push({
-          espnGameId:    `soccer-${ev.id}`,
+          espnGameId:    `${sportKey}-${ev.id}`,
           espnId:        ev.id,
           league:        leagueName,
           kickoffISO:    ev.date,
@@ -125,12 +132,16 @@ async function fetchUpcomingGames(daysAhead = 2) {
 // ─── Name normalisation (mirrors sofascore.ts) ────────────────────────────────
 
 const CITY_ALIASES = [
-  [/\bcologne\b/g,    "koln"],
-  [/\bmunich\b/g,     "munchen"],
-  [/\bmuenchen\b/g,   "munchen"],
-  [/\bathens\b/g,     "athen"],
-  [/\brome\b/g,       "roma"],
-  [/\bmilan\b/g,      "milano"],
+  [/\bcologne\b/g,      "koln"],
+  [/\bmunich\b/g,       "munchen"],
+  [/\bmuenchen\b/g,     "munchen"],
+  [/\bathens\b/g,       "athen"],
+  [/\brome\b/g,         "roma"],
+  [/\bmilan\b/g,        "milano"],
+  // National team name variants (ESPN vs Sofascore)
+  [/\bivory coast\b/g,  "cote divoire"],
+  [/\bcote d.ivoire\b/g,"cote divoire"],
+  [/\bcape verde\b/g,   "cabo verde"],
 ];
 
 function normName(name) {
@@ -380,6 +391,7 @@ async function main() {
   const args = process.argv.slice(2);
   const specificGame = args.includes("--game") ? args[args.indexOf("--game") + 1] : null;
   const includeLive  = args.includes("--live");
+  const dryRun       = args.includes("--dry-run");
 
   console.log("[collect-soccer] starting", { specificGame, includeLive });
   mkdirSync(EVENTS_DIR,  { recursive: true });
@@ -499,6 +511,13 @@ async function main() {
   const changedFiles = await gitStatus();
   if (changedFiles.length === 0) {
     console.log("\n[git] no changes to commit");
+    await closeBrowser();
+    return;
+  }
+
+  if (dryRun) {
+    console.log(`\n[git] --dry-run: skipping commit of ${changedFiles.length} changed files`);
+    await closeBrowser();
     return;
   }
 
@@ -511,6 +530,8 @@ async function main() {
     console.log("[git] pushed successfully");
   } catch (err) {
     console.error("[git] commit/push failed:", err.message);
+  } finally {
+    await closeBrowser();
   }
 }
 

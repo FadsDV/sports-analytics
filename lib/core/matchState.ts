@@ -73,6 +73,7 @@ export function getPeriodLabel(sport: string, period: number | null): string {
     case "laliga":
     case "bundesliga":
     case "aleague":
+    case "worldcup":
       return period <= 1 ? "1H" : period === 2 ? "2H" : "ET";
     case "nfl":
       return period <= 4 ? `Q${period}` : "OT";

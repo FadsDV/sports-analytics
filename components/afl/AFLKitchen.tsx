@@ -23,6 +23,11 @@ const SLIP_CONFIG: Record<KitchenSlipType, {
   border:  string;
   bg:      string;
 }> = {
+  peter: {
+    emoji: "🧠", title: "Peter",
+    desc: "Highest line each player clears 85%+ of the time. Value-weighted, correlation-discounted.",
+    color: "text-[#A78BFA]", border: "border-[#A78BFA]/25", bg: "bg-[#A78BFA]/5",
+  },
   safe: {
     emoji: "🛡️", title: "Safe",
     desc: "High-probability consistency plays. Threshold set well below average.",
@@ -62,8 +67,34 @@ function lastName(name: string): string {
   return parts[parts.length - 1] ?? name;
 }
 
+function buildShowInitials(legs: KitchenLeg[]): Map<string, boolean> {
+  const surnameCount = new Map<string, number>();
+  for (const l of legs) {
+    const sn = lastName(l.player);
+    surnameCount.set(sn, (surnameCount.get(sn) ?? 0) + 1);
+  }
+  const result = new Map<string, boolean>();
+  for (const l of legs) {
+    result.set(l.player, (surnameCount.get(lastName(l.player)) ?? 1) > 1);
+  }
+  return result;
+}
+
+function displayName(fullName: string, showInitial: boolean): string {
+  if (!showInitial) return lastName(fullName);
+  const parts = fullName.trim().split(" ");
+  const initial = parts[0]?.[0] ?? "";
+  const sn = parts[parts.length - 1] ?? fullName;
+  return initial ? `${initial}. ${sn}` : sn;
+}
+
 function combinedProb(legs: KitchenLeg[]): number {
   return legs.length ? legs.reduce((acc, l) => acc * l.reliability, 1) : 0;
+}
+
+/** True only when every leg has a real bookmaker price (not a computed estimate). */
+function slipHasRealOdds(legs: KitchenLeg[]): boolean {
+  return legs.length > 0 && legs.every(l => l.prop?.price != null);
 }
 
 // ─── Confidence badge ─────────────────────────────────────────────────────────
@@ -143,7 +174,7 @@ function BreakdownTooltip({ leg, onClose }: { leg: KitchenLeg; onClose: () => vo
 
 // ─── Single leg row ───────────────────────────────────────────────────────────
 
-function LegRow({ leg, isHit, currentValue, onPlayerClick, bookie }: { leg: KitchenLeg; isHit?: boolean; currentValue?: number | null; onPlayerClick?: (name: string) => void; bookie?: "generic" | "bet365" | "dabble" }) {
+function LegRow({ leg, isHit, currentValue, onPlayerClick, bookie, showInitial }: { leg: KitchenLeg; isHit?: boolean; currentValue?: number | null; onPlayerClick?: (name: string) => void; bookie?: "generic" | "bet365" | "dabble"; showInitial?: boolean }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
   const showBar = currentValue != null;
   const pct     = showBar ? Math.min((currentValue / leg.threshold) * 100, 100) : 0;
@@ -166,7 +197,7 @@ function LegRow({ leg, isHit, currentValue, onPlayerClick, bookie }: { leg: Kitc
           <button
             onClick={() => onPlayerClick?.(leg.player)}
             className={`text-xs font-semibold truncate text-left hover:underline hover:text-primary transition-colors ${isHit ? "text-[#22C55E]" : "text-text-1"} ${onPlayerClick ? "cursor-pointer" : "cursor-default"}`}
-          >{lastName(leg.player)}</button>
+          >{displayName(leg.player, showInitial ?? false)}</button>
           <span className="text-[11px] text-text-2 shrink-0 font-medium">{leg.teamAbbr}</span>
         </div>
         <div className="relative shrink-0">
@@ -271,7 +302,7 @@ function CombinedHitChance({ legs }: { legs: KitchenLeg[] }) {
   const tier = getConfidenceTier(prob);
   const c    = CONFIDENCE_COLORS[tier];
 
-  const allOdds   = legs.every(l => l.prop);
+  const allOdds   = slipHasRealOdds(legs);
   const multiOdds = allOdds ? legs.reduce((acc, l) => acc * (l.prop!.price), 1) : null;
 
   return (
@@ -315,9 +346,10 @@ function CombinedHitChance({ legs }: { legs: KitchenLeg[] }) {
 // ─── Slip card ────────────────────────────────────────────────────────────────
 
 function SlipCard({ slip, boxScore, onPlayerClick, bookie }: { slip: KitchenSlip; boxScore: BoxScore | null; onPlayerClick?: (name: string) => void; bookie?: "generic" | "bet365" | "dabble" }) {
-  const cfg    = SLIP_CONFIG[slip.type];
-  const hits   = slip.legs.length > 0 ? checkSlipHits(slip.legs, boxScore) : [];
-  const allHit = hits.length > 0 && hits.every(Boolean);
+  const cfg          = SLIP_CONFIG[slip.type];
+  const hits         = slip.legs.length > 0 ? checkSlipHits(slip.legs, boxScore) : [];
+  const allHit       = hits.length > 0 && hits.every(Boolean);
+  const showInitials = buildShowInitials(slip.legs);
   const someHit = hits.some(Boolean);
   const currentValues = boxScore
     ? slip.legs.map(leg => getLegCurrentValue(leg, boxScore))
@@ -357,7 +389,7 @@ function SlipCard({ slip, boxScore, onPlayerClick, bookie }: { slip: KitchenSlip
             <p className="text-[10px] text-text-2/60">Need more game history or higher consistency</p>
           </div>
         ) : (
-          slip.legs.map((leg, i) => <LegRow key={i} leg={leg} isHit={hits[i]} currentValue={currentValues[i]} onPlayerClick={onPlayerClick} bookie={bookie} />)
+          slip.legs.map((leg, i) => <LegRow key={i} leg={leg} isHit={hits[i]} currentValue={currentValues[i]} onPlayerClick={onPlayerClick} bookie={bookie} showInitial={showInitials.get(leg.player) ?? false} />)
         )}
       </div>
 
@@ -373,7 +405,7 @@ function SlipCard({ slip, boxScore, onPlayerClick, bookie }: { slip: KitchenSlip
 
 // ─── Value picks section ──────────────────────────────────────────────────────
 
-function ValuePickCard({ leg, index, isHit, onPlayerClick }: { leg: KitchenLeg; index: number; isHit?: boolean; onPlayerClick?: (name: string) => void }) {
+function ValuePickCard({ leg, index, isHit, onPlayerClick, showInitial }: { leg: KitchenLeg; index: number; isHit?: boolean; onPlayerClick?: (name: string) => void; showInitial?: boolean }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
   const tier   = getConfidenceTier(leg.reliability);
   const colors = CONFIDENCE_COLORS[tier];
@@ -395,7 +427,7 @@ function ValuePickCard({ leg, index, isHit, onPlayerClick }: { leg: KitchenLeg; 
             <button
               onClick={() => onPlayerClick?.(leg.player)}
               className={`text-xs font-bold truncate text-left hover:underline hover:text-primary transition-colors ${isHit ? "text-[#22C55E]" : "text-text-1"} ${onPlayerClick ? "cursor-pointer" : "cursor-default"}`}
-            >{lastName(leg.player)}</button>
+            >{displayName(leg.player, showInitial ?? false)}</button>
             <span className="text-[11px] text-text-2 font-medium">{leg.teamAbbr}</span>
           </div>
         </div>
@@ -448,7 +480,8 @@ function ValuePickCard({ leg, index, isHit, onPlayerClick }: { leg: KitchenLeg; 
 }
 
 function ValuePicks({ legs, boxScore, onPlayerClick }: { legs: KitchenLeg[]; boxScore: BoxScore | null; onPlayerClick?: (name: string) => void }) {
-  const cfg = SLIP_CONFIG.value;
+  const cfg          = SLIP_CONFIG.value;
+  const showInitials = buildShowInitials(legs);
   if (legs.length === 0) return null;
 
   return (
@@ -465,7 +498,7 @@ function ValuePicks({ legs, boxScore, onPlayerClick }: { legs: KitchenLeg[]; box
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 p-3">
         {legs.map((leg, i) => {
           const isHit = checkSlipHits([leg], boxScore)[0] ?? false;
-          return <ValuePickCard key={i} leg={leg} index={i} isHit={isHit} onPlayerClick={onPlayerClick} />;
+          return <ValuePickCard key={i} leg={leg} index={i} isHit={isHit} onPlayerClick={onPlayerClick} showInitial={showInitials.get(leg.player) ?? false} />;
         })}
       </div>
     </div>
@@ -474,7 +507,7 @@ function ValuePicks({ legs, boxScore, onPlayerClick }: { legs: KitchenLeg[]; box
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function AFLKitchen({ slips, boxScore, isUpcoming, onPlayerClick, bookie }: { slips: KitchenSlip[]; boxScore?: BoxScore | null; isUpcoming?: boolean; onPlayerClick?: (name: string) => void; bookie?: "generic" | "bet365" | "dabble" }) {
+export default function AFLKitchen({ slips, boxScore, isUpcoming, onPlayerClick, bookie, hasRealOdds }: { slips: KitchenSlip[]; boxScore?: BoxScore | null; isUpcoming?: boolean; onPlayerClick?: (name: string) => void; bookie?: "generic" | "bet365" | "dabble"; hasRealOdds?: boolean }) {
   const mainSlips = slips.filter(s => s.type !== "value");
   const valueSlip = slips.find(s => s.type === "value");
   const allLegs   = slips.flatMap(s => s.legs);
@@ -517,6 +550,17 @@ export default function AFLKitchen({ slips, boxScore, isUpcoming, onPlayerClick,
           </a>
         )}
       </div>
+
+      {/* No live odds banner — shown when propOdds map was empty at compute time */}
+      {!hasRealOdds && (
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/25 text-[11px] text-[#F59E0B]">
+          <span className="shrink-0 text-sm leading-none">⚡</span>
+          <span>
+            No live odds — slips are built on statistical edge.
+            Prices will appear when the odds feed is active.
+          </span>
+        </div>
+      )}
 
       {/* 5 main slips */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">

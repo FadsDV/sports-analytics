@@ -351,7 +351,96 @@ A player-stat combination is only eligible for any slip if:
 
 ---
 
-## 9. Future contextual modules (plug-in architecture)
+## 9. Injury Exclusion
+
+Players are excluded from ALL slip types when they match the out regex:
+```typescript
+const outStatuses = /out|suspended|injured/i;
+const excludedPlayers = new Set(
+  injuries.filter(i => outStatuses.test(i.status)).map(i => i.playerName.toLowerCase())
+);
+// In buildProfiles() for loop:
+if (excludedPlayers.has(name.toLowerCase())) continue;
+```
+
+**Sources injected as injuries** (page.tsx and cron/save-slips):
+1. ESPN injury data (`fetchTeamInjuries`) — `{ playerName, status }` from ESPN
+2. AFL CFS API confirmed outs (`fetchAFLMatchExcluded`) — injected with `status: "Out"`
+
+The CFS API takes priority over ESPN because it has confirmed match-day selections (updated 90 min before bounce). AFL Fantasy data is the fallback for the CFS API.
+
+---
+
+## 10. Player Name Normalisation (propOdds matching)
+
+Player names between The Odds API and ESPN are frequently mismatched (middle initials, punctuation differences). All propOdds map keys use `normalizeAFLName()` from `lib/sports/afl/fantasyMapper.ts`.
+
+### `normalizeAFLName(name: string): string`
+- Lowercases, strips punctuation, removes middle initials (single-char tokens between first and last), strips suffixes (Jr/Jnr/Sr/II/III/IV)
+- Returns a concatenated token string with no spaces: `"Tom J. Lynch" → "tomlynch"`
+- Does NOT resolve nicknames (Sam vs Samuel) — those require a separate table
+
+### Where it's applied
+- **Write time** (`fetchAFLPlayerProps` in page.tsx): `normalizeAFLName(o.description)|stat|line`
+- **Blob upload** (`saveOddsToBlob`): keys use `normalizeAFLName(leg.player)|stat|line|bookie`
+- **Read time** (`findBestProp` in kitchen.ts): `normalizeAFLName(playerName)|stat|` prefix
+- **Safe slip profile lookup** (`buildPropsBasedSafeSlip`): profileMap indexed by BOTH raw ESPN name AND normalized name; leg `player` field always uses `profile.name` (ESPN display name)
+
+---
+
+## 11. Odds Pipeline and No-Fake-Prices Rule
+
+**Absolute rule**: If a price is not real bookmaker data, it must not be displayed to users. This includes:
+- No estimated/calibrated odds based on stat distributions
+- No combined multi-odds when any leg lacks a real price
+- No per-leg price displays when `leg.prop` is absent
+
+### `enforceOddsTarget` — internal heuristic only
+```typescript
+const legOdds = (l: KitchenLeg) => l.prop?.price ?? (1 / l.hitRate);
+```
+The `1/hitRate` fallback is used **only** to order/select legs when real prices aren't available. It never reaches the UI.
+
+### `slipHasRealOdds(legs: KitchenLeg[]): boolean`
+```typescript
+return legs.length > 0 && legs.every(l => l.prop?.price != null);
+```
+Combined multi-odds in `CombinedHitChance` only shown when this is true.
+
+### `hasRealOdds` prop (AFLKitchen)
+Passed from `page.tsx` as `aflPropOdds.size > 0`. When false, the Kitchen shows:
+> ⚡ No live odds — slips are built on statistical edge. Prices will appear when the odds feed is active.
+
+### Odds priority (highest to lowest)
+1. **Vercel Blob cache** (`odds-cache/{gameId}.json`) — real scraper data, event-aware expiry when provided by the worker (legacy fallback TTL 4 hours)
+2. **The Odds API** (`THE_ODDS_API_KEY`) — free tier, uncertain AFL prop coverage
+3. **Empty map** — `hasRealOdds = false`, banner shown, `buildPropsBasedSafeSlip` skipped
+
+### Vercel Blob odds cache
+- `lib/sports/afl/oddsCache.ts` — `fetchOddsFromBlob(gameId)`, `saveOddsToBlob(payload)`, `blobEntriesToPropOdds(entries)`
+- Blob key format (stored): `normalizedName|stat|line|bookie` (4-part, multi-bookie)
+- Map key format (kitchen): `normalizedName|stat|line` (3-part, highest price wins when multiple bookies)
+- Written by `POST /api/odds/upload` (local home-PC scraper)
+- Read by `fetchAFLPlayerProps` (page.tsx) and cron `save-slips` route
+
+### Local scraper upload format
+```json
+{
+  "gameId":    "afl-1133580",
+  "bookie":    "bet365",
+  "timestamp": 1748000000000,
+  "kickoffAt": 1748018000000,
+  "expiresAt": 1748054000000,
+  "legs": [
+    { "player": "Patrick Cripps", "stat": "D", "line": 28.5, "price": 1.85 }
+  ]
+}
+```
+`POST /api/odds/upload` with `Authorization: Bearer {ODDS_UPLOAD_SECRET}`
+
+---
+
+## 13. Future contextual modules (plug-in architecture)
 
 The `contextualBonus` field in the engine accepts any additive signal (max 0.20).
 New modules should follow the pattern in `lib/sports/reliability/absence.ts`:

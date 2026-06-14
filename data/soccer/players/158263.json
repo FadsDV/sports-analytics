@@ -1,22 +1,22 @@
 {
-  "collectedAt": "2026-05-20T15:14:36.609Z",
+  "collectedAt": "2026-06-14T13:08:39.769Z",
   "playerId": 158263,
   "playerName": "Emiliano Martínez",
   "seasonStats": {
-    "appearances": 10,
-    "minutesPlayed": 900,
+    "appearances": 7,
+    "minutesPlayed": 690,
     "goals": 0,
     "assists": 0,
-    "rating": 7.15,
+    "rating": 6.8142857142857,
     "shotsOnTarget": 0,
     "totalShots": 0,
-    "accuratePassesPercentage": 76.649746192893,
-    "keyPasses": 1,
+    "accuratePassesPercentage": 56.578947368421,
+    "keyPasses": 0,
     "tackles": 0,
     "interceptions": 0,
     "yellowCards": 1,
-    "expectedGoals": null,
-    "expectedAssists": 0.0306043
+    "expectedGoals": 0,
+    "expectedAssists": 0.00192114
   },
   "recentGames": [
     {

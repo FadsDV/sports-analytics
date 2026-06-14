@@ -128,6 +128,7 @@ const SPORT_SLUG: Record<string, string> = {
   laliga:     "football",
   bundesliga: "football",
   aleague:    "football",
+  worldcup:   "football",
   basketball: "basketball",
 };
 

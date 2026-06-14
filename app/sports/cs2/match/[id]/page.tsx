@@ -11,6 +11,7 @@ import {
   getMapWinrates,
   getRecentMatches,
 } from "@/lib/esports/analytics";
+import { fetchHLTVMatchCache } from "@/lib/sports/cs2/hltv-client";
 import CS2StatusBadge from "@/components/cs2/CS2StatusBadge";
 import CS2RosterRow from "@/components/cs2/CS2RosterRow";
 import { formatKickoff } from "@/lib/utils";
@@ -359,17 +360,24 @@ function H2HTable({
   h2h,
   homeTeamName,
   awayTeamName,
+  hltvSource = false,
 }: {
   h2h: HeadToHead;
   homeTeamName: string;
   awayTeamName: string;
+  hltvSource?: boolean;
 }) {
   return (
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface2)]">
+      <div className="px-4 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface2)] flex items-center gap-2">
         <span className="text-xs font-semibold text-[var(--color-text-2)] uppercase tracking-widest">
           Head to Head
         </span>
+        {hltvSource && (
+          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 uppercase tracking-wider">
+            HLTV
+          </span>
+        )}
       </div>
 
       {h2h.total === 0 ? (
@@ -464,25 +472,35 @@ export default async function CS2MatchPage({ params }: { params: { id: string } 
 
   const homeExtId = match.homeTeam?.externalId;
   const awayExtId = match.awayTeam?.externalId;
+  const homeId = match.homeTeam?.id ?? "";
+  const awayId = match.awayTeam?.id ?? "";
 
-  // Fetch PandaScore team history for analytics (map winrates, recent form, H2H)
+  // Try HLTV cache first (uploaded by local scraper via scripts/scrape-hltv.mjs)
+  const hltvData = await fetchHLTVMatchCache(match.id);
+
+  // Fetch PandaScore team history for recent form (always needed)
   const [homeMatches, awayMatches] = await Promise.all([
     homeExtId ? fetchCS2TeamMatchesByExternalId(homeExtId, 20) : Promise.resolve([]),
     awayExtId ? fetchCS2TeamMatchesByExternalId(awayExtId, 20) : Promise.resolve([]),
   ]);
 
+  // Map stats: HLTV cache preferred (has real per-map data), PandaScore fallback
+  const homeMaps = hltvData?.homeTeam.mapStats ?? getMapWinrates(homeId, homeMatches);
+  const awayMaps = hltvData?.awayTeam.mapStats ?? getMapWinrates(awayId, awayMatches);
+
+  // H2H: HLTV cache preferred (full historical record), PandaScore fallback
   const combined = homeMatches.concat(awayMatches);
-  const homeId = match.homeTeam?.id ?? "";
-  const awayId = match.awayTeam?.id ?? "";
+  const h2h = hltvData?.h2h ?? getHeadToHead(homeId, awayId, combined);
 
-  const h2h = getHeadToHead(homeId, awayId, combined);
-  const homeMaps = getMapWinrates(homeId, homeMatches);
-  const awayMaps = getMapWinrates(awayId, awayMatches);
-
+  // Recent form: always from PandaScore (has full match context)
   const homeRecentRaw = getRecentMatches(homeId, homeMatches, 20);
   const awayRecentRaw = getRecentMatches(awayId, awayMatches, 20);
   const homeRecent = filterRecent90Days(homeRecentRaw);
   const awayRecent = filterRecent90Days(awayRecentRaw);
+
+  // Rankings from HLTV (not available in PandaScore)
+  const homeRank = hltvData?.homeTeam.rank ?? null;
+  const awayRank = hltvData?.awayTeam.rank ?? null;
 
   // ─── Derive display values ─────────────────────────────────────────────────
 
@@ -532,17 +550,24 @@ export default async function CS2MatchPage({ params }: { params: { id: string } 
           {/* Team 1 */}
           <div className="flex-1 flex flex-col items-center gap-2 min-w-0">
             <TeamLogo team={match.homeTeam} size={80} />
-            <span
-              className={`text-base font-bold truncate max-w-full ${
-                isCompleted && match.winnerId === match.homeTeam?.id
-                  ? "text-[var(--color-text-1)]"
-                  : isCompleted
-                  ? "text-[var(--color-text-2)] opacity-60"
-                  : "text-[var(--color-text-1)]"
-              }`}
-            >
-              {team1Name}
-            </span>
+            <div className="flex flex-col items-center gap-0.5 min-w-0">
+              <span
+                className={`text-base font-bold truncate max-w-full ${
+                  isCompleted && match.winnerId === match.homeTeam?.id
+                    ? "text-[var(--color-text-1)]"
+                    : isCompleted
+                    ? "text-[var(--color-text-2)] opacity-60"
+                    : "text-[var(--color-text-1)]"
+                }`}
+              >
+                {team1Name}
+              </span>
+              {homeRank && (
+                <span className="text-[10px] text-[var(--color-text-2)]">
+                  #{homeRank} World
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Score / upcoming */}
@@ -573,17 +598,24 @@ export default async function CS2MatchPage({ params }: { params: { id: string } 
           {/* Team 2 */}
           <div className="flex-1 flex flex-col items-center gap-2 min-w-0">
             <TeamLogo team={match.awayTeam} size={80} />
-            <span
-              className={`text-base font-bold truncate max-w-full ${
-                isCompleted && match.winnerId === match.awayTeam?.id
-                  ? "text-[var(--color-text-1)]"
-                  : isCompleted
-                  ? "text-[var(--color-text-2)] opacity-60"
-                  : "text-[var(--color-text-1)]"
-              }`}
-            >
-              {team2Name}
-            </span>
+            <div className="flex flex-col items-center gap-0.5 min-w-0">
+              <span
+                className={`text-base font-bold truncate max-w-full ${
+                  isCompleted && match.winnerId === match.awayTeam?.id
+                    ? "text-[var(--color-text-1)]"
+                    : isCompleted
+                    ? "text-[var(--color-text-2)] opacity-60"
+                    : "text-[var(--color-text-1)]"
+                }`}
+              >
+                {team2Name}
+              </span>
+              {awayRank && (
+                <span className="text-[10px] text-[var(--color-text-2)]">
+                  #{awayRank} World
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -635,10 +667,15 @@ export default async function CS2MatchPage({ params }: { params: { id: string } 
         <div className="space-y-5">
           {/* Map stats */}
           <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface2)]">
+            <div className="px-4 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface2)] flex items-center gap-2">
               <span className="text-xs font-semibold text-[var(--color-text-2)] uppercase tracking-widest">
                 Map Stats
               </span>
+              {hltvData && (
+                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 uppercase tracking-wider">
+                  HLTV · 90 days
+                </span>
+              )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-[var(--color-border)]">
               {/* Radar chart */}
@@ -697,11 +734,12 @@ export default async function CS2MatchPage({ params }: { params: { id: string } 
 
         {/* RIGHT COLUMN */}
         <div className="space-y-5">
-          {/* PandaScore H2H */}
+          {/* H2H — HLTV preferred, PandaScore fallback */}
           <H2HTable
             h2h={h2h}
             homeTeamName={match.homeTeam?.name ?? "Home"}
             awayTeamName={match.awayTeam?.name ?? "Away"}
+            hltvSource={!!hltvData?.h2h}
           />
 
           {/* Rosters (PandaScore) */}

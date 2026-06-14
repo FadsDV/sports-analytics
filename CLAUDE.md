@@ -106,8 +106,11 @@ Custom DegenHUB analytics:
 |----------|----------|---------|
 | `GEMINI_API_KEY` | For betslip | Google Gemini Flash (free tier) |
 | `PANDASCORE_API_KEY` | For CS2 | PandaScore esports API |
-| `THE_ODDS_API_KEY` | Optional | Real player prop odds for AFL/NBA kitchen |
+| `THE_ODDS_API_KEY` | Optional | Real player prop odds for AFL/NBA kitchen (free tier may not cover AFL props) |
 | `SQUIGGLE_API_KEY` | Optional | AFL ladder/standings from Squiggle |
+| `BLOB_READ_WRITE_TOKEN` | For Blob | Vercel Blob — slip analytics storage + AFL odds cache |
+| `ODDS_UPLOAD_SECRET` | For scraper | Auth token for `POST /api/odds/upload` (home-PC scraper → Blob) |
+| `CRON_SECRET` | Optional | Protects `/api/cron/*` and `/api/debug/odds` routes (open in dev if unset) |
 
 ---
 

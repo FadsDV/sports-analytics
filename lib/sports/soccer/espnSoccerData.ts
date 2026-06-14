@@ -28,7 +28,7 @@ import { ESPN_PATHS } from "@/lib/sports/espn";
 
 const BASE = "https://site.api.espn.com/apis/site/v2/sports";
 
-type SoccerSport = "soccer" | "ucl" | "uel" | "laliga" | "bundesliga" | "aleague";
+type SoccerSport = "soccer" | "ucl" | "uel" | "laliga" | "bundesliga" | "aleague" | "worldcup";
 
 async function espnGet(path: string, revalidate = 60): Promise<Record<string, unknown> | null> {
   try {

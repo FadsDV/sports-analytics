@@ -1,0 +1,261 @@
+{
+  "collectedAt": "2026-06-14T13:06:54.448Z",
+  "sofascoreId": 15186832,
+  "espnGameId": "worldcup-760427",
+  "homeTeamId": 4766,
+  "awayTeamId": 4784,
+  "tournamentId": 16,
+  "seasonId": 58210,
+  "lineups": {
+    "confirmed": false,
+    "homeFormation": "5-3-2",
+    "awayFormation": "4-2-3-1",
+    "home": [
+      {
+        "id": 791374,
+        "name": "Alireza Beiranvand",
+        "shortName": "A. Beiranvand",
+        "position": "G",
+        "jerseyNumber": "1",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 786133,
+        "name": "Ramin Rezaeian",
+        "shortName": "R. Rezaeian",
+        "position": "M",
+        "jerseyNumber": "23",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1836024,
+        "name": "Saleh Hardani",
+        "shortName": "S. Hardani",
+        "position": "D",
+        "jerseyNumber": "2",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 812952,
+        "name": "Hossein Kanaani",
+        "shortName": "H. Kanaani",
+        "position": "D",
+        "jerseyNumber": "13",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 223340,
+        "name": "Shoja Khalilzadeh",
+        "shortName": "S. Khalilzadeh",
+        "position": "D",
+        "jerseyNumber": "4",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 812531,
+        "name": "Milad Mohammadi",
+        "shortName": "M. Mohammadi",
+        "position": "D",
+        "jerseyNumber": "5",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 548050,
+        "name": "Saman Ghoddos",
+        "shortName": "S. Ghoddos",
+        "position": "M",
+        "jerseyNumber": "14",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 359334,
+        "name": "Saeid Ezatolahi",
+        "shortName": "S. Ezatolahi",
+        "position": "M",
+        "jerseyNumber": "6",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 996805,
+        "name": "Mohammad Mohebi",
+        "shortName": "M. Mohebi",
+        "position": "F",
+        "jerseyNumber": "8",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 993899,
+        "name": "Shahriar Moghanlou",
+        "shortName": "S. Moghanlou",
+        "position": "F",
+        "jerseyNumber": "20",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 881182,
+        "name": "Mehdi Ghayedi",
+        "shortName": "M. Ghayedi",
+        "position": "M",
+        "jerseyNumber": "10",
+        "starter": true,
+        "stats": {}
+      }
+    ],
+    "away": [
+      {
+        "id": 197904,
+        "name": "Max Crocombe",
+        "shortName": "M. Crocombe",
+        "position": "G",
+        "jerseyNumber": "1",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 155882,
+        "name": "Tim Payne",
+        "shortName": "T. Payne",
+        "position": "D",
+        "jerseyNumber": "2",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1167100,
+        "name": "Finn Surman",
+        "shortName": "F. Surman",
+        "position": "D",
+        "jerseyNumber": "16",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 38624,
+        "name": "Michael Boxall",
+        "shortName": "M. Boxall",
+        "position": "D",
+        "jerseyNumber": "5",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 905264,
+        "name": "Liberato Cacace",
+        "shortName": "L. Cacace",
+        "position": "M",
+        "jerseyNumber": "13",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 822749,
+        "name": "Joe Bell",
+        "shortName": "J. Bell",
+        "position": "M",
+        "jerseyNumber": "6",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1002620,
+        "name": "Marko Stamenić",
+        "shortName": "M. Stamenić",
+        "position": "M",
+        "jerseyNumber": "8",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 905267,
+        "name": "Elijah Just",
+        "shortName": "E. Just",
+        "position": "M",
+        "jerseyNumber": "11",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1002607,
+        "name": "Matthew Garbett",
+        "shortName": "M. Garbett",
+        "position": "M",
+        "jerseyNumber": "7",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 822743,
+        "name": "Sarpreet Singh",
+        "shortName": "S. Singh",
+        "position": "M",
+        "jerseyNumber": "10",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 50480,
+        "name": "Chris Wood",
+        "shortName": "C. Wood",
+        "position": "F",
+        "jerseyNumber": "9",
+        "starter": true,
+        "stats": {}
+      }
+    ]
+  },
+  "incidents": [],
+  "homeTeamStats": null,
+  "awayTeamStats": null,
+  "topScorers": [
+    {
+      "playerId": 934237,
+      "playerName": "Folarin Balogun",
+      "shortName": "Folarin Balogun",
+      "teamName": "USA",
+      "goals": 2,
+      "assists": 0,
+      "shotsOnTarget": 3,
+      "rating": 9
+    },
+    {
+      "playerId": 889689,
+      "playerName": "Hwang In-beom",
+      "shortName": "Hwang In-beom",
+      "teamName": "South Korea",
+      "goals": 1,
+      "assists": 1,
+      "shotsOnTarget": 2,
+      "rating": 8.8
+    },
+    {
+      "playerId": 843114,
+      "playerName": "Julián Quiñones",
+      "shortName": "Julián Quiñones",
+      "teamName": "Mexico",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 2,
+      "rating": 8.6
+    },
+    {
+      "playerId": 868812,
+      "playerName": "Vinícius Júnior",
+      "shortName": "Vinícius Júnior",
+      "teamName": "Brazil",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 1,
+      "rating": 8
+    }
+  ]
+}

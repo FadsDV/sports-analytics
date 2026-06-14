@@ -1,0 +1,261 @@
+{
+  "collectedAt": "2026-06-14T13:05:16.659Z",
+  "sofascoreId": 15186951,
+  "espnGameId": "worldcup-760424",
+  "homeTeamId": 4688,
+  "awayTeamId": 4729,
+  "tournamentId": 16,
+  "seasonId": 58210,
+  "lineups": {
+    "confirmed": false,
+    "homeFormation": "3-4-1-2",
+    "awayFormation": "4-3-3",
+    "home": [
+      {
+        "id": 22596,
+        "name": "Kristoffer Nordfeldt",
+        "shortName": "K. Nordfeldt",
+        "position": "G",
+        "jerseyNumber": "23",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1157713,
+        "name": "Isak Hien",
+        "shortName": "I. Hien",
+        "position": "D",
+        "jerseyNumber": "4",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 143334,
+        "name": "Victor Lindelöf",
+        "shortName": "V. Lindelöf",
+        "position": "D",
+        "jerseyNumber": "3",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 965263,
+        "name": "Gustaf Lagerbielke",
+        "shortName": "G. Lagerbielke",
+        "position": "D",
+        "jerseyNumber": "2",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 980916,
+        "name": "Alexander Bernhardsson",
+        "shortName": "A. Bernhardsson",
+        "position": "F",
+        "jerseyNumber": "21",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 227894,
+        "name": "Jesper Karlström",
+        "shortName": "J. Karlström",
+        "position": "M",
+        "jerseyNumber": "16",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1036269,
+        "name": "Yasin Ayari",
+        "shortName": "Y. Ayari",
+        "position": "M",
+        "jerseyNumber": "18",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 834308,
+        "name": "Gabriel Gudmundsson",
+        "shortName": "G. Gudmundsson",
+        "position": "D",
+        "jerseyNumber": "5",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 918517,
+        "name": "Benjamin Nygren",
+        "shortName": "B. Nygren",
+        "position": "F",
+        "jerseyNumber": "10",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 823941,
+        "name": "Alexander Isak",
+        "shortName": "A. Isak",
+        "position": "F",
+        "jerseyNumber": "9",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 804508,
+        "name": "Viktor Gyökeres",
+        "shortName": "V. Gyökeres",
+        "position": "F",
+        "jerseyNumber": "17",
+        "starter": true,
+        "stats": {}
+      }
+    ],
+    "away": [
+      {
+        "id": 2018130,
+        "name": "Abdelmouhib Chamakh",
+        "shortName": "A. Chamakh",
+        "position": "G",
+        "jerseyNumber": "1",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 826202,
+        "name": "Yan Valery",
+        "shortName": "Y. Valery",
+        "position": "D",
+        "jerseyNumber": "20",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 976251,
+        "name": "Omar Rekik",
+        "shortName": "O. Rekik",
+        "position": "D",
+        "jerseyNumber": "4",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 879618,
+        "name": "Montassar Talbi",
+        "shortName": "M. Talbi",
+        "position": "D",
+        "jerseyNumber": "3",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 919027,
+        "name": "Ali Abdi",
+        "shortName": "A. Abdi",
+        "position": "D",
+        "jerseyNumber": "2",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 591706,
+        "name": "Ellyes Skhiri",
+        "shortName": "E. Skhiri",
+        "position": "M",
+        "jerseyNumber": "17",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1009386,
+        "name": "Hannibal Mejbri",
+        "shortName": "H. Mejbri",
+        "position": "M",
+        "jerseyNumber": "10",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 149479,
+        "name": "Rani Khedira",
+        "shortName": "R. Khedira",
+        "position": "M",
+        "jerseyNumber": "13",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 945204,
+        "name": "Elias Achouri",
+        "shortName": "E. Achouri",
+        "position": "M",
+        "jerseyNumber": "7",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1991585,
+        "name": "Hazem Mastouri",
+        "shortName": "H. Mastouri",
+        "position": "F",
+        "jerseyNumber": "9",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1113488,
+        "name": "Ismael Gharbi",
+        "shortName": "I. Gharbi",
+        "position": "M",
+        "jerseyNumber": "11",
+        "starter": true,
+        "stats": {}
+      }
+    ]
+  },
+  "incidents": [],
+  "homeTeamStats": null,
+  "awayTeamStats": null,
+  "topScorers": [
+    {
+      "playerId": 934237,
+      "playerName": "Folarin Balogun",
+      "shortName": "Folarin Balogun",
+      "teamName": "USA",
+      "goals": 2,
+      "assists": 0,
+      "shotsOnTarget": 3,
+      "rating": 9
+    },
+    {
+      "playerId": 889689,
+      "playerName": "Hwang In-beom",
+      "shortName": "Hwang In-beom",
+      "teamName": "South Korea",
+      "goals": 1,
+      "assists": 1,
+      "shotsOnTarget": 2,
+      "rating": 8.8
+    },
+    {
+      "playerId": 843114,
+      "playerName": "Julián Quiñones",
+      "shortName": "Julián Quiñones",
+      "teamName": "Mexico",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 2,
+      "rating": 8.6
+    },
+    {
+      "playerId": 868812,
+      "playerName": "Vinícius Júnior",
+      "shortName": "Vinícius Júnior",
+      "teamName": "Brazil",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 1,
+      "rating": 8
+    }
+  ]
+}
