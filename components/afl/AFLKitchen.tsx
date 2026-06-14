@@ -23,6 +23,11 @@ const SLIP_CONFIG: Record<KitchenSlipType, {
   border:  string;
   bg:      string;
 }> = {
+  peter: {
+    emoji: "🧠", title: "Peter",
+    desc: "Highest line each player clears 85%+ of the time. Value-weighted, correlation-discounted.",
+    color: "text-[#A78BFA]", border: "border-[#A78BFA]/25", bg: "bg-[#A78BFA]/5",
+  },
   safe: {
     emoji: "🛡️", title: "Safe",
     desc: "High-probability consistency plays. Threshold set well below average.",

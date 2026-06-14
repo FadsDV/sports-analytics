@@ -22,7 +22,7 @@ Always use whichever source provides the richest real data for each sport:
 |-------|---------------|-----------|
 | Soccer (all leagues) | Sofascore (player stats, incidents, lineups) | ESPN (scores, form, schedule) |
 | NBA | Sofascore (box scores, player stats) | ESPN (scores, schedule) |
-| AFL | Squiggle (games, standings, player stats) | aflTables.ts (box scores) |
+| AFL | ESPN (scoreboard, boxscores, schedules, player stats) | Squiggle (standings only) |
 | NFL | ESPN only | — |
 
 Note: BetRisk is not yet implemented. Do not add bet risk features.
@@ -146,6 +146,38 @@ function normalizeName(name: string): string {
 - **NBA finished games**: Sofascore lineups -> full box score
 - **AFL**: Squiggle player stats -> normalized game log
 - **Player pages**: require `?from={gameId}` query param for ESPN sports — without it returns null
+
+---
+
+## AFL Kitchen & Odds Infrastructure (Phase 4)
+
+> For full detail see `docs/AFL.md`, `docs/KITCHEN_CONTEXT.md`, `docs/DATA_SOURCES.md`.
+
+### Lineup exclusions (CFS API)
+`lib/sports/afl/lineups.ts` → `fetchAFLMatchExcluded(year, round, homeEspnId, awayEspnId)`
+- Primary: AFL CFS API (`api.afl.com.au/cfs/afl`) — confirmed match-day INS/OUTS. Token from `POST /WMCTok` (public, no auth). Round ID: `CD_R{year}014{round:02d}`
+- Fallback: AFL Fantasy status data
+
+### Odds pipeline priority
+1. Vercel Blob (`odds-cache/{gameId}.json`) — real scraper data via `POST /api/odds/upload`
+2. The Odds API (`THE_ODDS_API_KEY`) — free tier, uncertain AFL prop coverage
+3. Empty map — `hasRealOdds = false`, "⚡ No live odds" banner shown in Kitchen
+
+### No fake prices — absolute rule
+Never display a price unless it's real bookmaker data. `1/hitRate` is used only internally in `enforceOddsTarget` for leg selection — never shown in UI. `slipHasRealOdds(legs)` guards the combined multi-odds display.
+
+### Name normalisation
+`normalizeAFLName()` from `lib/sports/afl/fantasyMapper.ts` applied at both write time (propOdds map key) and read time (`findBestProp` prefix). Handles middle initials and suffixes. Does NOT resolve nicknames (Sam vs Samuel).
+
+### New files (Phase 4)
+- `lib/sports/afl/oddsCache.ts` — Blob read/write helpers
+- `app/api/odds/upload/route.ts` — scraper upload endpoint
+- `app/api/debug/odds/route.ts` — Odds API diagnostic endpoint
+
+### New env vars
+- `ODDS_UPLOAD_SECRET` — required to authenticate `POST /api/odds/upload`
+- `BLOB_READ_WRITE_TOKEN` — required for all Blob operations (slip storage + odds cache)
+- `CRON_SECRET` — protects cron and debug routes
 
 ---
 

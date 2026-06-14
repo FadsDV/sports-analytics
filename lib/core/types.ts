@@ -19,6 +19,7 @@ export type SportId =
   | "laliga"
   | "bundesliga"
   | "aleague"
+  | "worldcup"
   | "basketball"
   | "nfl"
   | "cs2"

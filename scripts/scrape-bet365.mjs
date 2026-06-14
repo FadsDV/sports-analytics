@@ -29,7 +29,7 @@
  * If no matching data is found, the raw capture is kept locally for parser work.
  */
 
-import { firefox }                           from "playwright";
+import { chromium }                          from "playwright";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { dirname, join }                     from "path";
 import { fileURLToPath }                     from "url";
@@ -42,11 +42,9 @@ const REPO_ROOT = join(__dirname, "..");
 // ---------------------------------------------------------------------------
 
 // Local profile dir — saves your Bet365 session between runs (gitignored)
-const PROFILE_DIR    = join(__dirname, ".bet365-profile-ff");
+const PROFILE_DIR     = join(__dirname, ".bet365-profile-ff");
 const BET365_HOME_URL = "https://www.bet365.com.au/";
 const BET365_AFL_URL  = "https://www.bet365.com.au/#/AC/B152/C1/D50/E2/";
-// Carlton vs Geelong SGM page — direct URL from your real browser screenshot
-const BET365_GAME_URL = "https://www.bet365.com.au/#/AC/B36/C21101752/D19/E25760233/F19/I99/P36239/";
 const DEFAULT_CAPTURE_DIR = join(REPO_ROOT, "data", "local", "bet365-captures");
 const INTERESTING_URL_PARTS = [
   "playercontentapi",
@@ -57,6 +55,13 @@ const INTERESTING_URL_PARTS = [
   "market",
   "player",
   "coupon",
+];
+
+// WS hosts we always log frames for (so we can see actual odds data in terminal)
+const INTERESTING_WS_HOSTS = [
+  "premws",
+  "pshudws",
+  "365lpodds",
 ];
 
 /**
@@ -70,7 +75,7 @@ const INTERESTING_URL_PARTS = [
  *
  * 90 seconds should be enough. Increase if you need more time.
  */
-const WAIT_SECONDS = 120;
+const WAIT_SECONDS = 240; // 4 minutes — time to navigate to a game's player props
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -129,13 +134,22 @@ if (!existsSync(PROFILE_DIR)) {
   console.log("Log into Bet365 in the window that opens. Your session will be saved.\n");
 }
 
-console.log("Launching Firefox...");
-console.log(`Session profile: ${PROFILE_DIR}`);
+const PROFILE_DIR_CHROMIUM = PROFILE_DIR.replace("-ff", "-chromium");
 
-const browser = await firefox.launchPersistentContext(PROFILE_DIR, {
+console.log("Launching Chromium...");
+console.log(`Session profile: ${PROFILE_DIR_CHROMIUM}`);
+
+const browser = await chromium.launchPersistentContext(PROFILE_DIR_CHROMIUM, {
   headless,
   viewport:          null,
   ignoreHTTPSErrors: false,
+  args: [
+    "--disable-blink-features=AutomationControlled",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-infobars",
+    "--disable-extensions-except=",
+  ],
 });
 
 const page = await browser.newPage();
@@ -319,8 +333,8 @@ page.on("websocket", (ws) => {
       ts: Date.now(),
       payload: trimFramePayload(payload),
     });
-    if (verbose || isInterestingUrl(url)) {
-      console.log(`[websocket] sent ${url} :: ${trimFramePayload(payload, 400)}`);
+    if (verbose || isInterestingUrl(url) || INTERESTING_WS_HOSTS.some(h => url.includes(h))) {
+      console.log(`[ws:sent] ${trimFramePayload(payload, 400)}`);
     }
   });
 
@@ -332,8 +346,8 @@ page.on("websocket", (ws) => {
       ts: Date.now(),
       payload: trimFramePayload(payload),
     });
-    if (verbose || isInterestingUrl(url)) {
-      console.log(`[websocket] recv ${url} :: ${trimFramePayload(payload, 400)}`);
+    if (verbose || isInterestingUrl(url) || INTERESTING_WS_HOSTS.some(h => url.includes(h))) {
+      console.log(`[ws:recv] ${trimFramePayload(payload, 600)}`);
     }
   });
 
@@ -410,21 +424,21 @@ browser.on("close", () => { browserClosed = true; });
 console.log("\nNavigating to Bet365...");
 try {
   // Home page first to initialise the app session
-  await page.goto(BET365_HOME_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await page.waitForTimeout(5_000);
-  // Navigate directly to the Carlton vs Geelong SGM page
-  await page.goto(BET365_GAME_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await page.waitForTimeout(5_000);
+  await page.goto(BET365_AFL_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  await page.waitForTimeout(3_000);
 } catch {
   // navigation errors are non-fatal — continue with capture window
 }
 
 if (isTrial) {
   console.log("\n" + "=".repeat(60));
-  console.log("TRIAL MODE — navigating directly to Carlton vs Geelong game page.");
-  console.log("  If the page loads with odds visible — great, just wait.");
-  console.log("  If you see a spinner, click through: SGM → Player → Main tabs.");
-  console.log("  DO NOT close the browser — it closes itself after the timer.");
+  console.log("TRIAL MODE — AFL section loaded. You have 4 minutes.");
+  console.log("");
+  console.log("  1. Find Port Adelaide vs Sydney Swans in the game list");
+  console.log("  2. Click into the game");
+  console.log("  3. Click 'Player Props' or 'Same Game Multi' tab");
+  console.log("  4. Scroll through all player markets so they load");
+  console.log("  5. DO NOT close the browser — it saves and closes itself");
   console.log("=".repeat(60));
   console.log(`\nCapturing for ${WAIT_SECONDS} seconds...\n`);
 } else {

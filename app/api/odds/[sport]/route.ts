@@ -13,7 +13,7 @@ export async function GET(
   const sport = params.sport.toLowerCase() as Sport;
 
   // Validation: Check if sport is supported by our system
-  const supportedSports: Sport[] = ["afl", "basketball", "nfl", "soccer", "ucl", "uel", "laliga", "bundesliga", "aleague"];
+  const supportedSports: Sport[] = ["afl", "basketball", "nfl", "soccer", "ucl", "uel", "laliga", "bundesliga", "aleague", "worldcup"];
   
   // Note: 'basketball' is used for NBA in our Sport type mapping
   const sportToFetch = sport === ("nba" as any) ? "basketball" : sport;

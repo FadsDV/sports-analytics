@@ -27,6 +27,7 @@ const ESPN_LEAGUES = [
   "laliga",
   "bundesliga",
   "aleague",
+  "worldcup",
   "basketball",
   "afl",
 ] as const satisfies Array<keyof typeof ESPN_PATHS>;

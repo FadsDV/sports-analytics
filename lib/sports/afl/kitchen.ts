@@ -58,6 +58,7 @@ export interface AFLGameMeta {
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 export type KitchenSlipType =
+  | "peter"
   | "safe"
   | "doable"
   | "goalscorers"
@@ -89,11 +90,29 @@ export interface KitchenLeg {
    * Negative = unfavorable context (bad weather/fatigue/tough opponent).
    */
   signalTotal?:  number;
+  /**
+   * Estimated bookmaker price for this leg, derived from hit rate when no
+   * live market price is available. Replace with prop.price when scraper runs.
+   */
+  estimatedOdds?: number;
+  /** Most recent game's value for this stat (bounce-back display). */
+  lastGameStat?:  number;
+  /** How far below the recent average the last game sat (0–1 fraction). */
+  bounceBackEdge?: number;
+  /** Peter/value flag: genuine bounce-back value leg (player due to bounce back). */
+  isValue?:       boolean;
 }
 
 export interface KitchenSlip {
   type: KitchenSlipType;
   legs: KitchenLeg[];
+  /**
+   * Estimated combined SGM odds for the whole slip when no live prices exist:
+   *   product(1 / leg.hitRate) × 0.72  (0.72 = same-game correlation discount).
+   */
+  estimatedOdds: number;
+  /** Back-compat alias for estimatedOdds (older consumers). */
+  estimatedCombinedOdds?: number;
 }
 
 // ─── Internal config ──────────────────────────────────────────────────────────
@@ -121,12 +140,103 @@ function calcHitRate(vals: number[], thr: number): number {
   return vals.length ? vals.filter(v => v >= thr).length / vals.length : 0;
 }
 
+// ─── Odds estimation (no live prices yet) ──────────────────────────────────────
+
+/** Same-game-multi correlation discount applied to combined estimated odds. */
+const SGM_CORRELATION_DISCOUNT = 0.72;
+
+/**
+ * Estimate what a single leg is worth from its historical hit rate.
+ *
+ * Formula: estimated leg odds = 1 / hitRate (raw probability inverse).
+ * We deliberately do NOT subtract a bookmaker margin here — the margin is
+ * already captured by the SGM correlation discount applied to the combined
+ * figure. At a 90% hit rate this gives ~1.11; at 85% ~1.18.
+ *
+ * Edge case: a 100% hit rate would yield exactly 1.00 (no value), and a 0%
+ * hit rate is undefined — both are clamped so the estimate stays sane.
+ */
+function estimateLegOdds(hitRate: number): number {
+  if (hitRate <= 0) return 2.0;          // no history of hitting — treat as long shot
+  if (hitRate >= 1) return 1.01;         // never let a leg estimate at exactly 1.00
+  const fair = 1 / hitRate;
+  return Math.round(fair * 100) / 100;
+}
+
+/**
+ * Estimate combined SGM odds for a set of legs.
+ *
+ *   estimatedCombinedOdds = product(1 / hitRate) × 0.72
+ *
+ * The 0.72 factor models the discount bookmakers apply to same-game multis
+ * because correlated legs are worth less than independent ones.
+ */
+function estimateSGMOdds(legs: Array<{ hitRate: number }>): number {
+  if (legs.length === 0) return 0;
+  const product = legs.reduce((acc, l) => acc * estimateLegOdds(l.hitRate), 1);
+  return Math.round(product * SGM_CORRELATION_DISCOUNT * 100) / 100;
+}
+
+// ─── Bounce-back detection ─────────────────────────────────────────────────────
+
+/**
+ * Detect a "bounce-back" value situation: a player whose most recent game was
+ * well below their recent form. The bookmaker line may still be set
+ * conservatively → the player is "due" for a big game.
+ *
+ * NOTE on ordering: profile vals are stored OLDEST-FIRST (ESPN game order), so
+ * the most recent game is the LAST element. We read `vals[vals.length - 1]` as
+ * the last game and the preceding window as the recent baseline.
+ */
+function detectBounceBack(vals: number[], avg: number): {
+  isBounceBack:   boolean;
+  lastGameStat:   number | null;
+  bounceBackEdge: number; // how far below recent avg the last game was, as fraction
+} {
+  if (vals.length < 3) return { isBounceBack: false, lastGameStat: null, bounceBackEdge: 0 };
+  const lastGame  = vals[vals.length - 1];                 // most recent game (oldest-first array)
+  const recentAvg = mean(vals.slice(-6, -1));              // 5 games before the last one
+  const bounceBackEdge = recentAvg > 0 ? (recentAvg - lastGame) / recentAvg : 0;
+  const isBounceBack = lastGame < avg * 0.65 && recentAvg >= avg * 0.90;
+  return { isBounceBack, lastGameStat: lastGame, bounceBackEdge };
+}
+
+// ─── Percentile threshold (Peter Logic) ────────────────────────────────────────
+
+/**
+ * Find the highest threshold that the player hits in at least targetHitRate fraction
+ * of their recent games. This is the Peter Logic threshold — "how high can we set
+ * the bar while still hitting reliably?"
+ */
+function findPercentileThreshold(
+  vals: number[],
+  targetHitRate: number,
+  stat: AFLPickStat,
+): { threshold: number; hitRate: number } | null {
+  if (vals.length < 5) return null;
+  const step = STEP[stat];
+  const maxPossible = Math.max(...vals);
+
+  let best: { threshold: number; hitRate: number } | null = null;
+
+  for (let t = step; t <= maxPossible + step; t += step) {
+    const thr = stat === "G" ? Math.round(t * 2) / 2 : Math.round(t);
+    const hr = calcHitRate(vals, thr);
+    if (hr >= targetHitRate) {
+      if (!best || thr > best.threshold) {
+        best = { threshold: thr, hitRate: hr };
+      }
+    }
+  }
+  return best;
+}
+
 /**
  * Find the best matching Sportsbet prop for a player+stat combination.
  *
  * propOdds keys are "PlayerName|stat|line" — iterates all entries for this
  * player+stat and returns the one whose line is closest to targetThreshold.
- * Used by buildLegs to attach a relevant price for display on non-safe slips.
+ * Used by the slip builders to attach a relevant price for display on a leg.
  */
 function findBestProp(
   propOdds:        Map<string, { price: number; line: number; bookmaker: string }>,
@@ -250,42 +360,37 @@ function buildPropsBasedSafeSlip(
   return selected;
 }
 
+/** Count how many of the player's last `n` games had a goal (≥1). */
+function goalsInLast(vals: number[], n: number): number {
+  return vals.slice(-n).filter(v => v >= 1).length;
+}
+
 /**
- * Find the HIGHEST threshold within [minFraction×avg, maxFraction×avg] that
- * still achieves a hit rate between minHR and maxHR.
- * "Highest threshold that still passes" = hardest beatable line in the zone.
+ * True when the player's last 3 games are each strictly higher than the one
+ * before — a genuine "trending up / time to shine" pattern for the Ballsy slip.
+ * Needs at least 4 games (3 step-ups) so the trend is real, not a single spike.
  */
-function findBestThreshold(
-  vals:        number[],
-  avg:         number,
-  stat:        AFLPickStat,
-  minHR:       number,
-  maxHR:       number,
-  minFraction: number,
-  maxFraction: number,
+function isTrendingUp(vals: number[]): boolean {
+  if (vals.length < 4) return false;
+  const tail = vals.slice(-4); // [g-3, g-2, g-1, last]
+  return tail[1] > tail[0] && tail[2] > tail[1] && tail[3] > tail[2];
+}
+
+/**
+ * Highest threshold a player clears in at least `targetHR` of their last
+ * `window` games (default 10). Returns null when there isn't enough history
+ * or no line meets the bar. The threshold comes only from real game values —
+ * never invented.
+ */
+function findThresholdAtHitRate(
+  vals: number[],
+  targetHR: number,
+  stat: AFLPickStat,
+  window = 10,
 ): { threshold: number; hitRate: number } | null {
-  const step   = STEP[stat];
-  const rawMin = avg * minFraction;
-  const rawMax = avg * maxFraction;
-  const minThr = stat === "G"
-    ? Math.max(step, Math.round(rawMin * 2) / 2)
-    : Math.max(step, Math.round(rawMin));
-  const maxThr = stat === "G"
-    ? Math.round(rawMax * 2) / 2
-    : Math.round(rawMax);
-
-  let best: { threshold: number; hitRate: number } | null = null;
-
-  for (let t = minThr; t <= maxThr + step; t += step) {
-    const thr = stat === "G" ? Math.round(t * 2) / 2 : Math.round(t);
-    const hr  = calcHitRate(vals, thr);
-    if (hr >= minHR && hr <= maxHR) {
-      if (!best || thr > best.threshold) {
-        best = { threshold: thr, hitRate: hr };
-      }
-    }
-  }
-  return best;
+  const recent = vals.slice(-window);
+  if (recent.length < 5) return null;
+  return findPercentileThreshold(recent, targetHR, stat);
 }
 
 // ─── Intelligence signals ─────────────────────────────────────────────────────
@@ -620,210 +725,405 @@ function buildProfiles(
   return profiles;
 }
 
-// ─── Leg assembler (threshold-based slips) ────────────────────────────────────
+// ─── Peter Logic builder ───────────────────────────────────────────────────────
 
-interface TierConfig {
-  minFlatHR:      number;
-  maxFlatHR:      number;
-  minFraction:    number;   // threshold lower bound as fraction of avg
-  maxFraction:    number;   // threshold upper bound as fraction of avg
-  minReliability: number;
-  maxReliability: number;
-  maxLegs:        number;
-  statsFilter?:   AFLPickStat[];
-  formBonus:      number;
-  /** If true, use recentAvg instead of avg as the base for fractions */
-  useRecentBase?: boolean;
+/**
+ * Construct a single KitchenLeg from a profile at a given threshold/hitRate,
+ * attaching estimated odds + bounce-back metadata. Used by the Peter and
+ * disposals-Peter builders.
+ */
+function makePeterLeg(
+  p: Profile,
+  threshold: number,
+  hitRate: number,
+  propOdds: Map<string, { price: number; line: number; bookmaker: string }>,
+  flags: { isValue: boolean; isBounceBack: boolean },
+): KitchenLeg {
+  const breakdown = computeReliability({ vals: p.vals, threshold, config: AFL_CONFIG });
+  const signalTotal =
+    p.signals.restDaysPenalty + p.signals.venueBoost +
+    p.signals.opponentRankBoost + p.signals.weatherPenalty + p.signals.injuryUplift;
+  const reliability = Math.max(0, Math.min(1.0, breakdown.finalReliability + signalTotal));
+
+  const bb = detectBounceBack(p.vals, p.avg);
+  const prop = findBestProp(propOdds, p.name, p.stat, threshold);
+
+  return {
+    player:         p.name,
+    side:           p.side,
+    teamAbbr:       p.teamAbbr,
+    stat:           p.stat,
+    statLabel:      STAT_LABELS[p.stat],
+    threshold,
+    hitRate,
+    reliability,
+    breakdown:      { ...breakdown, finalReliability: reliability },
+    avgStat:        Math.round(p.avg * 10) / 10,
+    gamesAnalyzed:  p.gamesAnalyzed,
+    isBounceBack:   flags.isBounceBack || p.isBounceBack,
+    isOnForm:       p.isOnForm,
+    prop,
+    signalTotal:    Math.round(signalTotal * 100) / 100,
+    estimatedOdds:  estimateLegOdds(hitRate),
+    lastGameStat:   bb.lastGameStat ?? undefined,
+    bounceBackEdge: Math.round(bb.bounceBackEdge * 100) / 100,
+    isValue:        flags.isValue,
+  };
 }
 
-function buildLegs(
-  profiles: Profile[],
+/**
+ * Peter Logic slip builder.
+ *
+ * Every leg must clear a high historical hit rate (default 85%). Candidates are
+ * scored, sorted, and greedily added until the estimated combined SGM odds reach
+ * the target (≥2.0). Bounce-back value legs are weighted up and can be added even
+ * after the target is met. Hard cap of `maxLegs` legs. No padding with weak legs.
+ *
+ * If no candidate clears 85% the slip is empty (no fake data).
+ *
+ * @param statsFilter  restrict to specific stats (used by the disposals slip)
+ */
+function buildPeterSlip(
+  all: Profile[],
   propOdds: Map<string, { price: number; line: number; bookmaker: string }>,
-  tier:     TierConfig,
+  opts: {
+    primaryHitRate: number;   // 0.85
+    fallbackHitRate: number;  // 0.80 — only used if target unreachable
+    targetOdds: number;       // 2.0
+    maxLegs: number;          // 10
+    statsFilter?: AFLPickStat[];
+  },
 ): KitchenLeg[] {
-  type Candidate = {
-    profile:     Profile;
-    threshold:   number;
-    flatHitRate: number;
-    reliability: number;
-    breakdown:   ReliabilityBreakdown;
+  type Cand = {
+    profile:   Profile;
+    threshold: number;
+    hitRate:   number;
+    score:     number;
+    isValue:   boolean;
+    isBounce:  boolean;
+    isFallback: boolean;
   };
 
-  const candidates: Candidate[] = [];
+  const buildCandidates = (targetHR: number, isFallback: boolean): Cand[] => {
+    const out: Cand[] = [];
+    for (const p of all) {
+      if (opts.statsFilter && !opts.statsFilter.includes(p.stat)) continue;
+      if (p.vals.length < 5) continue; // never invent — need real history
 
-  for (const p of profiles) {
-    if (tier.statsFilter && !tier.statsFilter.includes(p.stat)) continue;
+      const found = findPercentileThreshold(p.vals, targetHR, p.stat);
+      if (!found) continue;
 
-    const base = tier.useRecentBase && p.recentAvg > 0 ? p.recentAvg : p.avg;
+      const bb = detectBounceBack(p.vals, p.avg);
+      const weakOpponent = (p.signals.opponentRankBoost ?? 0) > 0.02;
 
-    const found = findBestThreshold(
-      p.vals, base, p.stat,
-      tier.minFlatHR, tier.maxFlatHR,
-      tier.minFraction, tier.maxFraction,
-    );
-    if (!found) continue;
+      const score =
+        found.hitRate +
+        (bb.isBounceBack ? 0.05 : 0) +     // bounce-back value bonus
+        ((p.signals.venueBoost ?? 0) > 0 ? 0.03 : 0) + // home-ground/venue-history bonus
+        (p.isOnForm ? 0.02 : 0) +          // on-form bonus
+        (weakOpponent ? 0.02 : 0);         // weak-opponent bonus
 
-    const breakdown = computeReliability({
-      vals:      p.vals,
-      threshold: found.threshold,
-      config:    AFL_CONFIG,
-    });
+      out.push({
+        profile: p, threshold: found.threshold, hitRate: found.hitRate,
+        score, isValue: bb.isBounceBack, isBounce: bb.isBounceBack, isFallback,
+      });
+    }
+    return out;
+  };
 
-    let reliability = breakdown.finalReliability;
-    if (tier.formBonus > 0 && p.isOnForm) reliability = Math.min(1.0, reliability + tier.formBonus);
+  // Primary pass at the non-negotiable 85% bar.
+  const candidates = buildCandidates(opts.primaryHitRate, false);
+  candidates.sort((a, b) => b.score - a.score);
 
-    // Apply intelligence signals
-    const signalTotal =
-      p.signals.restDaysPenalty +
-      p.signals.venueBoost +
-      p.signals.opponentRankBoost +
-      p.signals.weatherPenalty +
-      p.signals.injuryUplift;
-    reliability = Math.max(0, Math.min(1.0, reliability + signalTotal));
-
-    if (reliability < tier.minReliability || reliability > tier.maxReliability) continue;
-
-    candidates.push({
-      profile:     p,
-      threshold:   found.threshold,
-      flatHitRate: found.hitRate,
-      reliability,
-      breakdown:   { ...breakdown, finalReliability: reliability },
-    });
-  }
-
-  candidates.sort((a, b) => b.reliability - a.reliability);
-
-  const legs: KitchenLeg[] = [];
+  // Greedy build toward target odds.
+  const selected: KitchenLeg[] = [];
   const playerCount = new Map<string, number>();
+  let targetReached = false;
 
-  for (const { profile: p, threshold, flatHitRate, reliability, breakdown } of candidates) {
-    if (legs.length >= tier.maxLegs) break;
-    const used = playerCount.get(p.name) ?? 0;
-    if (used >= 2) continue;
-
-    const prop = findBestProp(propOdds, p.name, p.stat, threshold);
-
-    const legSignalTotal = Math.round(
-      (p.signals.restDaysPenalty +
-       p.signals.venueBoost +
-       p.signals.opponentRankBoost +
-       p.signals.weatherPenalty +
-       p.signals.injuryUplift) * 100
-    ) / 100;
-
-    legs.push({
-      player:        p.name,
-      side:          p.side,
-      teamAbbr:      p.teamAbbr,
-      stat:          p.stat,
-      statLabel:     STAT_LABELS[p.stat],
-      threshold,
-      hitRate:       flatHitRate,
-      reliability,
-      breakdown,
-      avgStat:       Math.round(p.avg * 10) / 10,
-      gamesAnalyzed: p.gamesAnalyzed,
-      isBounceBack:  p.isBounceBack,
-      isOnForm:      p.isOnForm,
-      prop,
-      signalTotal:   legSignalTotal,
+  const tryAdd = (c: Cand): boolean => {
+    if (selected.length >= opts.maxLegs) return false;
+    const used = playerCount.get(c.profile.name) ?? 0;
+    if (used >= 2) return false; // max 2 stats per player
+    const leg = makePeterLeg(c.profile, c.threshold, c.hitRate, propOdds, {
+      isValue: c.isValue, isBounceBack: c.isBounce,
     });
+    selected.push(leg);
+    playerCount.set(c.profile.name, used + 1);
+    return true;
+  };
 
-    playerCount.set(p.name, used + 1);
+  const combinedOdds = () => estimateSGMOdds(selected.map(l => ({ hitRate: l.hitRate })));
+
+  const ODDS_CEILING = 10.0; // never let a Peter slip drift past ~10× estimated
+
+  for (const c of candidates) {
+    if (selected.length >= opts.maxLegs) break;
+    if (targetReached) {
+      // Target already met — only keep adding genuine bounce-back value legs,
+      // and stop entirely once we'd push estimated odds past the 10× ceiling.
+      if (!c.isValue) continue;
+      const trial = estimateSGMOdds(
+        [...selected.map(l => ({ hitRate: l.hitRate })), { hitRate: c.hitRate }],
+      );
+      if (trial > ODDS_CEILING) break;
+    }
+    if (tryAdd(c) && combinedOdds() >= opts.targetOdds) {
+      targetReached = true;
+    }
   }
 
-  return legs;
+  // If still under target after exhausting all 85% candidates, lower the bar to
+  // the fallback hit rate (flagged) and add more until target is met.
+  if (!targetReached && selected.length < opts.maxLegs) {
+    const usedKeys = new Set(selected.map(l => `${l.player}|${l.stat}|${l.threshold}`));
+    const fallback = buildCandidates(opts.fallbackHitRate, true)
+      .filter(c => !usedKeys.has(`${c.profile.name}|${c.profile.stat}|${c.threshold}`))
+      .sort((a, b) => b.score - a.score);
+    for (const c of fallback) {
+      if (selected.length >= opts.maxLegs) break;
+      if (tryAdd(c) && combinedOdds() >= opts.targetOdds) break;
+    }
+  }
+
+  return selected;
 }
 
-// ─── Value picks (book line vs player average) ────────────────────────────────
+// ─── Hit-rate-band slip builders (safe / doable) ───────────────────────────────
 
-function buildValueLegs(
-  profiles: Profile[],
+/**
+ * Build a slip from legs whose last-10-game hit rate falls in [minHR, maxHR].
+ *
+ * For each profile we find the HIGHEST threshold that still clears `minHR`, then
+ * keep it only if that threshold's hit rate also satisfies `maxHR` (so "doable"
+ * can exclude near-certainties that belong in "safe"). Candidates are sorted by
+ * hit rate desc and greedily added until the estimated combined SGM odds reach
+ * `minCombinedOdds`, capped at `maxLegs`. Same player max twice (different stats).
+ *
+ * Never invents data: a profile with < 5 recent games or no qualifying line is
+ * skipped entirely.
+ */
+function buildHitRateBandSlip(
+  all: Profile[],
   propOdds: Map<string, { price: number; line: number; bookmaker: string }>,
+  opts: {
+    minHR: number;
+    maxHR: number;
+    minCombinedOdds: number;
+    maxLegs: number;
+    statsFilter?: AFLPickStat[];
+  },
 ): KitchenLeg[] {
-  type ValueCandidate = { leg: KitchenLeg; score: number };
-  const candidates: ValueCandidate[] = [];
-  const seen = new Set<string>();
+  type Cand = { profile: Profile; threshold: number; hitRate: number };
+  const cands: Cand[] = [];
 
-  for (const p of profiles) {
-    const key  = `${p.name}|${p.stat}`;
-    if (seen.has(key)) continue;
-
-    // Value: find the prop line that is BELOW the player's average AND has best odds
-    // (Sportsbet lines can vary per player — pick the one below avg with highest price)
-    const prefix = `${p.name}|${p.stat}|`;
-    let prop: { price: number; line: number; bookmaker: string } | undefined;
-    for (const [k, v] of Array.from(propOdds.entries())) {
-      if (!k.startsWith(prefix)) continue;
-      if (v.line >= p.avg) continue;           // only lines below average = value
-      if (v.price < 1.60) continue;            // minimum viable odds
-      if (!prop || v.price > prop.price) prop = v; // highest price = best value
-    }
-
-    if (prop && prop.price >= 1.60 && prop.line < p.avg) {
-      // ── Live prop: use real bookmaker line ──────────────────────────────
-      const hitRate = calcHitRate(p.vals, prop.line);
-      if (hitRate < 0.65) continue;
-
-      const breakdown = computeReliability({ vals: p.vals, threshold: prop.line, config: AFL_CONFIG });
-      if (breakdown.finalReliability === 0) continue;
-
-      seen.add(key);
-      const edge  = p.avg - prop.line;
-      const score = (edge / p.avg) * prop.price * breakdown.finalReliability;
-
-      candidates.push({
-        score,
-        leg: {
-          player: p.name, side: p.side, teamAbbr: p.teamAbbr,
-          stat: p.stat, statLabel: STAT_LABELS[p.stat],
-          threshold: prop.line, hitRate,
-          reliability: breakdown.finalReliability, breakdown,
-          avgStat: Math.round(p.avg * 10) / 10,
-          gamesAnalyzed: p.gamesAnalyzed,
-          isBounceBack: p.isBounceBack, isOnForm: p.isOnForm,
-          prop,
-          edge: Math.round(edge * 10) / 10,
-        },
-      });
-    } else if (!prop) {
-      // ── Odds suspended (game live/finished): derive natural line from stats ─
-      // Book lines typically sit at 65–82% of a player's average.
-      // Find the highest threshold in that zone that still hits 65%+ of games.
-      const found = findBestThreshold(p.vals, p.avg, p.stat, 0.65, 0.85, 0.65, 0.82);
-      if (!found) continue;
-      if (found.hitRate < 0.65) continue;
-
-      const edge = p.avg - found.threshold;
-      if (edge <= 0) continue;
-
-      const breakdown = computeReliability({ vals: p.vals, threshold: found.threshold, config: AFL_CONFIG });
-      if (breakdown.finalReliability === 0) continue;
-
-      seen.add(key);
-      // Score without odds — use reliability × edge fraction
-      const score = (edge / p.avg) * breakdown.finalReliability;
-
-      candidates.push({
-        score,
-        leg: {
-          player: p.name, side: p.side, teamAbbr: p.teamAbbr,
-          stat: p.stat, statLabel: STAT_LABELS[p.stat],
-          threshold: found.threshold, hitRate: found.hitRate,
-          reliability: breakdown.finalReliability, breakdown,
-          avgStat: Math.round(p.avg * 10) / 10,
-          gamesAnalyzed: p.gamesAnalyzed,
-          isBounceBack: p.isBounceBack, isOnForm: p.isOnForm,
-          // No prop — odds suspended
-          edge: Math.round(edge * 10) / 10,
-        },
-      });
-    }
+  for (const p of all) {
+    if (opts.statsFilter && !opts.statsFilter.includes(p.stat)) continue;
+    const found = findThresholdAtHitRate(p.vals, opts.minHR, p.stat);
+    if (!found) continue;
+    if (found.hitRate > opts.maxHR) continue; // too certain for this band
+    cands.push({ profile: p, threshold: found.threshold, hitRate: found.hitRate });
   }
 
-  candidates.sort((a, b) => b.score - a.score);
-  return candidates.slice(0, 10).map(c => c.leg);
+  cands.sort((a, b) => b.hitRate - a.hitRate);
+
+  const selected: KitchenLeg[] = [];
+  const playerCount = new Map<string, number>();
+
+  for (const c of cands) {
+    if (selected.length >= opts.maxLegs) break;
+    const used = playerCount.get(c.profile.name) ?? 0;
+    if (used >= 2) continue;
+
+    const bb = detectBounceBack(c.profile.vals, c.profile.avg);
+    selected.push(makePeterLeg(c.profile, c.threshold, c.hitRate, propOdds, {
+      isValue: bb.isBounceBack, isBounceBack: bb.isBounceBack,
+    }));
+    playerCount.set(c.profile.name, used + 1);
+
+    const combined = estimateSGMOdds(selected.map(l => ({ hitRate: l.hitRate })));
+    if (combined >= opts.minCombinedOdds) break;
+  }
+
+  return selected;
+}
+
+// ─── Ballsy slip builder ───────────────────────────────────────────────────────
+
+/**
+ * Build the Ballsy slip. Max 4 legs, target 4–8× estimated odds, never > 10×.
+ *
+ * Each leg must be EITHER:
+ *   (a) an on-form player (last 3 avg ≥ 110% season avg) with the threshold set
+ *       AT the player's season average (not below — that's where the bite is), OR
+ *   (b) a "time to shine" pick — the player has trended up 3 straight games,
+ *       with the threshold at their season average.
+ *
+ * We require a non-trivial hit rate (≥ 0.40) at the season-avg line so the leg
+ * isn't a pure coin flip, then sort by hit rate desc and greedily build until
+ * estimated combined odds enter the 4–8× window, hard-capped at 10×.
+ */
+function buildBallsySlip(
+  all: Profile[],
+  propOdds: Map<string, { price: number; line: number; bookmaker: string }>,
+): KitchenLeg[] {
+  type Cand = { profile: Profile; threshold: number; hitRate: number };
+  const cands: Cand[] = [];
+
+  for (const p of all) {
+    const qualifies = p.isOnForm || isTrendingUp(p.vals);
+    if (!qualifies) continue;
+
+    // Threshold AT season average, snapped to the stat's step grid.
+    const step = STEP[p.stat];
+    const thr = p.stat === "G"
+      ? Math.max(step, Math.round(p.avg * 2) / 2)
+      : Math.max(step, Math.round(p.avg));
+
+    const hr = calcHitRate(p.vals.slice(-10), thr);
+    if (hr < 0.40) continue; // must still be plausible, not a wild stab
+
+    cands.push({ profile: p, threshold: thr, hitRate: hr });
+  }
+
+  cands.sort((a, b) => b.hitRate - a.hitRate);
+
+  const MAX_LEGS = 4;
+  const TARGET_MIN = 4.0;
+  const HARD_CAP = 10.0;
+
+  const selected: KitchenLeg[] = [];
+  const playerCount = new Map<string, number>();
+
+  for (const c of cands) {
+    if (selected.length >= MAX_LEGS) break;
+    const used = playerCount.get(c.profile.name) ?? 0;
+    if (used >= 2) continue;
+
+    // Would adding this leg blow past the 10× hard cap? If so, skip it.
+    const trial = estimateSGMOdds([...selected, c].map(l => ({ hitRate: l.hitRate })));
+    if (trial > HARD_CAP) continue;
+
+    const bb = detectBounceBack(c.profile.vals, c.profile.avg);
+    selected.push(makePeterLeg(c.profile, c.threshold, c.hitRate, propOdds, {
+      isValue: false, isBounceBack: bb.isBounceBack,
+    }));
+    playerCount.set(c.profile.name, used + 1);
+
+    const combined = estimateSGMOdds(selected.map(l => ({ hitRate: l.hitRate })));
+    if (combined >= TARGET_MIN) break;
+  }
+
+  return selected;
+}
+
+// ─── Goal-scorers slip builder ─────────────────────────────────────────────────
+
+/**
+ * Build the Goal Scorers slip. Only players who have scored in 3+ of their last
+ * 5 games. The bet is "to score a goal" (≥ 1 goal). Max 4 legs, sorted by goal
+ * frequency desc (most reliable scorers first).
+ *
+ * The displayed hit rate is the player's actual rate of scoring ≥ 1 goal across
+ * their last 10 games — real data, never invented.
+ */
+function buildGoalScorersSlip(
+  all: Profile[],
+  propOdds: Map<string, { price: number; line: number; bookmaker: string }>,
+): KitchenLeg[] {
+  type Cand = { profile: Profile; hitRate: number; recentFreq: number };
+  const cands: Cand[] = [];
+  const seen = new Set<string>();
+
+  for (const p of all) {
+    if (p.stat !== "G") continue;
+    if (seen.has(p.name)) continue;
+
+    const recentFreq = goalsInLast(p.vals, 5); // games scored in, last 5
+    if (recentFreq < 3) continue;              // must be a genuine scorer right now
+
+    const hitRate = calcHitRate(p.vals.slice(-10), 1); // rate of scoring ≥ 1 goal
+    if (hitRate < 0.60) continue;              // spec floor for goal legs
+
+    seen.add(p.name);
+    cands.push({ profile: p, hitRate, recentFreq });
+  }
+
+  // Sort by recent goal frequency desc, then by 10-game hit rate.
+  cands.sort((a, b) => (b.recentFreq - a.recentFreq) || (b.hitRate - a.hitRate));
+
+  const selected: KitchenLeg[] = [];
+  for (const c of cands) {
+    if (selected.length >= 4) break;
+    selected.push(makePeterLeg(c.profile, 1, c.hitRate, propOdds, {
+      isValue: false, isBounceBack: false,
+    }));
+  }
+
+  return selected;
+}
+
+// ─── Value (bounce-back) slip builder ──────────────────────────────────────────
+
+/**
+ * Build the Value slip from bounce-back situations.
+ *
+ * Criteria per leg:
+ *   - last game's stat < 65% of season average (a dip the book is likely to chase
+ *     down with a lower or equal line), AND
+ *   - season average still strong (≥ MIN_AVG for the stat), AND
+ *   - season hit rate at the threshold ≥ 0.70.
+ *
+ * Threshold: highest line clearing 0.70 over the last 10 games. Sorted by
+ * "edge" = (seasonAvg − lastGameStat) / seasonAvg desc (bigger dip = more value).
+ * Max 5 legs, max 2 stats per player.
+ */
+function buildBounceBackValueSlip(
+  all: Profile[],
+  propOdds: Map<string, { price: number; line: number; bookmaker: string }>,
+): KitchenLeg[] {
+  type Cand = {
+    profile: Profile; threshold: number; hitRate: number;
+    edge: number; lastGameStat: number;
+  };
+  const cands: Cand[] = [];
+
+  for (const p of all) {
+    if (p.avg < MIN_AVG[p.stat]) continue;
+
+    const lastGame = p.vals[p.vals.length - 1] ?? 0;
+    if (!(lastGame < p.avg * 0.65)) continue; // must be a real dip last game
+
+    const found = findThresholdAtHitRate(p.vals, 0.70, p.stat);
+    if (!found) continue;
+
+    const edge = p.avg > 0 ? (p.avg - lastGame) / p.avg : 0;
+    cands.push({
+      profile: p, threshold: found.threshold, hitRate: found.hitRate,
+      edge, lastGameStat: lastGame,
+    });
+  }
+
+  // Bigger drop relative to season avg = more value.
+  cands.sort((a, b) => b.edge - a.edge);
+
+  const selected: KitchenLeg[] = [];
+  const playerCount = new Map<string, number>();
+
+  for (const c of cands) {
+    if (selected.length >= 5) break;
+    const used = playerCount.get(c.profile.name) ?? 0;
+    if (used >= 2) continue;
+
+    const leg = makePeterLeg(c.profile, c.threshold, c.hitRate, propOdds, {
+      isValue: true, isBounceBack: true,
+    });
+    // Surface the value edge (avg over the book/threshold) for the UI.
+    leg.edge = Math.round((c.profile.avg - c.threshold) * 10) / 10;
+    selected.push(leg);
+    playerCount.set(c.profile.name, used + 1);
+  }
+
+  return selected;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -874,128 +1174,68 @@ export function computeAFLKitchen(params: {
   );
   const all = [...homeProfiles, ...awayProfiles];
 
-  // ── 1. Safe ───────────────────────────────────────────────────────────────
-  // Two-pass approach so bookie tabs always have enough candidates:
-  //   Pass A: exact Sportsbet market lines (accurate prices for All Markets tab)
-  //   Pass B: buildLegs conservative pool (high hit rate, 80%+, threshold 50–75% avg)
-  //           provides additional candidates that survive Bet365/Dabble filtering
-  //           when the props-based pool is thin.
-  // Both pools are merged (deduped by player|stat|threshold), then enforceOddsTarget
-  // picks the best 2-5 legs for the All Markets tab display.
-  const safeFromProps = buildPropsBasedSafeSlip(all, propOdds, 2.00, 2, 5);
-  const safeFallback  = buildLegs(all, propOdds, {
-    minFlatHR: 0.80, maxFlatHR: 1.00,
-    minFraction: 0.50, maxFraction: 0.75,
-    minReliability: 0.60, maxReliability: 1.00,
-    maxLegs: 15, formBonus: 0,
+  // ── 0. Peter ──────────────────────────────────────────────────────────────
+  // Every leg ≥ 85% hit rate (last 10g). Greedy build to ≥ 2.0× estimated odds,
+  // keep adding genuine value legs up to a 10× ceiling. Value-weighted scoring.
+  const peterLegs = buildPeterSlip(all, propOdds, {
+    primaryHitRate:  0.85,
+    fallbackHitRate: 0.85, // peter never relaxes below 85% — no padding
+    targetOdds:      2.0,
+    maxLegs:         8,
   });
-  // Merge: props-based first (has accurate Sportsbet prices), fallback fills the rest
-  const safeSeen = new Set(safeFromProps.map(l => `${l.player}|${l.stat}|${l.threshold}`));
-  const safePool = [
-    ...safeFromProps,
-    ...safeFallback.filter(l => !safeSeen.has(`${l.player}|${l.stat}|${l.threshold}`)),
-  ];
-  const safeLegs = enforceOddsTarget(safePool, SLIP_TARGETS.safe.minOdds, SLIP_TARGETS.safe.maxOdds, SLIP_TARGETS.safe.minLegs, SLIP_TARGETS.safe.maxLegs);
+
+  // ── 1. Safe ───────────────────────────────────────────────────────────────
+  // Live-odds path first: when real Sportsbet lines exist, use them so prices on
+  // the All Markets tab are exact. Otherwise build from the ≥ 0.80 hit-rate band.
+  const safeFromProps = buildPropsBasedSafeSlip(all, propOdds, 1.80, 2, 6);
+  const safeLegs = safeFromProps.length >= 2
+    ? safeFromProps
+    : buildHitRateBandSlip(all, propOdds, {
+        minHR: 0.80, maxHR: 1.00, minCombinedOdds: 1.80, maxLegs: 6,
+      });
 
   // ── 2. Doable ─────────────────────────────────────────────────────────────
-  // Threshold 75–90% of avg. Hit rate 68–80%. Reliable but a step harder.
-  // Generate a large candidate pool (10), then enforce 3.0 combined odds target.
+  // Hit rate 0.70–0.79 (last 10g). Max 5 legs. Min 2.5× estimated combined odds.
   const safeKeys   = new Set(safeLegs.map(l => `${l.player}|${l.stat}|${l.threshold}`));
-  const doableRaw  = buildLegs(all, propOdds, {
-    minFlatHR: 0.68, maxFlatHR: 1.00,
-    minFraction: 0.75, maxFraction: 0.92,
-    minReliability: 0.45, maxReliability: 1.00,
-    maxLegs: 10, formBonus: 0,
-  });
-  const doableLegs = enforceOddsTarget(
-    doableRaw.filter(l => !safeKeys.has(`${l.player}|${l.stat}|${l.threshold}`)),
-    SLIP_TARGETS.doable.minOdds,
-    SLIP_TARGETS.doable.maxOdds,
-    SLIP_TARGETS.doable.minLegs,
-    SLIP_TARGETS.doable.maxLegs,
-  );
+  const doableLegs = buildHitRateBandSlip(all, propOdds, {
+    minHR: 0.70, maxHR: 0.79, minCombinedOdds: 2.5, maxLegs: 5,
+  }).filter(l => !safeKeys.has(`${l.player}|${l.stat}|${l.threshold}`));
 
   // ── 3. Goal Scorers ───────────────────────────────────────────────────────
-  // Goals only. Generate 8 candidates, enforce 3.0 combined odds target.
-  const goalLegs = enforceOddsTarget(
-    buildLegs(all, propOdds, {
-      minFlatHR: 0.65, maxFlatHR: 1.00,
-      minFraction: 0.40, maxFraction: 0.80,
-      minReliability: 0.32, maxReliability: 1.00,
-      maxLegs: 8, statsFilter: ["G"], formBonus: 0,
-    }),
-    SLIP_TARGETS.goalscorers.minOdds,
-    SLIP_TARGETS.goalscorers.maxOdds,
-    SLIP_TARGETS.goalscorers.minLegs,
-    SLIP_TARGETS.goalscorers.maxLegs,
-  );
+  // Players who scored in 3+ of last 5. "To score a goal" (≥1). Max 4 legs.
+  const goalLegs = buildGoalScorersSlip(all, propOdds);
 
   // ── 4. Disposals ──────────────────────────────────────────────────────────
-  // Disposals only. Generate 8 candidates, enforce 3.0 combined odds target.
-  const disposalLegs = enforceOddsTarget(
-    buildLegs(all, propOdds, {
-      minFlatHR: 0.72, maxFlatHR: 1.00,
-      minFraction: 0.55, maxFraction: 0.85,
-      minReliability: 0.42, maxReliability: 1.00,
-      maxLegs: 8, statsFilter: ["D"], formBonus: 0,
-    }),
-    SLIP_TARGETS.disposals.minOdds,
-    SLIP_TARGETS.disposals.maxOdds,
-    SLIP_TARGETS.disposals.minLegs,
-    SLIP_TARGETS.disposals.maxLegs,
-  );
+  // Pure disposals SGM. Peter logic restricted to D: ≥ 85% per leg, build to 2.0×.
+  const disposalLegs = buildPeterSlip(all, propOdds, {
+    primaryHitRate:  0.85,
+    fallbackHitRate: 0.85,
+    targetOdds:      2.0,
+    maxLegs:         8,
+    statsFilter:     ["D"],
+  });
 
   // ── 5. Ballsy ─────────────────────────────────────────────────────────────
-  // On-form players first (threshold above recent avg), then regular bold picks.
-  // Generates up to 10 candidates, enforces 10.0 combined odds, 5–7 legs.
-  const onFormProfiles = all.filter(p => p.isOnForm);
-  const ballsyOnForm   = buildLegs(onFormProfiles, propOdds, {
-    minFlatHR: 0.25, maxFlatHR: 0.60,
-    minFraction: 1.10, maxFraction: 1.60,
-    minReliability: 0.10, maxReliability: 0.55,
-    maxLegs: 7, formBonus: 0.05, useRecentBase: true,
-  });
-  const ballsyRegular = buildLegs(all, propOdds, {
-    minFlatHR: 0.30, maxFlatHR: 0.60,
-    minFraction: 0.95, maxFraction: 1.50,
-    minReliability: 0.10, maxReliability: 0.52,
-    maxLegs: 7, formBonus: 0,
-  });
-  // Merge: on-form first, then regular, deduplicated, up to 14 candidates
-  const ballsySeen    = new Set<string>();
-  const ballsyPool: KitchenLeg[] = [];
-  for (const leg of [...ballsyOnForm, ...ballsyRegular]) {
-    const key = `${leg.player}|${leg.stat}|${leg.threshold}`;
-    if (ballsySeen.has(key)) continue;
-    ballsySeen.add(key);
-    ballsyPool.push(leg);
-    if (ballsyPool.length >= 14) break;
-  }
-  const ballsyLegs = enforceOddsTarget(
-    ballsyPool,
-    SLIP_TARGETS.ballsy.minOdds,
-    SLIP_TARGETS.ballsy.maxOdds,
-    SLIP_TARGETS.ballsy.minLegs,
-    SLIP_TARGETS.ballsy.maxLegs,
-  );
+  // On-form / trending-up players at season-avg lines. 4–8× odds, never > 10×.
+  const ballsyLegs = buildBallsySlip(all, propOdds);
 
   // ── 6. Value Picks ────────────────────────────────────────────────────────
-  // Book line < player average. Enforce 2.0 combined odds minimum.
-  const valueLegs = enforceOddsTarget(
-    buildValueLegs(all, propOdds),
-    SLIP_TARGETS.value.minOdds,
-    SLIP_TARGETS.value.maxOdds,
-    SLIP_TARGETS.value.minLegs,
-    SLIP_TARGETS.value.maxLegs,
-  );
+  // Bounce-back value: last game dipped < 65% of avg, season avg still strong.
+  const valueLegs = buildBounceBackValueSlip(all, propOdds);
+
+  const withOdds = (type: KitchenSlipType, legs: KitchenLeg[]): KitchenSlip => {
+    const estimatedOdds = estimateSGMOdds(legs.map(l => ({ hitRate: l.hitRate })));
+    return { type, legs, estimatedOdds, estimatedCombinedOdds: estimatedOdds };
+  };
 
   const slips: KitchenSlip[] = [
-    { type: "safe",        legs: safeLegs },
-    { type: "doable",      legs: doableLegs },
-    { type: "goalscorers", legs: goalLegs },
-    { type: "disposals",   legs: disposalLegs },
-    { type: "ballsy",      legs: ballsyLegs },
-    { type: "value",       legs: valueLegs },
+    withOdds("peter",       peterLegs),
+    withOdds("safe",        safeLegs),
+    withOdds("doable",      doableLegs),
+    withOdds("goalscorers", goalLegs),
+    withOdds("disposals",   disposalLegs),
+    withOdds("ballsy",      ballsyLegs),
+    withOdds("value",       valueLegs),
   ];
 
   return {
@@ -1013,11 +1253,12 @@ export function computeAFLKitchen(params: {
  * falling back to 1/hitRate (fair value) when prop odds are absent.
  */
 const SLIP_TARGETS: Record<KitchenSlipType, { minOdds: number; maxOdds: number; minLegs: number; maxLegs: number }> = {
-  safe:        { minOdds: 2.0,  maxOdds: 3.0,      minLegs: 2, maxLegs: 5 },
+  peter:       { minOdds: 2.0,  maxOdds: 10.0,     minLegs: 2, maxLegs: 8 },
+  safe:        { minOdds: 1.8,  maxOdds: 3.0,      minLegs: 2, maxLegs: 6 },
   doable:      { minOdds: 3.0,  maxOdds: 8.0,      minLegs: 2, maxLegs: 5 },
   goalscorers: { minOdds: 3.0,  maxOdds: 9.0,      minLegs: 2, maxLegs: 5 },
   disposals:   { minOdds: 3.0,  maxOdds: 8.0,      minLegs: 2, maxLegs: 5 },
-  ballsy:      { minOdds: 10.0, maxOdds: 50.0,     minLegs: 5, maxLegs: 7 },
+  ballsy:      { minOdds: 4.0,  maxOdds: 10.0,     minLegs: 2, maxLegs: 4 },
   value:       { minOdds: 2.0,  maxOdds: Infinity, minLegs: 2, maxLegs: 5 },
 };
 
@@ -1228,13 +1469,26 @@ function computeBookieSlipsFromProfiles(
     SLIP_TARGETS.value.minLegs, SLIP_TARGETS.value.maxLegs,
   );
 
+  // Peter: bookie lines, every leg ≥ 85% hit rate, build toward 2.0× estimate.
+  const peterLegs = enforceOddsTarget(
+    buildLegsForBookie(all, bookie, propOdds, { minFlatHR: 0.85, maxFlatHR: 1.00, maxLegs: 8 }),
+    SLIP_TARGETS.peter.minOdds, SLIP_TARGETS.peter.maxOdds,
+    SLIP_TARGETS.peter.minLegs, SLIP_TARGETS.peter.maxLegs,
+  );
+
+  const withOdds = (type: KitchenSlipType, legs: KitchenLeg[]): KitchenSlip => {
+    const estimatedOdds = estimateSGMOdds(legs.map(l => ({ hitRate: l.hitRate })));
+    return { type, legs, estimatedOdds, estimatedCombinedOdds: estimatedOdds };
+  };
+
   return ([
-    { type: "safe"        as const, legs: safeLegs },
-    { type: "doable"      as const, legs: doableLegs },
-    { type: "goalscorers" as const, legs: goalLegs },
-    { type: "disposals"   as const, legs: disposalLegs },
-    { type: "ballsy"      as const, legs: ballsyLegs },
-    { type: "value"       as const, legs: valueLegs },
+    withOdds("peter",       peterLegs),
+    withOdds("safe",        safeLegs),
+    withOdds("doable",      doableLegs),
+    withOdds("goalscorers", goalLegs),
+    withOdds("disposals",   disposalLegs),
+    withOdds("ballsy",      ballsyLegs),
+    withOdds("value",       valueLegs),
   ] as KitchenSlip[]).filter(s => s.legs.length > 0);
 }
 
@@ -1288,6 +1542,7 @@ export function filterSlipsForBookie(
       target.maxLegs,
     );
 
-    return { ...slip, legs: filteredLegs };
+    const estimatedOdds = estimateSGMOdds(filteredLegs.map(l => ({ hitRate: l.hitRate })));
+    return { ...slip, legs: filteredLegs, estimatedOdds, estimatedCombinedOdds: estimatedOdds };
   }).filter(slip => slip.legs.length > 0);
 }

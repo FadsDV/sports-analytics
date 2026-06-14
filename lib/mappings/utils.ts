@@ -12,6 +12,7 @@ const ALL_TEAMS: Record<Sport, CanonicalTeam[]> = {
   laliga: [],
   bundesliga: [],
   aleague: [],
+  worldcup: [],
 };
 
 /**

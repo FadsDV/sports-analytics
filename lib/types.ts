@@ -1,4 +1,4 @@
-export type Sport = "soccer" | "ucl" | "uel" | "laliga" | "bundesliga" | "aleague" | "basketball" | "nfl" | "afl";
+export type Sport = "soccer" | "ucl" | "uel" | "laliga" | "bundesliga" | "aleague" | "worldcup" | "basketball" | "nfl" | "afl";
 export type GameStatus = "upcoming" | "live" | "finished";
 export type FormResult = "W" | "L" | "D"; // D only for soccer
 export type RiskLevel = "Low" | "Medium" | "High";

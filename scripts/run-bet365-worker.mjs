@@ -282,23 +282,33 @@ function classifyResult(result) {
 
 async function runCapture(job) {
   const commandArgs = [
-    "scripts/scrape-bet365.mjs",
-    "--gameId", job.gameId,
-    "--upload", uploadBase,
-    "--dumpDir", CAPTURE_DIR,
-    "--kickoffMs", String(job.kickoffMs),
+    "scripts/scrape-bet365-auto.py",
+    "--gameId",     job.gameId,
+    "--homeTeam",   job.homeTeam,
+    "--awayTeam",   job.awayTeam,
+    "--upload",     uploadBase,
+    "--dumpDir",    CAPTURE_DIR,
+    "--kickoffMs",  String(job.kickoffMs),
     "--expiresAtMs", String(job.expiresAtMs),
   ];
 
   if (headless) commandArgs.push("--headless");
 
+  // Pass API keys from environment
+  const env = {
+    ...process.env,
+    GEMINI_API_KEY:     process.env.GEMINI_API_KEY     ?? "",
+    ODDS_UPLOAD_SECRET: process.env.ODDS_UPLOAD_SECRET ?? "",
+  };
+
   if (dryRun) {
-    console.log(`[dry-run] would run: node ${commandArgs.join(" ")}`);
+    console.log(`[dry-run] would run: python3 ${commandArgs.join(" ")}`);
     return { exitCode: 0, stdout: "", stderr: "" };
   }
 
-  return await execFileAsync("node", commandArgs, {
+  return await execFileAsync("python3", commandArgs, {
     cwd: REPO_ROOT,
+    env,
     maxBuffer: 20 * 1024 * 1024,
   }).then(
     ({ stdout, stderr }) => ({ exitCode: 0, stdout, stderr }),

@@ -333,7 +333,7 @@ export default async function GameDetailPage({
   const { game, homeSchedule, awaySchedule, seasonYear, weekNumber } = result;
 
   const isAFL        = sport === "afl";
-  const isSoccer     = ["soccer","ucl","uel","laliga","bundesliga","aleague"].includes(sport);
+  const isSoccer     = ["soccer","ucl","uel","laliga","bundesliga","aleague","worldcup"].includes(sport);
   const isBasketball = sport === "basketball";
 
   // Pre-compute all history/H2H filter variants synchronously — no extra network calls
@@ -727,6 +727,7 @@ export default async function GameDetailPage({
     laliga:     { name: "La Liga",         logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/15.png" },
     bundesliga: { name: "Bundesliga",      logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/10.png" },
     aleague:    { name: "A-League",        logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/1308.png" },
+    worldcup:   { name: "World Cup 2026",  logo: "https://a.espncdn.com/i/leaguelogos/soccer/500/4.png" },
     basketball: { name: "NBA",             logo: "https://a.espncdn.com/i/teamlogos/leagues/500/nba.png" },
     nfl:        { name: "NFL",             logo: "https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png" },
     afl:        { name: "AFL",             logo: "https://a.espncdn.com/i/teamlogos/leagues/500/afl.png" },

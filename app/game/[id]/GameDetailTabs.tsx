@@ -1061,7 +1061,7 @@ function NBAPlayerList({
 }
 
 function SofascoreList({ players, sport }: { players: any[]; sport: string }) {
-  const isSoccer = ["soccer","ucl","uel","laliga","bundesliga","aleague"].includes(sport);
+  const isSoccer = ["soccer","ucl","uel","laliga","bundesliga","aleague","worldcup"].includes(sport);
   const isNBA = sport === "basketball";
   const keys = isSoccer
     ? ["minutesPlayed","goals","goalAssist","totalShot","totalTackle","rating"]

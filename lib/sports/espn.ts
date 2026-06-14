@@ -18,6 +18,7 @@ export const ESPN_PATHS = {
   laliga:     "soccer/esp.1",            // La Liga
   bundesliga: "soccer/ger.1",            // Bundesliga
   aleague:    "soccer/aus.1",            // A-League (Australia)
+  worldcup:   "soccer/fifa.world",       // FIFA World Cup
   basketball: "basketball/nba",
   nfl:        "football/nfl",
   afl:        "australian-football/afl", // AFL
@@ -101,7 +102,7 @@ function gameResult(
 function sportEmoji(sport: ESPNSport): string {
   const map: Record<ESPNSport, string> = {
     soccer: "⚽", ucl: "⚽", uel: "⚽", laliga: "⚽",
-    bundesliga: "⚽", aleague: "⚽", basketball: "🏀", nfl: "🏈", afl: "🏉",
+    bundesliga: "⚽", aleague: "⚽", worldcup: "🏆", basketball: "🏀", nfl: "🏈", afl: "🏉",
   };
   return map[sport] ?? "⚽";
 }
@@ -594,6 +595,7 @@ function parseBoxScore(bsPlayers: any[], sport: ESPNSport, fantasyMap: Map<strin
     laliga:     ["", "starters"],
     bundesliga: ["", "starters"],
     aleague:    ["", "starters"],
+    worldcup:   ["", "starters"],
     afl:        [""],
   };
 
@@ -754,7 +756,7 @@ export async function fetchTeamSchedule(
   seasons?: number[]
 ): Promise<any[]> {
   const currentYear = new Date().getFullYear();
-  const isSoccerOrAFL = ["soccer", "ucl", "uel", "laliga", "bundesliga", "aleague", "afl"].includes(sport);
+  const isSoccerOrAFL = ["soccer", "ucl", "uel", "laliga", "bundesliga", "aleague", "worldcup", "afl"].includes(sport);
   const yearsToFetch = seasons ?? (
     isSoccerOrAFL
       ? [currentYear, currentYear - 1, currentYear - 2]
