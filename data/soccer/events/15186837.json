@@ -1,0 +1,261 @@
+{
+  "collectedAt": "2026-06-14T13:05:48.524Z",
+  "sofascoreId": 15186837,
+  "espnGameId": "worldcup-760426",
+  "homeTeamId": 4717,
+  "awayTeamId": 4758,
+  "tournamentId": 16,
+  "seasonId": 58210,
+  "lineups": {
+    "confirmed": false,
+    "homeFormation": "4-2-3-1",
+    "awayFormation": "5-4-1",
+    "home": [
+      {
+        "id": 70988,
+        "name": "Thibaut Courtois",
+        "shortName": "T. Courtois",
+        "position": "G",
+        "jerseyNumber": "1",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 128587,
+        "name": "Thomas Meunier",
+        "shortName": "T. Meunier",
+        "position": "D",
+        "jerseyNumber": "15",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1119487,
+        "name": "Nathan Ngoy",
+        "shortName": "N. Ngoy",
+        "position": "D",
+        "jerseyNumber": "25",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 248331,
+        "name": "Brandon Mechele",
+        "shortName": "B. Mechele",
+        "position": "D",
+        "jerseyNumber": "4",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 329417,
+        "name": "Timothy Castagne",
+        "shortName": "T. Castagne",
+        "position": "D",
+        "jerseyNumber": "21",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 331737,
+        "name": "Youri Tielemans",
+        "shortName": "Y. Tielemans",
+        "position": "M",
+        "jerseyNumber": "8",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 923973,
+        "name": "Amadou Onana",
+        "shortName": "A. Onana",
+        "position": "M",
+        "jerseyNumber": "24",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 934386,
+        "name": "Jérémy Doku",
+        "shortName": "J. Doku",
+        "position": "M",
+        "jerseyNumber": "11",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 70996,
+        "name": "Kevin De Bruyne",
+        "shortName": "K. De Bruyne",
+        "position": "M",
+        "jerseyNumber": "7",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 135666,
+        "name": "Leandro Trossard",
+        "shortName": "L. Trossard",
+        "position": "F",
+        "jerseyNumber": "10",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 960441,
+        "name": "Charles De Ketelaere",
+        "shortName": "C. De Ketelaere",
+        "position": "F",
+        "jerseyNumber": "17",
+        "starter": true,
+        "stats": {}
+      }
+    ],
+    "away": [
+      {
+        "id": 871735,
+        "name": "Mohamed El-Shenawy",
+        "shortName": "M. El-Shenawy",
+        "position": "G",
+        "jerseyNumber": "1",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 826545,
+        "name": "Mohamed Hany",
+        "shortName": "M. Hany",
+        "position": "D",
+        "jerseyNumber": "3",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1063327,
+        "name": "Hossam Abdelmaguid",
+        "shortName": "H. Abdelmaguid",
+        "position": "D",
+        "jerseyNumber": "4",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 333441,
+        "name": "Yasser Ibrahim",
+        "shortName": "Y. Ibrahim",
+        "position": "D",
+        "jerseyNumber": "2",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 918913,
+        "name": "Hamdy Fathy",
+        "shortName": "H. Fathy",
+        "position": "M",
+        "jerseyNumber": "14",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 880622,
+        "name": "Ahmed Fatouh",
+        "shortName": "A. Aboul-Fetouh",
+        "position": "D",
+        "jerseyNumber": "13",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 159665,
+        "name": "Mohamed Salah",
+        "shortName": "M. Salah",
+        "position": "M",
+        "jerseyNumber": "10",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1013699,
+        "name": "Marwan Attia",
+        "shortName": "M. Attia",
+        "position": "M",
+        "jerseyNumber": "19",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 967032,
+        "name": "Emam Ashour",
+        "shortName": "E. Ashour",
+        "position": "M",
+        "jerseyNumber": "8",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 295361,
+        "name": "Mahmoud Trézéguet",
+        "shortName": "M. Trézéguet",
+        "position": "M",
+        "jerseyNumber": "7",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 873554,
+        "name": "Omar Marmoush",
+        "shortName": "O. Marmoush",
+        "position": "F",
+        "jerseyNumber": "22",
+        "starter": true,
+        "stats": {}
+      }
+    ]
+  },
+  "incidents": [],
+  "homeTeamStats": null,
+  "awayTeamStats": null,
+  "topScorers": [
+    {
+      "playerId": 934237,
+      "playerName": "Folarin Balogun",
+      "shortName": "Folarin Balogun",
+      "teamName": "USA",
+      "goals": 2,
+      "assists": 0,
+      "shotsOnTarget": 3,
+      "rating": 9
+    },
+    {
+      "playerId": 889689,
+      "playerName": "Hwang In-beom",
+      "shortName": "Hwang In-beom",
+      "teamName": "South Korea",
+      "goals": 1,
+      "assists": 1,
+      "shotsOnTarget": 2,
+      "rating": 8.8
+    },
+    {
+      "playerId": 843114,
+      "playerName": "Julián Quiñones",
+      "shortName": "Julián Quiñones",
+      "teamName": "Mexico",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 2,
+      "rating": 8.6
+    },
+    {
+      "playerId": 868812,
+      "playerName": "Vinícius Júnior",
+      "shortName": "Vinícius Júnior",
+      "teamName": "Brazil",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 1,
+      "rating": 8
+    }
+  ]
+}

@@ -1,0 +1,261 @@
+{
+  "collectedAt": "2026-06-14T13:08:34.431Z",
+  "sofascoreId": 15186854,
+  "espnGameId": "worldcup-760433",
+  "homeTeamId": 4819,
+  "awayTeamId": 4691,
+  "tournamentId": 16,
+  "seasonId": 58210,
+  "lineups": {
+    "confirmed": false,
+    "homeFormation": "4-3-3",
+    "awayFormation": "4-2-3-1",
+    "home": [
+      {
+        "id": 158263,
+        "name": "Emiliano Martínez",
+        "shortName": "E. Martínez",
+        "position": "G",
+        "jerseyNumber": "23",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 822933,
+        "name": "Gonzalo Montiel",
+        "shortName": "G. Montiel",
+        "position": "D",
+        "jerseyNumber": "4",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 829932,
+        "name": "Cristian Romero",
+        "shortName": "C. Romero",
+        "position": "D",
+        "jerseyNumber": "13",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 859999,
+        "name": "Lisandro Martínez",
+        "shortName": "L. Martínez",
+        "position": "D",
+        "jerseyNumber": "6",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 860307,
+        "name": "Facundo Medina",
+        "shortName": "F. Medina",
+        "position": "D",
+        "jerseyNumber": "25",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 895324,
+        "name": "Alexis Mac Allister",
+        "shortName": "A. Mac Allister",
+        "position": "M",
+        "jerseyNumber": "20",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 974505,
+        "name": "Enzo Fernández",
+        "shortName": "E. Fernández",
+        "position": "M",
+        "jerseyNumber": "24",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 249399,
+        "name": "Rodrigo De Paul",
+        "shortName": "R. De Paul",
+        "position": "M",
+        "jerseyNumber": "7",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 12994,
+        "name": "Lionel Messi",
+        "shortName": "L. Messi",
+        "position": "F",
+        "jerseyNumber": "10",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 823984,
+        "name": "Lautaro Martínez",
+        "shortName": "L. Martínez",
+        "position": "F",
+        "jerseyNumber": "22",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 944660,
+        "name": "Thiago Almada",
+        "shortName": "T. Almada",
+        "position": "M",
+        "jerseyNumber": "16",
+        "starter": true,
+        "stats": {}
+      }
+    ],
+    "away": [
+      {
+        "id": 802133,
+        "name": "Luca Zidane",
+        "shortName": "L. Zidane",
+        "position": "G",
+        "jerseyNumber": "23",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1503088,
+        "name": "Achref Abada",
+        "shortName": "A. Abada",
+        "position": "D",
+        "jerseyNumber": "3",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 122810,
+        "name": "Aïssa Mandi",
+        "shortName": "A. Mandi",
+        "position": "D",
+        "jerseyNumber": "2",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1049534,
+        "name": "Jaouen Hadjam",
+        "shortName": "J. Hadjam",
+        "position": "D",
+        "jerseyNumber": "13",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 931278,
+        "name": "Rayan Aït-Nouri",
+        "shortName": "R. Aït-Nouri",
+        "position": "D",
+        "jerseyNumber": "15",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 989882,
+        "name": "Ramiz Zerrouki",
+        "shortName": "R. Zerrouki",
+        "position": "M",
+        "jerseyNumber": "6",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 368120,
+        "name": "Nabil Bentaleb",
+        "shortName": "N. Bentaleb",
+        "position": "M",
+        "jerseyNumber": "19",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 158213,
+        "name": "Riyad Mahrez",
+        "shortName": "R. Mahrez",
+        "position": "M",
+        "jerseyNumber": "7",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 846081,
+        "name": "Houssem Aouar",
+        "shortName": "H. Aouar",
+        "position": "M",
+        "jerseyNumber": "8",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1107591,
+        "name": "Mohamed Amoura",
+        "shortName": "M. E. A. Amoura",
+        "position": "F",
+        "jerseyNumber": "18",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 859026,
+        "name": "Amine Gouiri",
+        "shortName": "A. Gouiri",
+        "position": "F",
+        "jerseyNumber": "9",
+        "starter": true,
+        "stats": {}
+      }
+    ]
+  },
+  "incidents": [],
+  "homeTeamStats": null,
+  "awayTeamStats": null,
+  "topScorers": [
+    {
+      "playerId": 934237,
+      "playerName": "Folarin Balogun",
+      "shortName": "Folarin Balogun",
+      "teamName": "USA",
+      "goals": 2,
+      "assists": 0,
+      "shotsOnTarget": 3,
+      "rating": 9
+    },
+    {
+      "playerId": 889689,
+      "playerName": "Hwang In-beom",
+      "shortName": "Hwang In-beom",
+      "teamName": "South Korea",
+      "goals": 1,
+      "assists": 1,
+      "shotsOnTarget": 2,
+      "rating": 8.8
+    },
+    {
+      "playerId": 843114,
+      "playerName": "Julián Quiñones",
+      "shortName": "Julián Quiñones",
+      "teamName": "Mexico",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 2,
+      "rating": 8.6
+    },
+    {
+      "playerId": 868812,
+      "playerName": "Vinícius Júnior",
+      "shortName": "Vinícius Júnior",
+      "teamName": "Brazil",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 1,
+      "rating": 8
+    }
+  ]
+}

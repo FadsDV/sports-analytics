@@ -1,0 +1,261 @@
+{
+  "collectedAt": "2026-06-14T13:04:17.112Z",
+  "sofascoreId": 15186899,
+  "espnGameId": "worldcup-760422",
+  "homeTeamId": 4711,
+  "awayTeamId": 55827,
+  "tournamentId": 16,
+  "seasonId": 58210,
+  "lineups": {
+    "confirmed": false,
+    "homeFormation": "4-2-3-1",
+    "awayFormation": "3-5-2",
+    "home": [
+      {
+        "id": 8959,
+        "name": "Manuel Neuer",
+        "shortName": "M. Neuer",
+        "position": "G",
+        "jerseyNumber": "1",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 259117,
+        "name": "Joshua Kimmich",
+        "shortName": "J. Kimmich",
+        "position": "M",
+        "jerseyNumber": "6",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 227672,
+        "name": "Jonathan Tah",
+        "shortName": "J. Tah",
+        "position": "D",
+        "jerseyNumber": "4",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 940871,
+        "name": "Nico Schlotterbeck",
+        "shortName": "N. Schlotterbeck",
+        "position": "D",
+        "jerseyNumber": "15",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1159759,
+        "name": "Nathaniel Brown",
+        "shortName": "N. Brown",
+        "position": "D",
+        "jerseyNumber": "18",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 907463,
+        "name": "Felix Nmecha",
+        "shortName": "F. Nmecha",
+        "position": "M",
+        "jerseyNumber": "23",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1142251,
+        "name": "Aleksandar Pavlović",
+        "shortName": "A. Pavlović",
+        "position": "M",
+        "jerseyNumber": "5",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 293519,
+        "name": "Leroy Sané",
+        "shortName": "L. Sané",
+        "position": "M",
+        "jerseyNumber": "19",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1010231,
+        "name": "Jamal Musiala",
+        "shortName": "J. Musiala",
+        "position": "M",
+        "jerseyNumber": "10",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1019322,
+        "name": "Florian Wirtz",
+        "shortName": "F. Wirtz",
+        "position": "M",
+        "jerseyNumber": "17",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 836705,
+        "name": "Kai Havertz",
+        "shortName": "K. Havertz",
+        "position": "F",
+        "jerseyNumber": "7",
+        "starter": true,
+        "stats": {}
+      }
+    ],
+    "away": [
+      {
+        "id": 40859,
+        "name": "Eloy Room",
+        "shortName": "E. Room",
+        "position": "G",
+        "jerseyNumber": "1",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 884944,
+        "name": "Jurien Gaari",
+        "shortName": "J. Gaari",
+        "position": "D",
+        "jerseyNumber": "3",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 825838,
+        "name": "Armando Obispo",
+        "shortName": "A. Obispo",
+        "position": "D",
+        "jerseyNumber": "18",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 227196,
+        "name": "Riechedly Bazoer",
+        "shortName": "R. Bazoer",
+        "position": "D",
+        "jerseyNumber": "23",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 803021,
+        "name": "Sherel Constancio Floranus",
+        "shortName": "S. Floranus",
+        "position": "D",
+        "jerseyNumber": "5",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1136642,
+        "name": "Livano Comenencia",
+        "shortName": "L. Comenencia",
+        "position": "D",
+        "jerseyNumber": "8",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 74545,
+        "name": "Leandro Bacuna",
+        "shortName": "L. Bacuna",
+        "position": "M",
+        "jerseyNumber": "10",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 788971,
+        "name": "Juninho Bacuna",
+        "shortName": "J. Bacuna",
+        "position": "M",
+        "jerseyNumber": "7",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 1177177,
+        "name": "Deveron Fonville",
+        "shortName": "D. Fonville",
+        "position": "D",
+        "jerseyNumber": "24",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 97409,
+        "name": "Jürgen Locadia",
+        "shortName": "J. Locadia",
+        "position": "F",
+        "jerseyNumber": "9",
+        "starter": true,
+        "stats": {}
+      },
+      {
+        "id": 825845,
+        "name": "Tahith Chong",
+        "shortName": "T. Chong",
+        "position": "M",
+        "jerseyNumber": "21",
+        "starter": true,
+        "stats": {}
+      }
+    ]
+  },
+  "incidents": [],
+  "homeTeamStats": null,
+  "awayTeamStats": null,
+  "topScorers": [
+    {
+      "playerId": 934237,
+      "playerName": "Folarin Balogun",
+      "shortName": "Folarin Balogun",
+      "teamName": "USA",
+      "goals": 2,
+      "assists": 0,
+      "shotsOnTarget": 3,
+      "rating": 9
+    },
+    {
+      "playerId": 889689,
+      "playerName": "Hwang In-beom",
+      "shortName": "Hwang In-beom",
+      "teamName": "South Korea",
+      "goals": 1,
+      "assists": 1,
+      "shotsOnTarget": 2,
+      "rating": 8.8
+    },
+    {
+      "playerId": 843114,
+      "playerName": "Julián Quiñones",
+      "shortName": "Julián Quiñones",
+      "teamName": "Mexico",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 2,
+      "rating": 8.6
+    },
+    {
+      "playerId": 868812,
+      "playerName": "Vinícius Júnior",
+      "shortName": "Vinícius Júnior",
+      "teamName": "Brazil",
+      "goals": 1,
+      "assists": 0,
+      "shotsOnTarget": 1,
+      "rating": 8
+    }
+  ]
+}
