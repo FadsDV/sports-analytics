@@ -14,7 +14,7 @@ export type SoccerStatKey =
 export type SoccerLegType = "player" | "team" | "match";
 
 export type SoccerSlipType =
-  | "safe" | "doable" | "goalscorers" | "shots" | "cards" | "value";
+  | "safe" | "doable" | "goalscorers" | "shots" | "cards" | "value" | "winner";
 
 export interface SoccerKitchenLeg {
   legType:       SoccerLegType;
@@ -26,7 +26,7 @@ export interface SoccerKitchenLeg {
   // Team/match legs
   teamName?:     string;
   // Common
-  stat:          SoccerStatKey | "teamGoals" | "matchGoals" | "btts" | "totalCards" | "corners" | "totalShots";
+  stat:          SoccerStatKey | "teamGoals" | "matchGoals" | "btts" | "totalCards" | "corners" | "totalShots" | "matchWinner";
   statLabel:     string;           // exact bookmaker market name
   threshold:     number;
   direction:     "over" | "under";
@@ -246,7 +246,7 @@ function buildMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
   }
 
   // ── Total Goals Over / Under ──────────────────────────────────────────────
-  if (homeFor.length >= 3 && awayFor.length >= 3) {
+  if (homeFor.length >= 2 && awayFor.length >= 2) {
     const homeMatchTotals = homeFor.map((g, i) => g + (homeAgainst[i] ?? 0));
     const awayMatchTotals = awayFor.map((g, i) => g + (awayAgainst[i] ?? 0));
     const allTotals = [...homeMatchTotals, ...awayMatchTotals];
@@ -281,7 +281,7 @@ function buildMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
   }
 
   // ── Both Teams to Score ───────────────────────────────────────────────────
-  if (homeFor.length >= 3 && awayFor.length >= 3) {
+  if (homeFor.length >= 2 && awayFor.length >= 2) {
     const homeScoredRate = hr(homeFor, 1);
     const awayScoredRate = hr(awayFor, 1);
     const prob = homeScoredRate * awayScoredRate;
@@ -311,7 +311,7 @@ function buildMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
   }
 
   // ── Home team goals (team total market) ───────────────────────────────────
-  if (homeFor.length >= 3) {
+  if (homeFor.length >= 2) {
     const avg = mean(homeFor);
     if (avg >= 0.8) {
       const found = findThreshold(homeFor, avg, 0.5, 0.58, 1.0, 0.30, 0.88);
@@ -351,7 +351,7 @@ function buildMatchLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
   }
 
   // ── Away team goals ────────────────────────────────────────────────────────
-  if (awayFor.length >= 3) {
+  if (awayFor.length >= 2) {
     const avg = mean(awayFor);
     if (avg >= 0.6) {
       const found = findThreshold(awayFor, avg, 0.5, 0.52, 1.0, 0.28, 0.85);
@@ -514,7 +514,7 @@ function buildPlayerProfiles(input: SoccerKitchenInput): PlayerProfile[] {
   const profiles: PlayerProfile[] = [];
 
   for (const p of input.players) {
-    if (p.games.length < 3) continue;
+    if (p.games.length < 2) continue;
     const posGroup = p.position.toUpperCase()[0] ?? "M";
 
     for (const sc of PLAYER_STATS) {
@@ -672,12 +672,86 @@ function buildPlayerLegs(
   return legs;
 }
 
+// ─── Match winner leg builder ─────────────────────────────────────────────────
+
+function buildWinnerLegs(input: SoccerKitchenInput): SoccerKitchenLeg[] {
+  const legs: SoccerKitchenLeg[] = [];
+
+  const homeWins: number[] = [], awayWins: number[] = [];
+  const homeGoalsFor: number[] = [], awayGoalsFor: number[] = [];
+  const homeGoalsAgainst: number[] = [], awayGoalsAgainst: number[] = [];
+
+  for (const g of input.homeHistory) {
+    const p = parseScore(g.score); if (!p) continue;
+    const [scored, conceded] = p;
+    homeGoalsFor.push(scored); homeGoalsAgainst.push(conceded);
+    homeWins.push(scored > conceded ? 1 : 0);
+  }
+  for (const g of input.awayHistory) {
+    const p = parseScore(g.score); if (!p) continue;
+    const [scored, conceded] = p;
+    awayGoalsFor.push(scored); awayGoalsAgainst.push(conceded);
+    awayWins.push(scored > conceded ? 1 : 0);
+  }
+
+  if (homeWins.length < 2 || awayWins.length < 2) return legs;
+
+  const homeWinRate  = mean(homeWins);
+  const awayWinRate  = mean(awayWins);
+  const homeAvgFor   = mean(homeGoalsFor);
+  const awayAvgFor   = mean(awayGoalsFor);
+  const homeAvgConc  = mean(homeGoalsAgainst);
+  const awayAvgConc  = mean(awayGoalsAgainst);
+
+  // Simple attack vs defence rating
+  const homeAttack = homeAvgFor / Math.max(awayAvgConc, 0.5);
+  const awayAttack = awayAvgFor / Math.max(homeAvgConc, 0.5);
+
+  // Blended probability: 60% recent win rate + 40% attack/defence ratio
+  const homeProbRaw  = homeWinRate * 0.60 + (homeAttack / (homeAttack + awayAttack)) * 0.40;
+  const awayProbRaw  = awayWinRate * 0.60 + (awayAttack / (homeAttack + awayAttack)) * 0.40;
+
+  // Only recommend if one team is clearly favoured (>58%)
+  if (homeProbRaw >= 0.58) {
+    const breakdown = computeReliability({ vals: homeWins, threshold: 0.5, config: SOCCER_CONFIG });
+    legs.push({
+      legType: "match", stat: "matchWinner",
+      teamName: input.homeTeamName, teamAbbr: input.homeAbbr,
+      statLabel: `${input.homeTeamName} to Win`,
+      threshold: 1, direction: "over",
+      hitRate: homeWinRate,
+      reliability: Math.min(homeProbRaw, 0.88),
+      avgStat: Math.round(homeAvgFor * 10) / 10,
+      gamesAnalyzed: homeWins.length,
+      breakdown: { ...breakdown, finalReliability: Math.min(homeProbRaw, 0.88) },
+      isOnForm: mean(homeWins.slice(-3)) >= 0.67, isBounceBack: false,
+    });
+  } else if (awayProbRaw >= 0.58) {
+    const breakdown = computeReliability({ vals: awayWins, threshold: 0.5, config: SOCCER_CONFIG });
+    legs.push({
+      legType: "match", stat: "matchWinner",
+      teamName: input.awayTeamName, teamAbbr: input.awayAbbr,
+      statLabel: `${input.awayTeamName} to Win`,
+      threshold: 1, direction: "over",
+      hitRate: awayWinRate,
+      reliability: Math.min(awayProbRaw, 0.88),
+      avgStat: Math.round(awayAvgFor * 10) / 10,
+      gamesAnalyzed: awayWins.length,
+      breakdown: { ...breakdown, finalReliability: Math.min(awayProbRaw, 0.88) },
+      isOnForm: mean(awayWins.slice(-3)) >= 0.67, isBounceBack: false,
+    });
+  }
+
+  return legs;
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function computeSoccerKitchen(input: SoccerKitchenInput): SoccerKitchenSlip[] {
-  const profiles   = buildPlayerProfiles(input);
-  const matchLegs  = buildMatchLegs(input);
+  const profiles      = buildPlayerProfiles(input);
+  const matchLegs     = buildMatchLegs(input);
   const cardMatchLegs = buildCardMatchLegs(input);
+  const winnerLegs    = buildWinnerLegs(input);
 
   const safeMatchLegs   = matchLegs.filter(l => l.hitRate >= 0.70).slice(0, 3);
   const doableMatchLegs = matchLegs.filter(l => l.hitRate >= 0.58 && l.hitRate < 0.70).slice(0, 2);
@@ -806,6 +880,7 @@ export function computeSoccerKitchen(input: SoccerKitchenInput): SoccerKitchenSl
   }
 
   return [
+    { type: "winner",      legs: winnerLegs },
     { type: "safe",        legs: safeLegs },
     { type: "doable",      legs: doableLegs },
     { type: "goalscorers", legs: goalLegs },

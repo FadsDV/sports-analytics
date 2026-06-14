@@ -45,6 +45,11 @@ const SLIP_CONFIG: Record<SoccerSlipType, {
     desc: "Best edge picks — average well above threshold. Highest edge-to-threshold ratio.",
     color: "text-[#F59E0B]", border: "border-[#F59E0B]/25", bg: "bg-[#F59E0B]/5",
   },
+  winner: {
+    emoji: "🏆", title: "Match Winner",
+    desc: "Recommended match result based on recent form, attack vs defence ratings.",
+    color: "text-[#E2B714]", border: "border-[#E2B714]/25", bg: "bg-[#E2B714]/5",
+  },
 };
 
 const STAT_ICONS: Record<string, string> = {
@@ -53,7 +58,7 @@ const STAT_ICONS: Record<string, string> = {
   keyPasses: "🔑", yellowCards: "🟨", xG: "📊",
   tackles: "💪", foulsCommitted: "🟥", saves: "🧤",
   teamGoals: "⚽", matchGoals: "📊", btts: "🔄",
-  totalCards: "🟨", teamCards: "🟨", corners: "📐",
+  totalCards: "🟨", teamCards: "🟨", corners: "📐", matchWinner: "🏆",
 };
 
 // ─── Breakdown tooltip ────────────────────────────────────────────────────────

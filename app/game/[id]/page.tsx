@@ -27,7 +27,7 @@ import { formatKickoffFull, formatAFLKickoff } from "@/lib/utils";
 import { fetchPlayerSeasonStats } from "@/lib/sports/sofascore";
 import type { SofascorePlayer, SofascoreGameLog } from "@/lib/sports/sofascore";
 import { fetchESPNSoccerMatchData, fetchESPNSoccerPlayerHistory, fetchESPNSoccerTeamHistory, type TeamGameStat } from "@/lib/sports/soccer/espnSoccerData";
-import { fetchStaticSoccerEvent, lookupSofascoreId } from "@/lib/sports/soccer/staticData";
+import { fetchStaticSoccerEvent, fetchStaticPlayerData, lookupSofascoreId } from "@/lib/sports/soccer/staticData";
 import { fetch365ScoresForGame, type Scores365MatchData } from "@/lib/sports/soccer/365scoresData";
 import { buildFotMobPlayerMap } from "@/lib/sports/soccer/fotmobData";
 import { computeSoccerKitchen, type SoccerKitchenSlip, type SoccerPlayerProfile, type SoccerProp } from "@/lib/sports/soccer/kitchen";
@@ -653,20 +653,30 @@ export default async function GameDetailPage({
       homePlayerHistory = homeHistoryMap;
       awayPlayerHistory = awayHistoryMap;
 
-      // Match player names to their history entries
+      // Match player names to their history entries (ESPN history first)
       for (const p of allKitchenPlayers) {
         const map = p.side === "home" ? homeHistoryMap : awayHistoryMap;
-        const games = map.get(p.name) ?? map.get(p.shortName) ?? [];
-        p.games = games;
+        p.games = map.get(p.name) ?? map.get(p.shortName) ?? [];
       }
+
+      // Fallback: for any player still with <2 games, load from static Sofascore player file
+      // (collected locally — club career stats, perfect for WC player analysis)
+      await Promise.all(allKitchenPlayers.map(async (p) => {
+        if (p.games.length < 2 && p.sofaId > 0) {
+          const staticPlayer = await fetchStaticPlayerData(p.sofaId);
+          if (staticPlayer?.recentGames?.length) {
+            p.games = staticPlayer.recentGames;
+          }
+        }
+      }));
 
       soccerKitchenSlips = computeSoccerKitchen({
         homeAbbr:      game.homeTeam.shortName,
         awayAbbr:      game.awayTeam.shortName,
         homeTeamName:  game.homeTeam.name,
         awayTeamName:  game.awayTeam.name,
-        homeHistory:   homeHistories.home,
-        awayHistory:   awayHistories.away,
+        homeHistory:   homeHistories.all,  // use all games — WC teams play at neutral venues
+        awayHistory:   awayHistories.all,  // use all games — WC teams play at neutral venues
         homeTeamStats: sofascore.homeTeamStats ?? null,
         awayTeamStats: sofascore.awayTeamStats ?? null,
         players:       allKitchenPlayers,
