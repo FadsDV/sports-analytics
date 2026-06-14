@@ -385,7 +385,7 @@ export default async function GameDetailPage({
     // 2. Overlay static Sofascore data (lineups, team stats, top scorers) if available.
     //    The collect-soccer.mjs script runs locally, fetches Sofascore freely, and pushes
     //    JSON files to GitHub. Vercel reads them here as static data — no IP block.
-    const espnGameId = `soccer-${sourceId}`;
+    const espnGameId = `${sport}-${sourceId}`;
     const sofascoreId = await lookupSofascoreId(espnGameId);
     if (sofascoreId) {
       const staticEvent = await fetchStaticSoccerEvent(sofascoreId);
