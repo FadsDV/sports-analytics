@@ -65,15 +65,16 @@ async function sofaFetch(path) {
 // ─── ESPN scoreboard — get upcoming soccer games ──────────────────────────────
 
 const ESPN_SPORTS = [
-  { sport: "soccer", league: "eng.1",    name: "Premier League"  },
-  { sport: "soccer", league: "esp.1",    name: "La Liga"         },
-  { sport: "soccer", league: "ger.1",    name: "Bundesliga"      },
-  { sport: "soccer", league: "ita.1",    name: "Serie A"         },
-  { sport: "soccer", league: "fra.1",    name: "Ligue 1"         },
-  { sport: "soccer", league: "uefa.champions", name: "Champions League" },
-  { sport: "soccer", league: "uefa.europa",    name: "Europa League"   },
-  { sport: "soccer", league: "usa.1",    name: "MLS"             },
-  { sport: "soccer", league: "aus.1",    name: "A-League"        },
+  { sport: "soccer",    league: "eng.1",         name: "Premier League",    key: "soccer"    },
+  { sport: "soccer",    league: "esp.1",          name: "La Liga",           key: "laliga"    },
+  { sport: "soccer",    league: "ger.1",          name: "Bundesliga",        key: "bundesliga"},
+  { sport: "soccer",    league: "ita.1",          name: "Serie A",           key: "soccer"    },
+  { sport: "soccer",    league: "fra.1",          name: "Ligue 1",           key: "soccer"    },
+  { sport: "soccer",    league: "uefa.champions", name: "Champions League",  key: "ucl"       },
+  { sport: "soccer",    league: "uefa.europa",    name: "Europa League",     key: "uel"       },
+  { sport: "soccer",    league: "usa.1",          name: "MLS",               key: "soccer"    },
+  { sport: "soccer",    league: "aus.1",          name: "A-League",          key: "aleague"   },
+  { sport: "soccer",    league: "fifa.world",     name: "World Cup",         key: "worldcup"  },
 ];
 
 async function fetchUpcomingGames(daysAhead = 2) {
@@ -86,7 +87,7 @@ async function fetchUpcomingGames(daysAhead = 2) {
     dates.push(d.toISOString().slice(0, 10).replace(/-/g, ""));
   }
 
-  for (const { sport, league, name: leagueName } of ESPN_SPORTS) {
+  for (const { sport, league, name: leagueName, key: sportKey } of ESPN_SPORTS) {
     const dateStr = dates.join("-");
     const url = `https://site.api.espn.com/apis/site/v2/sports/${sport}/${league}/scoreboard?dates=${dates[0]}-${dates[dates.length - 1]}&limit=50`;
     try {
@@ -104,7 +105,7 @@ async function fetchUpcomingGames(daysAhead = 2) {
         const away = comps.competitors?.find(c => c.homeAway === "away");
         if (!home || !away) continue;
         games.push({
-          espnGameId:    `soccer-${ev.id}`,
+          espnGameId:    `${sportKey}-${ev.id}`,
           espnId:        ev.id,
           league:        leagueName,
           kickoffISO:    ev.date,
